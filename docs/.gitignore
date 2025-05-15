@@ -1,2 +1,5 @@
 docs
-*region*
+gpu
+org
+*/*region*
+*/*.tex
