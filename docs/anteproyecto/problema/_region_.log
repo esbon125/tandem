@@ -1,0 +1,233 @@
+This is pdfTeX, Version 3.141592653-2.6-1.40.27 (TeX Live 2026/dev/Arch Linux) (preloaded format=prv_problema 2025.5.9)  9 MAY 2025 12:21
+entering extended mode
+ restricted \write18 enabled.
+ file:line:error style messages enabled.
+ %&-line parsing enabled.
+**&prv_problema /AUCTEXINPUT{ _region_.tex }
+(./_region_.tex (/usr/share/texmf-dist/tex/latex/l3backend/l3backend-pdftex.def
+File: l3backend-pdftex.def 2024-05-08 L3 backend support: PDF output (pdfTeX)
+\l__color_backend_stack_int=\count370
+\l__pdf_internal_box=\box141
+)
+
+LaTeX Warning: Unused global option(s):
+    [a4].
+
+No file _region_.aux.
+LaTeX Font Info:    Checking defaults for OML/cmm/m/it on input line 20.
+LaTeX Font Info:    ... okay on input line 20.
+LaTeX Font Info:    Checking defaults for OMS/cmsy/m/n on input line 20.
+LaTeX Font Info:    ... okay on input line 20.
+LaTeX Font Info:    Checking defaults for OT1/cmr/m/n on input line 20.
+LaTeX Font Info:    ... okay on input line 20.
+LaTeX Font Info:    Checking defaults for T1/cmr/m/n on input line 20.
+LaTeX Font Info:    ... okay on input line 20.
+LaTeX Font Info:    Checking defaults for TS1/cmr/m/n on input line 20.
+LaTeX Font Info:    ... okay on input line 20.
+LaTeX Font Info:    Checking defaults for OMX/cmex/m/n on input line 20.
+LaTeX Font Info:    ... okay on input line 20.
+LaTeX Font Info:    Checking defaults for U/cmr/m/n on input line 20.
+LaTeX Font Info:    ... okay on input line 20.
+LaTeX Font Info:    Checking defaults for PD1/pdf/m/n on input line 20.
+LaTeX Font Info:    ... okay on input line 20.
+LaTeX Font Info:    Checking defaults for PU/pdf/m/n on input line 20.
+LaTeX Font Info:    ... okay on input line 20.
+LaTeX Info: Redefining \. on input line 20.
+LaTeX Info: Redefining \% on input line 20.
+(/usr/share/texmf-dist/tex/context/base/mkii/supp-pdf.mkii
+[Loading MPS to PDF converter (version 2006.09.02).]
+\scratchcounter=\count371
+\scratchdimen=\dimen341
+\scratchbox=\box142
+\nofMPsegments=\count372
+\nofMParguments=\count373
+\everyMPshowfont=\toks52
+\MPscratchCnt=\count374
+\MPscratchDim=\dimen342
+\MPnumerator=\count375
+\makeMPintoPDFobject=\count376
+\everyMPtoPDFconversion=\toks53
+) (/usr/share/texmf-dist/tex/latex/epstopdf-pkg/epstopdf-base.sty
+Package: epstopdf-base 2020-01-24 v2.11 Base part for package epstopdf
+Package epstopdf-base Info: Redefining graphics rule for `.eps' on input line 485.
+ (/usr/share/texmf-dist/tex/latex/latexconfig/epstopdf-sys.cfg
+File: epstopdf-sys.cfg 2010/07/13 v1.3 Configuration of (r)epstopdf for TeX Live
+))
+\c@lstlisting=\count377
+ (/usr/share/texmf-dist/tex/latex/base/inputenc.sty
+Package: inputenc 2024/02/08 v1.3d Input encoding file
+\inpenc@prehook=\toks54
+\inpenc@posthook=\toks55
+) (/usr/share/texmf-dist/tex/latex/pdflscape/pdflscape.sty
+Package: pdflscape 2022-10-27 v0.13 Display of landscape pages in PDF
+ (/usr/share/texmf-dist/tex/latex/pdflscape/pdflscape-nometadata.sty
+Package: pdflscape-nometadata 2022-10-28 v0.13 Display of landscape pages in PDF (HO)
+ (/usr/share/texmf-dist/tex/latex/graphics/lscape.sty
+Package: lscape 2020/05/28 v3.02 Landscape Pages (DPC)
+)
+Package pdflscape Info: Auto-detected driver: pdftex on input line 81.
+))
+\providecommand\hyper@newdestlabel[2]{}
+Package hyperref Info: Link coloring OFF on input line 20.
+\c@maskedRefs=\count378
+(/usr/share/texmf-dist/tex/latex/apacite/spanish.apc
+File: spanish.apc 2013/07/21 v6.03 apacite language file
+LaTeX Info: Redefining \BPBI on input line 138.
+LaTeX Info: Redefining \BHBI on input line 139.
+)
+Package caption Info: Begin \AtBeginDocument code.
+Package caption Info: End \AtBeginDocument code.
+ (/home/esbon1253/.emacs.d/elpa/auctex-14.0.9/latex/preview.sty
+Package: preview 2024/06/30 14.0.6 (AUCTeX/preview-latex)
+ (/home/esbon1253/.emacs.d/elpa/auctex-14.0.9/latex/prtightpage.def
+\PreviewBorder=\dimen343
+) (/home/esbon1253/.emacs.d/elpa/auctex-14.0.9/latex/prauctex.def
+No auxiliary output files.
+
+
+\hbadness=\count379
+\hfuzz=\dimen344
+(/home/esbon1253/.emacs.d/elpa/auctex-14.0.9/latex/prauctex.cfg)) (/home/esbon1253/.emacs.d/elpa/auctex-14.0.9/latex/prfootnotes.def)
+\pr@snippet=\count380
+\pr@box=\box143
+\pr@output=\toks56
+
+Preview: Fontsize 10pt
+Preview: PDFoutput 1
+)  !name(problema.tex) !offset(-3) 
+./_region_.tex:26: Preview: Snippet 1 started.
+<-><->
+      
+l.26   \includegraphics
+                       [width=1\textwidth]{/home/esbon1253/mi-preamble-latex...
+Not a real error.
+
+</home/esbon1253/mi-preamble-latex/utnlogo.jpg, id=44, 295.1025pt x 302.12875pt>
+File: /home/esbon1253/mi-preamble-latex/utnlogo.jpg Graphic file (type jpg)
+<use /home/esbon1253/mi-preamble-latex/utnlogo.jpg>
+Package pdftex.def Info: /home/esbon1253/mi-preamble-latex/utnlogo.jpg  used on input line 26.
+(pdftex.def)             Requested size: 345.0pt x 353.22182pt.
+Preview: Tightpage -32891 -32891 32891 32891
+./_region_.tex:26: Preview: Snippet 1 ended.(23148745+0x22609920).
+<-><->
+      
+l.26 ...e/esbon1253/mi-preamble-latex/utnlogo.jpg}
+                                                  
+Not a real error.
+
+[1 </home/esbon1253/mi-preamble-latex/utnlogo.jpg>]
+
+./_region_.tex:32: Preview: Snippet 2 started.
+<-><->
+      
+l.32 \tableofcontents
+                     
+Not a real error.
+
+./_region_.tex:32: Preview: Snippet 2 ended.(883425+0x22609920).
+<-><->
+      
+l.32 \tableofcontents
+                     
+Not a real error.
+
+[2{/var/lib/texmf/fonts/map/pdftex/updmap/pdftex.map}]
+No file _region_.toc.
+./_region_.tex:37: Preview: Snippet 3 started.
+<-><->
+      
+l.37 \section
+             *{Objetivos}
+Not a real error.
+
+./_region_.tex:37: Preview: Snippet 3 ended.(655359+183500x22609920).
+<-><->
+      
+l.37 \section*{Objetivos}
+                         
+Not a real error.
+
+[3]
+./_region_.tex:39: Preview: Snippet 4 started.
+<-><->
+      
+l.39 \section
+             *{Desarrollo}
+Not a real error.
+
+./_region_.tex:39: Preview: Snippet 4 ended.(655359+0x22609920).
+<-><->
+      
+l.39 \section*{Desarrollo}
+                          
+Not a real error.
+
+[4]
+./_region_.tex:41: Preview: Snippet 5 started.
+<-><->
+      
+l.41 \section
+             *{Resultados}
+Not a real error.
+
+./_region_.tex:41: Preview: Snippet 5 ended.(655359+0x22609920).
+<-><->
+      
+l.41 \section*{Resultados}
+                          
+Not a real error.
+
+[5]
+./_region_.tex:43: Preview: Snippet 6 started.
+<-><->
+      
+l.43 \section
+             *{Conclusiones}
+Not a real error.
+
+./_region_.tex:43: Preview: Snippet 6 ended.(655359+0x22609920).
+<-><->
+      
+l.43 \section*{Conclusiones}
+                            
+Not a real error.
+
+[6]
+No file _region_.bbl.
+./_region_.tex:51: Preview: Snippet 7 started.
+<-><->
+      
+l.51 \listoffigures
+                   
+Not a real error.
+
+./_region_.tex:51: Preview: Snippet 7 ended.(883425+183500x22609920).
+<-><->
+      
+l.51 \listoffigures
+                   
+Not a real error.
+
+[7]
+No file _region_.lof.
+ ***********
+LaTeX2e <2024-11-01> patch level 2
+L3 programming layer <2025-01-18>
+ ***********
+ ) 
+Here is how much of TeX's memory you used:
+ 1315 strings out of 424325
+ 23301 string characters out of 4579026
+ 1878418 words of memory out of 5000000
+ 74363 multiletter control sequences out of 15000+600000
+ 567571 words of font info for 70 fonts, out of 8000000 for 9000
+ 85 hyphenation exceptions out of 8191
+ 70i,6n,68p,575b,501s stack positions out of 10000i,1000n,20000p,200000b,200000s
+</usr/share/texmf-dist/fonts/type1/public/amsfonts/cm/cmbx12.pfb>
+Output written on _region_.pdf (7 pages, 34683 bytes).
+PDF statistics:
+ 93 PDF objects out of 1000 (max. 8388607)
+ 43 compressed objects within 1 object stream
+ 13 named destinations out of 1000 (max. 500000)
+ 162 words of extra memory for PDF output out of 10000 (max. 10000000)
+
