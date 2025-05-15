@@ -1,4 +1,4 @@
-This is pdfTeX, Version 3.141592653-2.6-1.40.27 (TeX Live 2026/dev/Arch Linux) (preloaded format=pdflatex 2025.4.21)  13 MAY 2025 03:23
+This is pdfTeX, Version 3.141592653-2.6-1.40.27 (TeX Live 2026/dev/Arch Linux) (preloaded format=pdflatex 2025.4.21)  15 MAY 2025 15:32
 entering extended mode
  restricted \write18 enabled.
  file:line:error style messages enabled.
@@ -1306,7 +1306,7 @@ Package rerunfilecheck Info: File `problema.out' has not changed.
 Here is how much of TeX's memory you used:
  51865 strings out of 475036
  1205475 string characters out of 5763855
- 1889434 words of memory out of 5000000
+ 1889435 words of memory out of 5000000
  74212 multiletter control sequences out of 15000+600000
  567591 words of font info for 70 fonts, out of 8000000 for 9000
  85 hyphenation exceptions out of 8191
@@ -1318,7 +1318,7 @@ ts/type1/public/amsfonts/cm/cmr10.pfb></usr/share/texmf-dist/fonts/type1/public
 r17.pfb></usr/share/texmf-dist/fonts/type1/public/amsfonts/cm/cmti10.pfb></usr/
 share/texmf-dist/fonts/type1/public/amsfonts/cm/cmtt10.pfb></usr/share/texmf-di
 st/fonts/type1/public/cm-super/sfti1000.pfb>
-Output written on problema.pdf (6 pages, 193525 bytes).
+Output written on problema.pdf (6 pages, 193462 bytes).
 PDF statistics:
  194 PDF objects out of 1000 (max. 8388607)
  137 compressed objects within 2 object streams
