@@ -1,5 +1,4 @@
-docs
-gpu
-org
+gpu/*
+org/*
 */*region*
 */*.tex
