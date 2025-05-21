@@ -1,4 +1,5 @@
+!*/
 !anteproyecto/problema/*.pdf
 !propuesta/*.pdf
 !polarfire/*.pdf
-
+!.gitignore
