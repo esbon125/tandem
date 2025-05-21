@@ -1,3 +1,4 @@
-gpu/*
-org/*
-anteproyecto/problema/*region*
+!anteproyecto/problema/*.pdf
+!propuesta/*.pdf
+!polarfire/*.pdf
+

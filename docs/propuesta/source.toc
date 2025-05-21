@@ -1,4 +1,0 @@
-\babel@toc {spanish}{}\relax 
-\contentsline {section}{\'{I}ndice}{2}{section*.1}%
-\contentsline {section}{\numberline {1}Propuesta}{3}{section.1}%
-\contentsline {section}{\'{I}ndice de figuras}{5}{section*.3}%
