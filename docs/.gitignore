@@ -2,6 +2,5 @@
 !propuesta/*.pdf
 !polarfire/*.pdf
 !.gitignore
-!cia
 !cia/*.pdf
 !cia/CIA_2025_Esteban_Bustamante.tex
