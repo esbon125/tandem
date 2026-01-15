@@ -2,3 +2,6 @@
 !propuesta/*.pdf
 !polarfire/*.pdf
 !.gitignore
+!cia
+!cia/*.pdf
+!cia/*.tex

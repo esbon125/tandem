@@ -1,4 +1,5 @@
 !.gitignore
 !*.tex
-!*/*.tex
+!*
+!**/*.tex
 !org/*.org
