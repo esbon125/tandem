@@ -1,0 +1,61 @@
+project nil "Proyecto Final" "1.0" 2025-06-15 +280d {
+  extend resource{text Phone "Phone"}
+}
+shift s40 "Part time shift" {
+  workinghours wed, thu, fri off
+}
+account esbon1253 "" {
+}
+resource esteban "Esteban Bustamante" {
+email 
+}
+task proyecto "Proyecto Final" {
+  purge allocate
+  allocate esteban
+  start 2025-06-15
+  task start "Inicio de Proyecto" {
+    milestone
+  }
+  task inv "Investigación" {
+    depends !start
+    task preparaci_n "Preparación del Flujo de Trabajo" {
+      complete 100
+      effort 1w
+    }
+    task lectura "Lectura de literatura específica" {
+      depends !preparaci_n
+      effort 3w
+    }
+  }
+  task dis "Diseño" {
+    depends !inv
+    task dise_o "Diseño del Firmware" {
+      effort 1m
+    }
+    task dise_o_del "Diseño del Sistema Operativo" {
+      depends !dise_o
+      effort 1m
+    }
+  }
+  task imp "Implementación básica" {
+    depends !dis
+    task implementaci_n "Implementación del SO" {
+      effort 1m
+    }
+    task implementaci_n_del "Implementación del firmware" {
+      depends !implementaci_n
+      effort 1m
+    }
+  }
+  task doc "Documentación" {
+    depends !dis
+    task generaci_n "Generación de benchmarks" {
+      effort 1w
+    }
+    task redacci_n "Redacción Informe final" {
+      depends !generaci_n
+      effort 3w
+    }
+  }
+}
+include '/home/esbon1253/Documents/agenda_files/reports_template.tji'

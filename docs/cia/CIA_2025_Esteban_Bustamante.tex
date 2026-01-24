@@ -1,0 +1,162 @@
+\documentclass[conference]{IEEEtran}
+\IEEEoverridecommandlockouts
+% The preceding line is only needed to identify funding in the first footnote. If that is unneeded, please comment it out.
+%Template version as of 6/27/2024
+\usepackage[spanish]{babel}
+\usepackage{cite}
+\usepackage{amsmath,amssymb,amsfonts}
+\usepackage{algorithmic}
+\usepackage{graphicx}
+\usepackage{textcomp}
+\usepackage{xcolor}
+\bibliographystyle{./IEEEtran}
+\def\BibTeX{{\rm B\kern-.05em{\sc i\kern-.025em b}\kern-.08em
+    T\kern-.1667em\lower.7ex\hbox{E}\kern-.125emX}}
+\begin{document}
+
+\title{Firmware de un decodificador MPEG-2 implementado en FPGA}
+
+\author{\IEEEauthorblockN{1\textsuperscript{st} Esteban Adriel Bustamante}
+\IEEEauthorblockA{\textit{Universidad Tecnológica Nacional} \\
+\textit{Facultad Regional La Rioja}\\
+La Rioja, Argentina  \\
+ebustamante896@gmail.com}
+}
+
+\maketitle
+
+\begin{abstract}
+This work aims to implement the firmware (specifically for this case 'the driver') for a MPEG-2 decoder implemented in a \textit{Polarfire}\textregistered MPFS095T FPGA. This implies porting the design initially designed for Xilinx ML505 development board, and then designing and implementing the OS and the actual tasks that will altogether constitute the firmware as a whole.
+\end{abstract}
+
+\begin{IEEEkeywords}
+firmware, FPGA, SoC, software, Verilog.
+\end{IEEEkeywords}
+
+\section{Introducción}
+El objetivo de este proyecto es la implementación del firmware de un bloque de hardware implementado en FPGA. Para nuestro caso este bloque de hardware es un decoder MPEG-2 conforme a la norma En primer lugar se muestra en la figura \ref{fig:fig1} el sistema de microprocesadores con el que se va a trabajar. Estamos hablando de la placa PolarFire SoC FPGA Discovery Kit, que además de contener los procesadores mencionados, tiene una FPGA MPFS095T.
+
+
+\section{Metodología}
+En el diseño típico de un sistema de punto fijo se emplea el  flujo observado en la Figura \ref{fig:fig2}. Si bien el sistema ya se encuentra implementado, corresponderá al proyecto actual implementarlo en el SoC PolarFire MPFS095T, corriendo las diferentes pruebas ofrecidas por el diseñador del sistema para verificarlo a nivel comportamental y funcional. Cabe destacar que este algoritmo está totalmente implementado en hardware. 
+
+
+\begin{figure}[ht]
+  \centering
+  \includegraphics[width=0.3\textwidth]{figures/2.png}
+  \caption{\label{fig:fig2}Flujo típico de diseño de sistema en punto fijo}
+\end{figure}
+
+Para la implementación del firmware se utiliza la metodología TDD (\textit{Test Driven Development}), que como lo indican sus siglas se basa en el desarrollo guiado por pruebas, y se encuentra ampliamente difundido en la actualidad en el mundo del software embebido. En la Figura \ref{fig:fig3} observamos el ciclo de desarrollo típico de esta metodología. Son numerosas las ventajas de esta decisión de diseño, pero la principal es que al ser el primordial objetivo conseguir un firmware de nivel industrial que se destaque por su robustez y flexibilidad, es esencial conseguir un nivel de \textit{coverage} del 100\%.
+
+
+
+ El framework de TDD elegido para desarrollar el código es \textit{Ceedling}, pensado para desarrollar firmware para embebidos en ANSI C, lo cual es parte del proyecto. Para la administración del proyecto se hace uso de la herramienta \textit{Org Mode + Projectile}, que permitirá controlar el cumplimiento de los plazos establecidos en la planificación.
+
+\begin{figure}[ht]
+  \centering
+  \includegraphics[width=0.19\textwidth]{figures/3.jpg}
+  \caption{\label{fig:fig3}Desarrollo guiado por pruebas}
+\end{figure}
+
+
+\par En cuanto a la documentación, decir que se realiza con las herramientas Doxygen en conjunto con las \textit{Github Pages}, que permiten automatizar el flujo de publicación de la misma. 
+
+\par Por ultimo recalcar que para la programación de la placa de desarrollo, es decir del FPGA se hace uso del software provisto por el fabricante Libero\textregistered, y para la programación del sistema de microprocesadores se hará uso de otro software del fabricante llamado Softconsole\textregistered. En la figura \ref{fig:fig1}  se muestra el flujo completo para llegar a un nivel de produccción del firmware.
+\begin{figure}[ht]
+  \centering
+  \includegraphics[width=0.4\textwidth]{figures/1.png}
+  \caption{\label{fig:fig1} Flujo de trabajo de software completo}
+\end{figure}
+
+\section{Codec MPEG-2}
+\label{sec:codec-mpeg-2}
+Se presenta ahora el diseño en hardware en el que basamos nuestro trabajo. Se trata de un diseño \textit{open-source}, (ver Ref. \cite{De_Vleeschauwer_2017}) implementado en Verilog. 
+
+\begin{figure}[ht]
+  \centering
+  \includegraphics[width=0.3\textwidth]{figures/4.jpeg}
+  \caption{\label{fig:fig4} Pipeline del Decodificador MPEG-2}
+\end{figure}
+
+En la Figura \ref{fig:fig4} se muestra el diagrama en bloques completo del diseño. Ahora describimos brevemente cada una de sus partes:
+\begin{enumerate}
+  \item \textbf{MPEG-2 Input:} Recibe la secuencia comprimida en formato MPEG-2, que puede ser un flujo de transporte o un flujo elemental de video.
+  
+  \item \textbf{Elementary Stream Strip:} Extrae únicamente el flujo elemental de video del flujo de entrada.
+
+  \item \textbf{Video Buffer:} Almacena temporalmente el flujo de bits para asegurar una alimentación continua al decodificador.
+
+  \item \textbf{Syntax Parser:} Analiza la sintaxis del flujo de bits para identificar cabeceras, parámetros y estructuras de control.
+
+  \item \textbf{Variable Length Decoding (VLD):} Decodifica los símbolos comprimidos con codificación de longitud variable (como Huffman), produciendo coeficientes y vectores de movimiento.
+
+  \item \textbf{Run-Level Decoding, Inverse Quantizing, Inverse Zigzag:}
+  \begin{itemize}
+    \item \textit{Run-Level Decoding:} Reconstruye la secuencia de coeficientes.
+    \item \textit{Inverse Quantizing:} Restaura la escala original de los valores cuantificados.
+    \item \textit{Inverse Zigzag:} Reordena los coeficientes a su formato 2D original.
+  \end{itemize}
+
+  \item \textbf{Inverse Discrete Cosine Transform (IDCT):} Convierte los coeficientes del dominio de la frecuencia al dominio espacial, generando datos de píxeles.
+
+  \item \textbf{Motion Compensation:} Usa cuadros anteriores o futuros y vectores de movimiento para reconstruir bloques predictivos en cuadros P y B.
+
+  \item \textbf{Frame Store:} Almacena los cuadros decodificados que servirán como referencia para la predicción por movimiento.
+
+  \item \textbf{Chroma Resampling:} Convierte el muestreo de color de formatos como 4:2:0 a formatos como 4:2:2 o 4:4:4 para mejorar la calidad visual. En nuestro caso se usa siempre el muestreo 4:2:0.
+
+  \item \textbf{Memory Controller / RAM:} Gestiona el acceso a la memoria externa para almacenar cuadros, referencias y buffers intermedios.
+
+  \item \textbf{Video Sync and Timing:} Genera las señales de sincronización necesarias para mostrar correctamente los cuadros en la pantalla.
+
+  \item \textbf{Mixer:} Mezcla el video con elementos gráficos superpuestos como menús o subtítulos (OSD).
+
+  \item \textbf{On-Screen Display (OSD):} Agrega elementos gráficos o informativos sobre la imagen de video.
+
+  \item \textbf{YUV to RGB:} Convierte el video del espacio de color YUV al espacio RGB, usado por la mayoría de las pantallas.
+
+  \item \textbf{Digital Video Out:} Produce la salida final del video ya decodificado y preparado para su visualización.
+
+  \item \textbf{Dot Clock:} Proporciona la señal de reloj que controla el ritmo de presentación de los píxeles en pantalla.
+\end{enumerate}
+
+\section{SoC donde se implementará el proyecto}
+\label{sec:soc-donde-se}
+El SoC fue desarrollado por la empresa Microchip\textregistered, y se trata de un MPFS095T, embebido a su vez en la placa de desarrollo \textit{Discovery\textregistered Kit}, que contiene una diversidad de periféricos y del programador del SoC. En las figuras 5 y 6 incluimos figuras del kit y del subsistema de microprocesadores que se encuentra en el mismo. Esta última información nos resulta particularmente útil para el desarrollo del firmware.
+
+\begin{figure}[ht]
+  \centering
+  \includegraphics[width=0.5\textwidth]{figures/5.jpeg}
+  \caption{\label{fig:fig5} Discovery\textregistered \hspace{0.1cm}Kit}
+\end{figure}
+
+\begin{figure}[ht]
+  \centering
+  \includegraphics[width=0.5\textwidth]{figures/6.jpg}
+  \caption{\label{fig:fig6} Diagrama en bloques del MSS(Microprocessor Sub-System)}
+\end{figure}
+
+
+
+Para poder portar nuestro diseño es necesario tener en cuenta algunos detalles:
+\begin{itemize}
+\item En primer lugar, el diseño original incluía el uso de un DDR2, mientras que este hace uso de un DDR4 ya disponible en la plaa por lo que prácticamente el controlador del mismo debe ser reescrito por completo.
+\item  Por otro lado en el diseño original se incluye un pequeño stack TCP/IP para poder interactuar a través de Ethernet con la placa. A partir de esta pequeña implementación podría generarse un controlador completo de Ethernet, teniendo en cuenta las altas capacidades en cuanto a cantidad de elementos lógicos para la misma.
+\item Por último también deberán ser escritos los constraints correspondientes para el nuevo hardware sobre el que se va a implementar el diseño.
+\end{itemize}
+
+\nocite{*}
+\pagebreak
+\newpage
+
+\bibliography{bibliografia}
+
+\listoffigures
+
+\end{document}
+
+%%% Local Variables:
+%%% mode: LaTeX
+%%% TeX-master: t
+%%% End:

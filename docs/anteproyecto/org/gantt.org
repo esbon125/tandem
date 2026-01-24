@@ -1,0 +1,97 @@
+#+title: PROYECTO FINAL - UTN Facultad Regional La Rioja
+#+AUTHOR: Esteban Bustamante <ebustamante896@gmail.com>
+#+PROPERTY: allocate_ALL esteban
+#+PROPERTY: Effort_ALL 1w 3w 1m 2m 6m 
+#+PROPERTY: ORDERED_ALL t nil
+#+COLUMNS: %50ITEM(Task) %ALLOCATE(allocate) %EFFORT(Effort) %ORDERED
+
+* Proyecto Final                                        :taskjuggler_project:
+:PROPERTIES:
+:ALLOCATE: esteban
+:start:  2025-06-15
+:extend: resource{text Phone "Phone"}
+:END:
+
+** Inicio de Proyecto
+:PROPERTIES:
+:task_id:  start
+:END:
+
+** Investigación
+:PROPERTIES:
+:BLOCKER:  start
+:ORDERED:  t
+:task_id:  inv
+:END:
+*** DONE Preparación del Flujo de Trabajo
+CLOSED: [2025-07-07 Mon 13:59]
+:PROPERTIES:
+:EFFORT:   1w
+:END:
+
+*** Lectura de literatura específica
+:PROPERTIES:
+:EFFORT:   3w
+:END:
+** Diseño
+:PROPERTIES:
+:ORDERED:  t
+:BLOCKER:  inv
+:task_id:  dis
+:END:
+
+*** Diseño del Firmware
+:PROPERTIES:
+:EFFORT:   1m
+:END:
+
+*** Diseño del Sistema Operativo
+:PROPERTIES:
+:EFFORT:   1m
+:END:
+
+** Implementación básica
+:PROPERTIES:
+:ORDERED:  t
+:task_id:  imp
+:BLOCKER:  dis
+:END:
+
+*** Implementación del SO
+:PROPERTIES:
+:EFFORT:   1m
+:END:
+
+*** Implementación del firmware
+:PROPERTIES:
+:EFFORT:   1m
+:END:
+
+** Documentación
+:PROPERTIES:
+:ORDERED:  t
+:BLOCKER:  dis
+:task_id:  doc
+:END:
+
+*** Generación de benchmarks
+:PROPERTIES:
+:EFFORT:   1w
+:END:
+
+*** Redacción Informe final
+:PROPERTIES:
+:EFFORT:   3w
+:END:
+
+
+* Recursos                                             :taskjuggler_resource:
+
+** Esteban Bustamante
+:PROPERTIES:
+:resource_id: esteban
+:email:    "ebustamante896@gmail.com"
+:Phone:    "3804547618"
+:END:
+
+

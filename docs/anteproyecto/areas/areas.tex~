@@ -1,0 +1,14 @@
+
+\section{Áreas del plan de estudio aplicadas}
+\label{sec:areas}
+
+Las áreas estrechamente relacionadas con el presente trabajo son las siguientes:
+
+\begin{itemize}
+\item Técnicas Digitales: al tratarse de una implementación en hardware del algoritmo de decodificación sobre una FPGA, es absolutamente necesario el entendimiento del funcionamiento de los circuitos digitales tanto combinacionales como secuenciales, incluyendo distintos algoritmos para la realización de diversas operaciones como suma, multiplicación y ni hablar del uso de registros que será gran parte de nuestro trabajo . 
+\end{itemize}
+
+%%% local Variables:
+%%% mode: LaTeX
+%%% TeX-master: "../anteproyecto"
+%%% End:
