@@ -36,7 +36,7 @@
 
 // write framestore to file 'framestore_001.ppm' every 200 macroblocks. requires DUMP_FRAMESTORE.
 `undef DUMP_FRAMESTORE_OFTEN
-//`define DUMP_FRAMESTORE_OFTEN 1
+`define DUMP_FRAMESTORE_OFTEN 1
 
 module mem_ctl(
   clk, rst,
@@ -299,7 +299,7 @@ module mem_ctl(
     
   task write_mb;
 
-    input [31:0]fp;            // file pointer to write to 
+    input integer fp;            // file pointer to write to 
     input  [2:0]blocks;        // blocks per macroblock
     input [21:0]base_address;  // base address of lumi/chromi region in memory
     input [15:0]mb_width;      // width in macroblocks
@@ -316,7 +316,7 @@ module mem_ctl(
     reg  [7:0]pixel_6;
     reg  [7:0]pixel_7;
  
-    integer   fp;
+//    integer   fp;
     integer   h;
     integer   f;
     integer   r;
@@ -376,12 +376,12 @@ module mem_ctl(
 
   task write_row;
 
-    input [31:0]fp;       // file pointer to write to 
+    input integer fp;       // file pointer to write to 
     input [21:0]address;  // address of block row
 
     reg  [63:0]dta;
 
-    integer     fp;
+//    integer     fp;
 
     reg  signed [7:0]pixel_0;
     reg  signed [7:0]pixel_1;

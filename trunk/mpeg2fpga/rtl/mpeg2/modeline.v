@@ -26,6 +26,7 @@
 `ifndef MODELINE_PAL_PROGR
 `ifndef MODELINE_HDTV_INTERL
 `ifndef MODELINE_VGA
+`ifndef MODELINE_NOKIA_7
 `define MODELINE_SVGA 1
 `endif
 `endif
@@ -33,7 +34,7 @@
 `endif
 `endif
 `endif
-
+`endif
 // XXX check values
 
 `ifdef MODELINE_SVGA
@@ -166,4 +167,20 @@
     VID_MODE       = 3'b001;
 `endif
 
+`ifdef MODELINE_NOKIA_7
+  parameter [11:0]
+    HORZ_RES       = 720,
+    HORZ_SYNC_STRT = 696,
+    HORZ_SYNC_END  = 760,
+    HORZ_LEN       = 800,
+    VERT_RES       = 576,
+    VERT_SYNC_STRT = 577,
+    VERT_SYNC_END  = 580,
+    VERT_LEN       = 585,
+    HALFLINE       = 0;
+
+  parameter [2:0]
+    VID_MODE       = 3'b000;
+
+`endif
 /* not truncated */

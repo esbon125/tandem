@@ -2,13 +2,17 @@
 # Use: make [all|test|project|clean]
 #
 
-STREAM = ../../tools/streams/stream-susi.mpg
-#STREAM = ../../tools/streams/colorbars.mpg
+#STREAM = ../../tools/streams/stream-susi.mpg
+#STREAM = ../../tools/streams/nokia/nokia_7/nokia7_dual.bit
+STREAM = ../../tools/streams/tcela/tcela-10-killer/tcela-10.bits
+#STREAM = ../../tools/streams/sample_640x360.m2v
 #STREAM = ../../tools/streams/telediario_2.mpg
 #STREAM = /home/koen/m2v/neujahrskonzert.mv2
 
-MODELINE = MODELINE_SIF
+MODELINE = MODELINE_SVGA
 #MODELINE = MODELINE_PAL_INTERL
+#DEBUG =
+#DEBUG = -DDEBUG
 
 SRCS = \
   testbench.v \
@@ -69,10 +73,10 @@ IVERILOG_DUMPER=lxt
 all: mpeg2 stream.dat
 
 mpeg2: $(SRCS) $(INCS)
-	iverilog -D__IVERILOG__ -D$(MODELINE) -I ../../rtl/mpeg2 -o mpeg2 $(SRCS)
+	iverilog -D__IVERILOG__ -D$(MODELINE) $(DEBUG) -I ../../rtl/mpeg2 -o mpeg2 $(SRCS)
 
 test: mpeg2 stream.dat
-	IVERILOG_DUMPER=lxt ./mpeg2 
+	IVERILOG_DUMPER=vcd ./mpeg2 
 
 clean: 
 	rm -f mpeg2 stream.dat testbench.lxt trace framestore_*.ppm tv_out_*.ppm
