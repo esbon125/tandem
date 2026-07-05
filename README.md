@@ -11,7 +11,7 @@ código abierto orientado a Xilinx (`trunk/mpeg2fpga`, por Koen De Vleeschauwer)
 ## Meta final del sistema
 
 La placa objetivo es el **Discovery Kit de Microchip (PolarFire SoC)**. El decoder corre como
-lógica de fábrica (FPGA fabric) y es controlado por el **MSS** (los cores ARM Cortex-A del SoC,
+lógica de fábrica (FPGA fabric) y es controlado por el **MSS** (los cores RISCV E54 y E50 del SoC,
 corriendo Linux), que además expone el sistema por Ethernet. El firmware del lado Linux es un
 **módulo de kernel** (con tests via **KUnit**) que habla con el decoder únicamente a través de
 **AXI4** — un slave AXI4-Lite para registros de control/estado, y un master AXI4 propio del
