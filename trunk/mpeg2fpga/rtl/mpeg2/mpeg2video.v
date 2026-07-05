@@ -48,7 +48,8 @@
 `define CHECK 1
 `endif
 
-module mpeg2video(clk, mem_clk, dot_clk, 
+`ifdef __IVERILOG__
+module mpeg2video(clk, mem_clk, dot_clk,
              rst,                                                                                                                 // clocked with clk
              stream_data, stream_valid,                                                                                           // clocked with clk
 	     reg_addr, reg_wr_en, reg_dta_in, reg_rd_en, reg_dta_out,                                                             // clocked with clk
@@ -62,6 +63,24 @@ module mpeg2video(clk, mem_clk, dot_clk,
   input            clk;                     // clock. Typically a multiple of 27 Mhz as MPEG2 timestamps have a 27 Mhz resolution.
   input            mem_clk;                 // memory clock. Typically 133-166 MHz.
   input            dot_clk;                 // video clock. Typically between 25 and 75 Mhz, depending upon MPEG2 resolution and frame rate.
+`else
+module mpeg2video(ref_clk,
+             rst,                                                                                                                 // clocked with clk
+             stream_data, stream_valid,                                                                                           // clocked with clk
+	     reg_addr, reg_wr_en, reg_dta_in, reg_rd_en, reg_dta_out,                                                             // clocked with clk
+             busy, error, interrupt, watchdog_rst,                                                                                // clocked with clk
+             r, g, b, y, u, v, pixel_en, h_sync, v_sync, c_sync,                                                                  // clocked with dot_clk
+             mem_req_rd_cmd, mem_req_rd_addr, mem_req_rd_dta, mem_req_rd_en, mem_req_rd_valid,                                    // clocked with mem_clk
+             mem_res_wr_dta, mem_res_wr_en, mem_res_wr_almost_full,                                                               // clocked with mem_clk
+             testpoint_dip, testpoint_dip_en, testpoint
+	     );
+
+  input            ref_clk;
+
+  wire            clk;                     // clock. Typically a multiple of 27 Mhz as MPEG2 timestamps have a 27 Mhz resolution.
+  wire            mem_clk;                 // memory clock. Typically 133-166 MHz.
+  wire            dot_clk;                 // video clock. Typically between 25 and 75 Mhz, depending upon MPEG2 resolution and frame rate.
+`endif
 
   input            rst;                     // active low reset. Internally synchronized.
 
@@ -524,7 +543,30 @@ module mpeg2video(clk, mem_clk, dot_clk,
   wire       disp_wr_addr_overflow;
   wire       disp_wr_dta_overflow;
   wire       osd_wr_overflow;
+  
+`ifndef __IVERILOG__
+  PF_CCC_C0 u_ccc (
+    .REF_CLK_0(ref_clk),
 
+    .OUT0_FABCLK_0(mem_clk),
+    .OUT1_FABCLK_0(clk),
+    .OUT2_FABCLK_0(dot_clk)
+);
+`endif
+
+reg [31:0] cnt_clk;
+reg [31:0] cnt_mem;
+reg [31:0] cnt_dot;
+
+always @(posedge clk)
+    cnt_clk <= cnt_clk + 1;
+
+always @(posedge mem_clk)
+    cnt_mem <= cnt_mem + 1;
+
+always @(posedge dot_clk)
+    cnt_dot <= cnt_dot + 1;
+  
 `include "fifo_size.v"
 
   /* 

@@ -55,7 +55,7 @@ SRCS = \
   ../../rtl/mpeg2/mem_addr.v \
   ../../rtl/mpeg2/synchronizer.v \
   ../../rtl/mpeg2/probe.v \
-  ../../rtl/mpeg2/xfifo_sc.v
+  ../../rtl/mpeg2/xfifo_sc.v \
 
 INCS = \
   ../../rtl/mpeg2/fifo_size.v \

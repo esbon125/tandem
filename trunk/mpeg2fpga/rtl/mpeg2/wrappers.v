@@ -156,7 +156,7 @@ module fifo_sc (
   parameter [8:0]addr_width=9'd8;     /* Address bus width, determines fifo size by evaluating 2^addr_width */
   parameter [8:0]prog_thresh=9'd1;    /* Programmable threshold constant for prog_empty and prog_full */
 
-  parameter FIFO_XILINX=0;    /* use Xilinx FIFO primitives */
+  parameter FIFO_XILINX=1'b0;    /* use Xilinx FIFO primitives */
   parameter check_valid=1;    /* assign x's to fifo output when valid is not asserted */
   
   input          clk;
@@ -283,7 +283,7 @@ module fifo_dc (
   parameter [8:0]addr_width=9'd8;     /* Address bus width, determines fifo size by evaluating 2^addr_width */
   parameter [8:0]prog_thresh=9'd1;    /* Programmable threshold constant for prog_empty and prog_full */
 
-  parameter FIFO_XILINX=1;    /* use Xilinx FIFO primitives */
+  parameter FIFO_XILINX=0;    /* use Xilinx FIFO primitives */
   parameter check_valid=1;    /* assign x's to fifo output when valid is not asserted */
          
   input          rst;         /* low active sync master reset */
@@ -305,29 +305,62 @@ module fifo_dc (
   output         prog_full;   /* indicates the fifo has prog_thresh free entries, or less, left. threshold for asserting prog_full is 2^addr_width - prog_thresh  */
  
   /* Writing when the fifo is full, or reading while the fifo is empty, does not destroy the contents of the fifo. */
+  generate
+    if (FIFO_XILINX == 0)
+      begin
+        /* Implementation using "soft" fifo */
+	 xfifo_dc #(
+			  .dta_width(dta_width),
+			  .addr_width(addr_width),
+			  .prog_thresh(prog_thresh)
+			  )
+	 xfifo_dc (
+		   .rst(~rst), 
+		   .wr_clk(wr_clk), 
+		   .din(din), 
+		   .wr_en(wr_en), 
+		   .full(full), 
+		   .wr_ack(wr_ack), 
+		   .overflow(overflow), 
+		   .prog_full(prog_full), 
+		   .rd_clk(rd_clk), 
+		   .dout(dout), 
+		   .rd_en(rd_en), 
+		   .empty(empty), 
+		   .valid(valid), 
+		   .underflow(underflow), 
+		   .prog_empty(prog_empty)
+		   );
+
+      end
+    else
+      begin
+        /* Implementation using "hard" fifo */
+	 xilinx_fifo_dc #(
+			  .dta_width(dta_width),
+			  .addr_width(addr_width),
+			  .prog_thresh(prog_thresh)
+			  )
+	 xfifo_dc (
+		   .rst(~rst), 
+		   .wr_clk(wr_clk), 
+		   .din(din), 
+		   .wr_en(wr_en), 
+		   .full(full), 
+		   .wr_ack(wr_ack), 
+		   .overflow(overflow), 
+		   .prog_full(prog_full), 
+		   .rd_clk(rd_clk), 
+		   .dout(dout), 
+		   .rd_en(rd_en), 
+		   .empty(empty), 
+		   .valid(valid), 
+		   .underflow(underflow), 
+		   .prog_empty(prog_empty)
+		   );
+      end
+  endgenerate
   
-  xilinx_fifo_dc #(
-    .dta_width(dta_width),
-    .addr_width(addr_width),
-    .prog_thresh(prog_thresh)
-    )
-  xfifo_dc (
-    .rst(~rst), 
-    .wr_clk(wr_clk), 
-    .din(din), 
-    .wr_en(wr_en), 
-    .full(full), 
-    .wr_ack(wr_ack), 
-    .overflow(overflow), 
-    .prog_full(prog_full), 
-    .rd_clk(rd_clk), 
-    .dout(dout), 
-    .rd_en(rd_en), 
-    .empty(empty), 
-    .valid(valid), 
-    .underflow(underflow), 
-    .prog_empty(prog_empty)
-    );
 
 `ifdef CHECK_FIFO_PARAMS
   initial #0

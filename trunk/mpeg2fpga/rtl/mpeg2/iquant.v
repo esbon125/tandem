@@ -35,8 +35,8 @@ module intra_quant_matrix(clk, rst, rd_addr, rd_clk_en, dta_out, wr_addr, dta_in
   input           alternate_scan;
 
   reg default_values;
-  wire    [7:0]do;
-  reg     [7:0]default_do;
+  wire    [7:0]iquant_do;
+  reg     [7:0]default_iquant_do;
   reg     [5:0]iquant_wr_addr;
   reg          iquant_wr_en;
   reg     [7:0]iquant_wr_dta;
@@ -99,14 +99,14 @@ module intra_quant_matrix(clk, rst, rd_addr, rd_clk_en, dta_out, wr_addr, dta_in
   /* reading */
 
   always @(posedge clk) 
-    if (~rst) default_do <= 8'b0;
-    else if (rd_clk_en) default_do <= default_intra_quant(rd_addr);
-    else default_do <= default_do;
+    if (~rst) default_iquant_do <= 8'b0;
+    else if (rd_clk_en) default_iquant_do <= default_intra_quant(rd_addr);
+    else default_iquant_do <= default_iquant_do;
 
   always @(posedge clk) 
     if (~rst) dta_out <= 8'b0;
-    else if (rd_clk_en && default_values) dta_out <= default_do;
-    else if (rd_clk_en) dta_out <= do;
+    else if (rd_clk_en && default_values) dta_out <= default_iquant_do;
+    else if (rd_clk_en) dta_out <= iquant_do;
     else dta_out <= dta_out;
 
   always @(posedge clk)
@@ -135,7 +135,7 @@ module intra_quant_matrix(clk, rst, rd_addr, rd_clk_en, dta_out, wr_addr, dta_in
     .din(iquant_wr_dta),                                      // data input
     .rd_en(1'b1),                                             // read enable, active high
     .rd_addr(rd_addr),                                        // read address
-    .dout(do)                                                 // data output
+    .dout(iquant_do)                                                 // data output
     );
 
   /*
@@ -217,7 +217,7 @@ module intra_quant_matrix(clk, rst, rd_addr, rd_clk_en, dta_out, wr_addr, dta_in
 `ifdef DEBUG
   always @(posedge clk) 
     if (rd_clk_en && default_values) #0 $display("%m\tread %h from %h (default value)", default_intra_quant(rd_addr), rd_addr);
-    else if (rd_clk_en) #0 $display("%m\tread %h from %h", do, rd_addr);
+    else if (rd_clk_en) #0 $display("%m\tread %h from %h", iquant_do, rd_addr);
 
   always @(posedge clk)
     if (~rst) $display("%m\tset to default values");
@@ -245,7 +245,7 @@ module non_intra_quant_matrix(clk, rst, rd_addr, rd_clk_en, dta_out, wr_addr, dt
   input           alternate_scan;
 
   reg default_values;
-  wire [7:0]do;
+  wire [7:0]iquant_do;
   reg     [5:0]non_iquant_wr_addr;
   reg          non_iquant_wr_en;
   reg     [7:0]non_iquant_wr_dta;
@@ -309,7 +309,7 @@ module non_intra_quant_matrix(clk, rst, rd_addr, rd_clk_en, dta_out, wr_addr, dt
 
   always @(posedge clk) 
     if (rd_clk_en && default_values) dta_out <= 8'd16 ; // Default non intra block quantisation matrix value is 8'd16. par. 6.3.11.
-    else if (rd_clk_en) dta_out <= do;
+    else if (rd_clk_en) dta_out <= iquant_do;
     else dta_out <= dta_out;
 
   always @(posedge clk)
@@ -337,13 +337,13 @@ module non_intra_quant_matrix(clk, rst, rd_addr, rd_clk_en, dta_out, wr_addr, dt
     .din(non_iquant_wr_dta),                                  // data input
     .rd_en(1'b1),                                             // read enable, active high
     .rd_addr(rd_addr),                                        // read address
-    .dout(do)                                                 // data output
+    .dout(iquant_do)                                                 // data output
     );
 
 `ifdef DEBUG
   always @(posedge clk) 
     if (rd_clk_en && default_values) #0 $display("%m\tread %h from %h (default value)", 8'd16, rd_addr);
-    else if (rd_clk_en) #0 $display("%m\tread %h from %h", do, rd_addr);
+    else if (rd_clk_en) #0 $display("%m\tread %h from %h", iquant_do, rd_addr);
 
   always @(posedge clk)
     if (~rst) $display("%m\tset to default values");

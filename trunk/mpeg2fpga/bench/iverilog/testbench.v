@@ -26,15 +26,15 @@
 /* max number of bytes in stream.dat mpeg2 stream */
 `define MAX_STREAM_LENGTH 4194304
 
-/* clk at 75 MHz */
-`define CLK_PERIOD 8.0
+/* clk at 108 MHz, matching PF_CCC_C0 OUT1_FABCLK_0 (GL1_0) */
+`define CLK_PERIOD 9.259
 
-/* mem_clk at 125 MHz */
-`define MEMCLK_PERIOD 8.0
+/* mem_clk at 162 MHz, matching PF_CCC_C0 OUT0_FABCLK_0 (GL0_0) */
+`define MEMCLK_PERIOD 6.173
 
-/* dot_clk at 40 MHz */
+/* dot_clk at 27 MHz, matching PF_CCC_C0 OUT2_FABCLK_0 (GL2_0) */
 
-`define VIDCLK_PERIOD 25.0
+`define VIDCLK_PERIOD 37.037
 
 `undef DEBUG
 //`define DEBUG 1
