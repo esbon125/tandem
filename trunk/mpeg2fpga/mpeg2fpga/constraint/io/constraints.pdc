@@ -1,0 +1,5 @@
+set_io -port_name {ref_clk} -pin_name {R18}
+
+set_io -port_name {rst_n} -pin_name {R17}
+
+set_io -port_name {led} -pin_name {U15}

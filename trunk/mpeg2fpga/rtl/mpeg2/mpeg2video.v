@@ -553,7 +553,7 @@ module mpeg2video(ref_clk,
     .OUT2_FABCLK_0(dot_clk)
 );
 `endif
-
+(* syn_keep = 1, syn_preserve = 1, syn_noprune = 1 *)
 reg [31:0] cnt_clk;
 reg [31:0] cnt_mem;
 reg [31:0] cnt_dot;

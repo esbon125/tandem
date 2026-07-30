@@ -1,3 +1,4 @@
 !mpeg2fpga
 !mpeg2fpga/**
 !.gitignore
+mpeg2fpga/tools/streams/
