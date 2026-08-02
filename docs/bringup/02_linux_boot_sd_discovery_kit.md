@@ -448,8 +448,22 @@ cadena de arranque.)*
 
 ## Cómo iniciar sesión y verificar el kernel
 
-Con el prompt `mpfs-disco-kit login:` visible en `/dev/ttyUSB0` (a 115200 8N1, igual que las demás
-capturas):
+Las capturas anteriores usaron `cat /dev/ttyUSBn > archivo`, que solo lee de forma pasiva — no
+sirve para escribir (login, comandos). Para una sesión interactiva real se usó **`screen`**, un
+multiplexor de terminal: además de su uso habitual (sesiones persistentes que sobreviven a una
+desconexión SSH), sabe hablar directamente con un dispositivo serie, poniendo la línea en modo
+interactivo raw (se tipea y se ve la respuesta en tiempo real, carácter a carácter, tal cual llega
+del otro extremo del enlace). Su "meta key" para comandos internos (salir, desconectar la sesión,
+etc.) es `Ctrl-A`, separada de lo que efectivamente se le envía al dispositivo remoto.
+
+```sh
+stty -F /dev/ttyUSB0 115200 cs8 -cstopb -parenb -crtscts raw -echo   # mismo formato 115200 8N1 de siempre
+screen /dev/ttyUSB0 115200
+```
+
+(Para salir: `Ctrl-A` seguido de `k`, confirmando con `y`.)
+
+Con el prompt `mpfs-disco-kit login:` visible:
 
 1. Escribir `root` y Enter — usuario por defecto de la imagen `mchp-base-image`, sin contraseña
    configurada (si en algún momento la pidiera, la imagen usa `microchip` como default).
@@ -457,12 +471,24 @@ capturas):
    ```sh
    uname -a
    ```
-   Esto va a imprimir, en una sola línea: nombre del kernel (`Linux`), hostname
-   (`mpfs-disco-kit`), versión completa del kernel (la misma que ya vimos en el log de boot:
-   `6.18.17-linux4microchip-2026.04.1-...`), fecha de build, y arquitectura (`riscv64`) — sirve
-   para confirmar, sin ambigüedad, que estás en la sesión real de Linux corriendo en los harts U54
-   (no en la consola de HSS ni en U-Boot) y que la versión de kernel es la que declaraba la imagen
-   descargada.
+   Esto imprime, en una sola línea: nombre del kernel (`Linux`), hostname (`mpfs-disco-kit`),
+   versión completa del kernel (la misma que ya vimos en el log de boot), fecha de build, y
+   arquitectura (`riscv64`) — confirma, sin ambigüedad, que la sesión es la de Linux corriendo en
+   los harts U54 (no la consola de HSS ni la de U-Boot) y que la versión de kernel es la que
+   declaraba la imagen descargada.
+
+### Log capturado
+
+```
+mpfs-disco-kit login: root
+root@mpfs-disco-kit:~# uname -a
+Linux mpfs-disco-kit 6.18.17-linux4microchip-2026.04.1-g7fbe4f69684d #1 SMP Wed Apr 29 16:43:56 UTC 2026 riscv64 GNU/Linux
+```
+
+Confirma login exitoso como `root` sin contraseña, y que la shell corre sobre el kernel
+`6.18.17-linux4microchip-2026.04.1` en arquitectura `riscv64` — coincide exactamente con la versión
+reportada durante el boot (`Linux version 6.18.17-linux4microchip-2026.04.1-...`), cerrando la
+verificación de punta a punta de la Fase 2.
 
 ## Conclusión
 
