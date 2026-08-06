@@ -64,7 +64,7 @@ module mpeg2video(clk, mem_clk, dot_clk,
   input            mem_clk;                 // memory clock. Typically 133-166 MHz.
   input            dot_clk;                 // video clock. Typically between 25 and 75 Mhz, depending upon MPEG2 resolution and frame rate.
 `else
-module mpeg2video(ref_clk,
+module mpeg2video(ref_clk, clk_out,
              rst,                                                                                                                 // clocked with clk
              stream_data, stream_valid,                                                                                           // clocked with clk
 	     reg_addr, reg_wr_en, reg_dta_in, reg_rd_en, reg_dta_out,                                                             // clocked with clk
@@ -77,9 +77,17 @@ module mpeg2video(ref_clk,
 
   input            ref_clk;
 
+  /* clk, re-exposed as an output so an external APB bridge can be clocked
+   * by the exact same PF_CCC_C0-derived clock domain that regfile.v uses
+   * internally, instead of instantiating a second, unsynchronized CCC.
+   * Purely additive -- does not change PF_CCC_C0's configuration or any
+   * existing internal wiring. See rtl/mpeg2/mpeg2fpga_apb_peripheral.v.
+   */
+  output           clk_out;
   wire            clk;                     // clock. Typically a multiple of 27 Mhz as MPEG2 timestamps have a 27 Mhz resolution.
   wire            mem_clk;                 // memory clock. Typically 133-166 MHz.
   wire            dot_clk;                 // video clock. Typically between 25 and 75 Mhz, depending upon MPEG2 resolution and frame rate.
+  assign clk_out = clk;
 `endif
 
   input            rst;                     // active low reset. Internally synchronized.
