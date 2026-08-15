@@ -11,10 +11,11 @@ source components/MPEG2FPGA_APB_PERIPHERAL.tcl
 build_design_hierarchy
 
 #Sourcing the Tcl files for creating individual components under the top level
-source components/CORERESET.tcl 
-source components/INIT_MONITOR.tcl 
-source components/PF_CCC_C0.tcl 
-source components/CLOCKS_AND_RESETS.tcl 
+source components/CORERESET.tcl
+source components/INIT_MONITOR.tcl
+source components/PF_CCC_C0.tcl
+source components/MPEG2FPGA_FIFOS.tcl
+source components/CLOCKS_AND_RESETS.tcl
 source components/DMA_CONTROLLER.tcl 
 source components/DMA_INITIATOR.tcl 
 source components/FIC0_INITIATOR.tcl 
