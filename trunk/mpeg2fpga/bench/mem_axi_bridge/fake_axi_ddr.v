@@ -28,7 +28,7 @@ module fake_axi_ddr (
   input        clk;
   input        rst;
 
-  input  [7:0] m_axi_awid;
+  input  [3:0] m_axi_awid;
   input [37:0] m_axi_awaddr;
   input  [7:0] m_axi_awlen;
   input  [2:0] m_axi_awsize;
@@ -42,12 +42,12 @@ module fake_axi_ddr (
   input        m_axi_wvalid;
   output reg   m_axi_wready;
 
-  output reg [7:0] m_axi_bid;
+  output reg [3:0] m_axi_bid;
   output reg [1:0] m_axi_bresp;
   output reg       m_axi_bvalid;
   input            m_axi_bready;
 
-  input  [7:0] m_axi_arid;
+  input  [3:0] m_axi_arid;
   input [37:0] m_axi_araddr;
   input  [7:0] m_axi_arlen;
   input  [2:0] m_axi_arsize;
@@ -55,7 +55,7 @@ module fake_axi_ddr (
   input        m_axi_arvalid;
   output reg   m_axi_arready;
 
-  output reg [7:0]  m_axi_rid;
+  output reg [3:0]  m_axi_rid;
   output reg [63:0] m_axi_rdata;
   output reg [1:0]  m_axi_rresp;
   output reg        m_axi_rlast;
@@ -151,7 +151,7 @@ module fake_axi_ddr (
       have_aw <= 1'b0;
       have_w  <= 1'b0;
       m_axi_bvalid <= 1'b0;
-      m_axi_bid    <= 8'b0;
+      m_axi_bid    <= 4'b0;
       m_axi_bresp  <= 2'b00;
       write_addr_r <= 38'b0;
     end else begin
@@ -166,7 +166,7 @@ module fake_axi_ddr (
         CS_DELAY: if (b_cnt == 0) begin
           mem[write_addr_r[16:3]] <= w_data_r;
           m_axi_bvalid <= 1'b1;
-          m_axi_bid    <= 8'b0;
+          m_axi_bid    <= 4'b0;
           m_axi_bresp  <= 2'b00;
           combine_state <= CS_BVALID;
         end else b_cnt <= b_cnt - 3'd1;
@@ -202,7 +202,7 @@ module fake_axi_ddr (
       m_axi_rdata  <= 64'b0;
       m_axi_rresp  <= 2'b00;
       m_axi_rlast  <= 1'b0;
-      m_axi_rid    <= 8'b0;
+      m_axi_rid    <= 4'b0;
     end else begin
       m_axi_arready <= 1'b0;
       case (ar_state)
@@ -227,7 +227,7 @@ module fake_axi_ddr (
           m_axi_rdata  <= mem[ar_addr_r[16:3]];
           m_axi_rresp  <= 2'b00;
           m_axi_rlast  <= 1'b1;
-          m_axi_rid    <= 8'b0;
+          m_axi_rid    <= 4'b0;
           m_axi_rvalid <= 1'b1;
           r_state      <= RS_RVALID;
         end else r_cnt <= r_cnt - 3'd1;

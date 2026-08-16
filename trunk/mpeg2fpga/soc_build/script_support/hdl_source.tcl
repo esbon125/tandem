@@ -58,4 +58,5 @@ import_files -library work -hdl_source ../../rtl/mpeg2/xfifo_sc.v
 import_files -library work -hdl_source ../../rtl/mpeg2/xfifo_dc.v
 import_files -library work -hdl_source ../../rtl/mpeg2/wrappers.v
 import_files -library work -hdl_source ../../rtl/mpeg2/apb3_mpeg2fpga_bridge.v
+import_files -library work -hdl_source ../../rtl/mpeg2/mem2axi_bridge.v
 import_files -library work -hdl_source ../../rtl/mpeg2/mpeg2fpga_apb_peripheral.v

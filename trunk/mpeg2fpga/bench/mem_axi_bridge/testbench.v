@@ -29,7 +29,7 @@ module testbench ();
   wire        mem_res_wr_en;
   reg         mem_res_wr_almost_full;
 
-  wire  [7:0] m_axi_awid;
+  wire  [3:0] m_axi_awid;
   wire [37:0] m_axi_awaddr;
   wire  [7:0] m_axi_awlen;
   wire  [2:0] m_axi_awsize;
@@ -43,12 +43,12 @@ module testbench ();
   wire        m_axi_wvalid;
   wire        m_axi_wready;
 
-  wire  [7:0] m_axi_bid;
+  wire  [3:0] m_axi_bid;
   wire  [1:0] m_axi_bresp;
   wire        m_axi_bvalid;
   wire        m_axi_bready;
 
-  wire  [7:0] m_axi_arid;
+  wire  [3:0] m_axi_arid;
   wire [37:0] m_axi_araddr;
   wire  [7:0] m_axi_arlen;
   wire  [2:0] m_axi_arsize;
@@ -56,7 +56,7 @@ module testbench ();
   wire        m_axi_arvalid;
   wire        m_axi_arready;
 
-  wire  [7:0] m_axi_rid;
+  wire  [3:0] m_axi_rid;
   wire [63:0] m_axi_rdata;
   wire  [1:0] m_axi_rresp;
   wire        m_axi_rlast;

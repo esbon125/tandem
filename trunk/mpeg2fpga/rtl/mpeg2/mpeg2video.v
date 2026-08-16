@@ -64,7 +64,7 @@ module mpeg2video(clk, mem_clk, dot_clk,
   input            mem_clk;                 // memory clock. Typically 133-166 MHz.
   input            dot_clk;                 // video clock. Typically between 25 and 75 Mhz, depending upon MPEG2 resolution and frame rate.
 `else
-module mpeg2video(ref_clk, clk_out,
+module mpeg2video(ref_clk, clk_out, mem_clk_out, mem_rst_out,
              rst,                                                                                                                 // clocked with clk
              stream_data, stream_valid,                                                                                           // clocked with clk
 	     reg_addr, reg_wr_en, reg_dta_in, reg_rd_en, reg_dta_out,                                                             // clocked with clk
@@ -82,12 +82,25 @@ module mpeg2video(ref_clk, clk_out,
    * internally, instead of instantiating a second, unsynchronized CCC.
    * Purely additive -- does not change PF_CCC_C0's configuration or any
    * existing internal wiring. See rtl/mpeg2/mpeg2fpga_apb_peripheral.v.
+   *
+   * mem_clk/mem_rst, same reasoning (Fase 6b): mem_req_rd_ and mem_res_wr_
+   * are documented "clocked with mem_clk" against this module's internal
+   * mem_clk domain (framestore.v's dual-clock FIFOs only cross clk<->
+   * mem_clk, nothing further) -- whatever plays memory controller on that
+   * interface (rtl/mpeg2/mem2axi_bridge.v) must run on this exact clock,
+   * not a second PLL/CCC output nominally at the same frequency. See
+   * mem2axi_bridge.v's header comment and the Fase 5b/5d bring-up notes it
+   * references for the class of bug this avoids.
    */
   output           clk_out;
+  output           mem_clk_out;
+  output           mem_rst_out;
   wire            clk;                     // clock. Typically a multiple of 27 Mhz as MPEG2 timestamps have a 27 Mhz resolution.
   wire            mem_clk;                 // memory clock. Typically 133-166 MHz.
   wire            dot_clk;                 // video clock. Typically between 25 and 75 Mhz, depending upon MPEG2 resolution and frame rate.
   assign clk_out = clk;
+  assign mem_clk_out = mem_clk;
+  assign mem_rst_out = mem_rst;
 `endif
 
   input            rst;                     // active low reset. Internally synchronized.
@@ -554,7 +567,7 @@ module mpeg2video(ref_clk, clk_out,
   
 `ifndef __IVERILOG__
   /* PLL_POWERDOWN_N_0 is the PF_CCC_C0 PLL's real POWERDOWN_N pin (active
-   * low, see component/work/PF_CCC_C0/PF_CCC_C0_0/*_PF_CCC.v). Left
+   * low, see the generated _PF_CCC.v under component/work/PF_CCC_C0/PF_CCC_C0_0/). Left
    * unconnected it synthesizes as tied to GND, holding the PLL in
    * permanent powerdown -- clk/mem_clk/dot_clk never toggle, which hangs
    * any real APB access to this module's regfile (the bridge's

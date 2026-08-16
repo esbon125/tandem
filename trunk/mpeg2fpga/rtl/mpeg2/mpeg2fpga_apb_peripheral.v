@@ -1,18 +1,20 @@
 /*
  * mpeg2fpga_apb_peripheral.v
  *
- * Top-level wrapper combining apb3_mpeg2fpga_bridge.v and mpeg2video.v into
- * a single APB3 slave peripheral, registered as a Libero HDL core (see
- * script_support/components/MPEG2FPGA_APB_PERIPHERAL.tcl) and instantiated
- * in the FIC_3_PERIPHERALS SmartDesign in place of the Discovery Kit's
- * 7-segment display SPI (unused by this project) -- see Fase 5b in the
- * project plan and docs/bringup/05_mss_apb_bridge_tdd.md for why.
+ * Top-level wrapper combining apb3_mpeg2fpga_bridge.v, mem2axi_bridge.v and
+ * mpeg2video.v into a single peripheral, registered as a Libero HDL core
+ * (see script_support/components/MPEG2FPGA_APB_PERIPHERAL.tcl) and
+ * instantiated in the FIC_3_PERIPHERALS SmartDesign in place of the
+ * Discovery Kit's 7-segment display SPI (unused by this project) -- see
+ * Fase 5b in the project plan and docs/bringup/05_mss_apb_bridge_tdd.md.
  *
- * Only the register interface and interrupt are wired to the rest of the
- * SoC in this phase; the stream input, video output and external memory
- * FIFOs are tied off exactly as hdl/top.v already did (Fase 5 explicitly
- * scopes those out -- they need a DDR/video-output architecture decision
- * of their own).
+ * Fase 6b adds the external-memory side: mpeg2video's mem_req_rd_ and
+ * mem_res_wr_ ports now drive a real mem2axi_bridge instance instead of being
+ * tied off, with its AXI4 master promoted to top-level ports here so the
+ * SmartDesign can wire them to the MSS's FIC_1_AXI4_TARGET port (chosen
+ * because it's free -- see mem2axi_bridge.v's header comment). The video
+ * output and stream input paths are still tied off exactly as hdl/top.v
+ * did -- Fase 7 (firmware/application layer) scope, not hardware.
  */
 
 `include "timescale.v"
@@ -28,8 +30,32 @@ module mpeg2fpga_apb_peripheral (
     ref_clk, rst_n,
 
     /* single interrupt line, routed to a free MSS_INT_F2M bit */
-    interrupt
+    interrupt,
+
+    /* mpeg2video's internal mem_clk, promoted so the SmartDesign top can
+     * feed the exact same clock into MSS_WRAPPER's FIC_1_ACLK -- see
+     * mem2axi_bridge.v's header comment for why this must not be a second,
+     * independently-generated clock. */
+    mem_clk_out,
+
+    /* AXI4 master to MSS_WRAPPER:FIC_1_AXI4_TARGET (DDR4), via mem2axi_bridge.
+     * See mem2axi_bridge.v's port list comment for why the *LOCK/*CACHE/
+     * *PROT/*QOS/*REGION/*USER sideband signals are here too. */
+    m_axi_awid, m_axi_awaddr, m_axi_awlen, m_axi_awsize, m_axi_awburst, m_axi_awlock, m_axi_awcache, m_axi_awprot, m_axi_awqos, m_axi_awregion, m_axi_awuser, m_axi_awvalid, m_axi_awready,
+    m_axi_wdata, m_axi_wstrb, m_axi_wlast, m_axi_wuser, m_axi_wvalid, m_axi_wready,
+    m_axi_bid, m_axi_bresp, m_axi_buser, m_axi_bvalid, m_axi_bready,
+    m_axi_arid, m_axi_araddr, m_axi_arlen, m_axi_arsize, m_axi_arburst, m_axi_arlock, m_axi_arcache, m_axi_arprot, m_axi_arqos, m_axi_arregion, m_axi_aruser, m_axi_arvalid, m_axi_arready,
+    m_axi_rid, m_axi_rdata, m_axi_rresp, m_axi_rlast, m_axi_ruser, m_axi_rvalid, m_axi_rready
 );
+
+  /* Placeholder until the firmware side (Fase 7) settles on a real
+   * reserved-memory carve-out address for mpeg2fpga's private ~32 MB
+   * window and that address is confirmed against the actual MSS/FIC_1 AXI4
+   * memory map (not yet verified against real hardware/documentation --
+   * do not assume this is correct without checking). Override at
+   * instantiation once known.
+   */
+  parameter [37:0] DDR_BASE = 38'h0;
 
   input        PCLK;
   input        PRESETn;
@@ -45,6 +71,57 @@ module mpeg2fpga_apb_peripheral (
   input        rst_n;
 
   output       interrupt;
+
+  output       mem_clk_out;
+
+  output      [3:0]m_axi_awid;
+  output     [37:0]m_axi_awaddr;
+  output      [7:0]m_axi_awlen;
+  output      [2:0]m_axi_awsize;
+  output      [1:0]m_axi_awburst;
+  output           m_axi_awlock;
+  output      [3:0]m_axi_awcache;
+  output      [2:0]m_axi_awprot;
+  output      [3:0]m_axi_awqos;
+  output      [3:0]m_axi_awregion;
+  output      [0:0]m_axi_awuser;
+  output           m_axi_awvalid;
+  input            m_axi_awready;
+
+  output     [63:0]m_axi_wdata;
+  output      [7:0]m_axi_wstrb;
+  output           m_axi_wlast;
+  output      [0:0]m_axi_wuser;
+  output           m_axi_wvalid;
+  input            m_axi_wready;
+
+  input       [3:0]m_axi_bid;
+  input       [1:0]m_axi_bresp;
+  input       [0:0]m_axi_buser;
+  input            m_axi_bvalid;
+  output           m_axi_bready;
+
+  output      [3:0]m_axi_arid;
+  output     [37:0]m_axi_araddr;
+  output      [7:0]m_axi_arlen;
+  output      [2:0]m_axi_arsize;
+  output      [1:0]m_axi_arburst;
+  output           m_axi_arlock;
+  output      [3:0]m_axi_arcache;
+  output      [2:0]m_axi_arprot;
+  output      [3:0]m_axi_arqos;
+  output      [3:0]m_axi_arregion;
+  output      [0:0]m_axi_aruser;
+  output           m_axi_arvalid;
+  input            m_axi_arready;
+
+  input       [3:0]m_axi_rid;
+  input      [63:0]m_axi_rdata;
+  input       [1:0]m_axi_rresp;
+  input            m_axi_rlast;
+  input       [0:0]m_axi_ruser;
+  input            m_axi_rvalid;
+  output           m_axi_rready;
 
   wire  [3:0]  reg_addr;
   wire         reg_wr_en;
@@ -62,8 +139,14 @@ module mpeg2fpga_apb_peripheral (
   wire  [1:0]  mem_req_rd_cmd;
   wire [21:0]  mem_req_rd_addr;
   wire [63:0]  mem_req_rd_dta;
+  wire         mem_req_rd_en;
   wire         mem_req_rd_valid;
+  wire [63:0]  mem_res_wr_dta;
+  wire         mem_res_wr_en;
   wire         mem_res_wr_almost_full;
+
+  wire         mem_clk_internal;
+  wire         mem_rst_internal;
 
   wire [33:0]  testpoint;
 
@@ -93,6 +176,8 @@ module mpeg2fpga_apb_peripheral (
   mpeg2video u_mpeg2 (
       .ref_clk(ref_clk),
       .clk_out(clk_internal),
+      .mem_clk_out(mem_clk_internal),
+      .mem_rst_out(mem_rst_internal),
       .rst(rst_n),
 
       .stream_data(8'h00),
@@ -115,16 +200,49 @@ module mpeg2fpga_apb_peripheral (
       .mem_req_rd_cmd(mem_req_rd_cmd),
       .mem_req_rd_addr(mem_req_rd_addr),
       .mem_req_rd_dta(mem_req_rd_dta),
-      .mem_req_rd_en(1'b0),
+      .mem_req_rd_en(mem_req_rd_en),
       .mem_req_rd_valid(mem_req_rd_valid),
 
-      .mem_res_wr_dta(64'h0),
-      .mem_res_wr_en(1'b0),
+      .mem_res_wr_dta(mem_res_wr_dta),
+      .mem_res_wr_en(mem_res_wr_en),
       .mem_res_wr_almost_full(mem_res_wr_almost_full),
 
       .testpoint_dip(4'h0),
       .testpoint_dip_en(1'b0),
       .testpoint(testpoint)
+  );
+
+  assign mem_clk_out = mem_clk_internal;
+
+  mem2axi_bridge #(.DDR_BASE(DDR_BASE)) u_mem_bridge (
+      .clk(mem_clk_internal),
+      .rst(mem_rst_internal),
+
+      .mem_req_rd_cmd(mem_req_rd_cmd),
+      .mem_req_rd_addr(mem_req_rd_addr),
+      .mem_req_rd_dta(mem_req_rd_dta),
+      .mem_req_rd_en(mem_req_rd_en),
+      .mem_req_rd_valid(mem_req_rd_valid),
+
+      .mem_res_wr_dta(mem_res_wr_dta),
+      .mem_res_wr_en(mem_res_wr_en),
+      .mem_res_wr_almost_full(mem_res_wr_almost_full),
+
+      .m_axi_awid(m_axi_awid), .m_axi_awaddr(m_axi_awaddr), .m_axi_awlen(m_axi_awlen),
+      .m_axi_awsize(m_axi_awsize), .m_axi_awburst(m_axi_awburst),
+      .m_axi_awlock(m_axi_awlock), .m_axi_awcache(m_axi_awcache), .m_axi_awprot(m_axi_awprot),
+      .m_axi_awqos(m_axi_awqos), .m_axi_awregion(m_axi_awregion), .m_axi_awuser(m_axi_awuser),
+      .m_axi_awvalid(m_axi_awvalid), .m_axi_awready(m_axi_awready),
+      .m_axi_wdata(m_axi_wdata), .m_axi_wstrb(m_axi_wstrb), .m_axi_wlast(m_axi_wlast), .m_axi_wuser(m_axi_wuser),
+      .m_axi_wvalid(m_axi_wvalid), .m_axi_wready(m_axi_wready),
+      .m_axi_bid(m_axi_bid), .m_axi_bresp(m_axi_bresp), .m_axi_buser(m_axi_buser), .m_axi_bvalid(m_axi_bvalid), .m_axi_bready(m_axi_bready),
+      .m_axi_arid(m_axi_arid), .m_axi_araddr(m_axi_araddr), .m_axi_arlen(m_axi_arlen),
+      .m_axi_arsize(m_axi_arsize), .m_axi_arburst(m_axi_arburst),
+      .m_axi_arlock(m_axi_arlock), .m_axi_arcache(m_axi_arcache), .m_axi_arprot(m_axi_arprot),
+      .m_axi_arqos(m_axi_arqos), .m_axi_arregion(m_axi_arregion), .m_axi_aruser(m_axi_aruser),
+      .m_axi_arvalid(m_axi_arvalid), .m_axi_arready(m_axi_arready),
+      .m_axi_rid(m_axi_rid), .m_axi_rdata(m_axi_rdata), .m_axi_rresp(m_axi_rresp),
+      .m_axi_rlast(m_axi_rlast), .m_axi_ruser(m_axi_ruser), .m_axi_rvalid(m_axi_rvalid), .m_axi_rready(m_axi_rready)
   );
 
 endmodule
