@@ -553,8 +553,18 @@ module mpeg2video(ref_clk, clk_out,
   wire       osd_wr_overflow;
   
 `ifndef __IVERILOG__
+  /* PLL_POWERDOWN_N_0 is the PF_CCC_C0 PLL's real POWERDOWN_N pin (active
+   * low, see component/work/PF_CCC_C0/PF_CCC_C0_0/*_PF_CCC.v). Left
+   * unconnected it synthesizes as tied to GND, holding the PLL in
+   * permanent powerdown -- clk/mem_clk/dot_clk never toggle, which hangs
+   * any real APB access to this module's regfile (the bridge's
+   * core_clk-domain FSM has no clock edge to ever advance on). Found and
+   * fixed during Fase 5d hardware bring-up, see
+   * docs/bringup/09_fase5d_hardware_hang_investigation.md.
+   */
   PF_CCC_C0 u_ccc (
     .REF_CLK_0(ref_clk),
+    .PLL_POWERDOWN_N_0(1'b1),
 
     .OUT0_FABCLK_0(mem_clk),
     .OUT1_FABCLK_0(clk),
