@@ -1,14 +1,22 @@
-# Fase 5d — Overlay de device tree real: hang de hardware en el primer acceso real a mpeg2fpga (causa raíz encontrada)
+# Fase 5d — Overlay de device tree real: hang de hardware en el primer acceso real a mpeg2fpga (cerrada)
 
 **Fecha:** 2026-08-15/16
 **Rama:** `hardware_development` (RTL/build), `firmware_development` (driver, sin cambios en esta fase)
+**Estado: cerrada.** Causa raíz encontrada y corregida (`PLL_POWERDOWN_N_0` sin conectar en la
+instancia de `PF_CCC_C0` de `mpeg2video.v`), verificada en silicio real por dos caminos de acceso
+independientes (lectura cruda por UIO y `insmod` del driver de kernel con entrega de IRQ real
+confirmada por `/proc/interrupts`). Instrumentación de diagnóstico removida del código fuente al
+cierre. Este es, con diferencia, el documento de bring-up más largo del proyecto hasta ahora — cubre
+dos crashes reales de placa, una investigación de RTL de varias rondas, y la resolución completa.
+
 **Contexto:** con Fase 5c cerrada (`docs/bringup/08_...md`) la placa arranca Linux limpio hasta login por
 SSH, con `mpeg2fpga_apb_peripheral` integrado como esclavo APB3 en `FIC_3` y su IRQ ruteada al PLIC.
 Fase 5d era, en teoría, el cierre del ciclo TDD completo: aplicar un overlay de device tree real con la
 dirección/IRQ verdaderas y repetir la prueba de `insmod`/`probe()` de la Fase 4d contra silicio real.
-En cambio, el primer acceso real de hardware al periférico — por cualquier camino — cuelga la placa
-entera. Este documento cubre la investigación hasta el punto en que quedó, incluyendo una
-instrumentación de diagnóstico que **todavía no fue probada en hardware** al momento de escribir esto.
+En cambio, el primer acceso real de hardware al periférico — por cualquier camino — colgó la placa
+entera, dos veces. Este documento cubre la investigación completa, en orden cronológico: los dos
+crashes, la revisión de RTL, tres rondas de instrumentación de diagnóstico (una de ellas un falso
+negativo que hubo que reconciliar), la causa raíz real, y la verificación final en hardware.
 
 ## Verificación de dirección e IRQ contra la documentación oficial
 
@@ -268,14 +276,17 @@ los dos estados) → confirma la hipótesis de que el CCC nunca lockea, y el sig
 la configuración del `PF_CCC_C0` (routing del reloj de referencia, parámetros de configuración) en vez
 de la lógica digital del bridge.
 
-## Resultado del heartbeat: confirmado, `core_clk` está muerto
+## Resultado de la ronda 1: confirmado, `core_clk` parece muerto
 
 Con el `.job` instrumentado flasheado y la placa reiniciada, `gpioget -c gpiochip1 24` dio
 `inactive` de forma consistente en múltiples lecturas separadas por varios segundos — el heartbeat de
-24 bits sobre `core_clk` **nunca cambia**. Confirma la hipótesis: `clk_internal` (la señal `clk` interna
-de `mpeg2video`, derivada de `PF_CCC_C0`) nunca tuvo ni un solo flanco desde el power-on.
+24 bits sobre `core_clk` **nunca cambia**. Consistente con la hipótesis: `clk_internal` (la señal `clk`
+interna de `mpeg2video`, derivada de `PF_CCC_C0`) parecía no tener ni un solo flanco desde el power-on.
+(Este resultado terminó siendo, en parte, un falso negativo — ver más abajo la ronda 2 y la
+reconciliación — pero en este punto de la investigación apuntaba con fuerza a un reloj muerto, y la
+causa que se encontró a continuación era real independientemente de eso.)
 
-## Causa raíz: `PLL_POWERDOWN_N_0` sin conectar
+## Causa raíz #1 (real, pero no toda la historia): `PLL_POWERDOWN_N_0` sin conectar
 
 Revisando el Verilog generado por Libero para el macro `PF_CCC_C0`
 (`component/work/PF_CCC_C0/PF_CCC_C0.v` y `..._PF_CCC.v`, dentro del proyecto ya sintetizado) se
@@ -283,8 +294,7 @@ encontró que el componente expone un puerto de entrada obligatorio,
 **`PLL_POWERDOWN_N_0`** — cableado directo al pin físico **`POWERDOWN_N`** del primitivo `PLL` real de
 silicio (activo bajo; confirmado en la config exportada del componente: `"PLL_EXPORT_PWRDWN:true"`).
 
-La instanciación de `u_ccc` en `mpeg2video.v` (líneas 556-562, ver Fase 5b) **nunca conectó este
-puerto**:
+La instanciación de `u_ccc` en `mpeg2video.v` (ver Fase 5b) **nunca conectó este puerto**:
 
 ```verilog
 PF_CCC_C0 u_ccc (
@@ -298,25 +308,8 @@ PF_CCC_C0 u_ccc (
 
 Una entrada de instancia sin conectar en Verilog queda flotante (`z`); en la síntesis de Libero/Synplify
 para este tipo de IP dura, eso se resuelve atándola a GND — es decir, `POWERDOWN_N = 0` de forma
-permanente. El PLL queda en powerdown desde el power-on, para siempre: nunca produce salida de reloj
-válida en ninguno de sus tres `OUT*_FABCLK_0`. Esto explica de punta a punta toda la investigación de
-este documento:
-
-- El heartbeat nunca cambia (no hay ningún flanco de `clk_internal` para incrementar el contador).
-- Los dos crashes de hardware real: la FSM del lado `core_clk` del bridge (`apb3_mpeg2fpga_bridge.v`)
-  literalmente no tiene reloj con el que avanzar — no es un bug de lógica de la FSM (ya revisada y
-  correcta), es que su dominio de reloj entero nunca estuvo vivo. Cualquier acceso real, por cualquier
-  camino (driver de kernel o UIO crudo), queda esperando para siempre un ack que ninguna lógica
-  secuencial puede producir sin reloj — de ahí el hart bloqueado sin posibilidad de recuperación por
-  software.
-- Por qué nunca se había visto antes: el arranque de Linux (Fases 1-3) y la integración MSS (Fase 5b/c)
-  no dependen para nada del dominio de reloj de `mpeg2video` — es la primera vez que algo intenta
-  *usarlo* de verdad.
-
-### Fix
-
-Un cambio mínimo y aditivo en `mpeg2video.v`, atando el powerdown a deshabilitado permanentemente
-(`1'b1`, activo bajo → nunca en powerdown):
+permanente. Esto sí mantenía al PLL en powerdown desde el power-on — un bug real, e independiente de lo
+que se descubrió después. Fix aplicado (mínimo, aditivo):
 
 ```verilog
 PF_CCC_C0 u_ccc (
@@ -329,26 +322,153 @@ PF_CCC_C0 u_ccc (
 );
 ```
 
-## Estado al cierre de este documento
+## Ronda 2: el heartbeat sigue sin moverse incluso con el powerdown corregido
 
-Causa raíz encontrada y fix aplicado en `rtl/mpeg2/mpeg2video.v` (rama `hardware_development`, junto
-con la instrumentación de heartbeat de este mismo documento, que se deja **en el mismo build** como
-verificación cruzada: si el fix es correcto, el heartbeat en `gpiochip1`/línea 24 debería empezar a
-alternar). Pendiente: rebuild completo (`SYNTHESIZE`→`PLACEROUTE`→`GENERATE_PROGRAMMING_DATA`→
-`EXPORT_FPE`), reprogramar la placa, y verificar en dos pasos:
+Se reconstruyó (`SYNTHESIZE`→`PLACEROUTE`→`GENERATE_PROGRAMMING_DATA`→`EXPORT_FPE`, las cuatro etapas
+limpias, 55/55 pines fijados igual que en Fase 5c) dejando la instrumentación de heartbeat de la ronda 1
+en el mismo build, como verificación cruzada. Se flasheó y se repitió la lectura: **`gpioget -c
+gpiochip1 24` seguía dando `inactive` de forma consistente**, a pesar del fix.
 
-1. El heartbeat cambia entre lecturas (confirma que `core_clk` ahora está vivo).
-2. Repetir la prueba de acceso real al registro (`insmod` del driver o lectura UIO) — con el reloj vivo,
-   la FSM del bridge debería completar sus transacciones normalmente. Este es el único paso que vuelve a
-   tocar el camino que causó los dos crashes anteriores; hacerlo con cautela (ver nota abajo) aunque la
-   causa raíz identificada da confianza razonable de que ya no debería colgar la placa.
+Antes de asumir una segunda causa, se verificó exhaustivamente que el fix realmente hubiera llegado al
+silicio, leyendo directamente el netlist post-síntesis
+(`MPEG2FPGA_SOC/synthesis/MPFS_DISCOVERY_KIT.vm`):
 
-Una vez verificado en hardware, la instrumentación de heartbeat (`clk_alive`, el contador de
-`mpeg2fpga_apb_peripheral.v`, y el ruteo por `FIC_3_PERIPHERALS.tcl`/`MPFS_DISCOVERY_KIT.tcl`) debe
-removerse — era exclusivamente para este diagnóstico.
+- La instancia de PLL que alimenta `clk_internal`/`mem_clk`/`dot_clk` de `mpeg2video` (identificada
+  sin ambigüedad porque sus salidas `CLKINT` llevan esos nombres exactos) mostraba
+  `.POWERDOWN_N(VCC)` — el fix **sí** se propagó correctamente hasta el primitivo real. (Había una
+  *segunda* instancia de `PLL` en el mismo netlist, la del reloj de sistema de `CLOCKS_AND_RESETS`
+  que ya arranca Linux — con `.POWERDOWN_N(AND4_FABRIC_PLL_POWERDOWN_Y)`, una señal derivada, no VCC —
+  hay que tener cuidado de no confundir las dos instancias al leer este tipo de netlist.)
+- `ref_clk` de esa misma instancia trazaba, a través de la jerarquía completa
+  (`mpeg2fpga_apb_peripheral` → `FIC_3_PERIPHERALS` → top level `MPFS_DISCOVERY_KIT`), hasta
+  `REF_CLK_50MHz_c`, la salida del mismo `INBUF` físico (`REF_CLK_50MHz_ibuf`, pad R18) que alimenta el
+  PLL de sistema ya funcionando — mismo reloj de referencia físico, confirmado correcto.
+- El propio contador `dbg_heartbeat_cnt` aparecía en el reporte de síntesis (`.srr`) clockeado
+  exactamente por `pll_inst_0.OUT1` de **esa misma instancia** (vía `clkint_4`) — la cadena de reloj
+  entre el PLL y el contador de diagnóstico estaba, en el papel, completamente correcta.
 
-**Importante para cualquiera que retome esto antes de que el fix esté verificado en hardware**: el
-camino de acceso a registros de mpeg2fpga a través de `apb3_mpeg2fpga_bridge.v` (vía driver de kernel o
-vía `/dev/uioN`) colgó la placa entera de forma reproducible dos veces, con el bug de powerdown sin
-corregir, y solo se recuperó con power-cycle físico. Con el fix del PLL aplicado no debería volver a
-pasar, pero repetir esa prueba es, hasta confirmarlo, el paso de mayor riesgo que queda en esta fase.
+Con powerdown, referencia y clockeo del contador triple-verificados correctos, y el heartbeat
+igualmente sin moverse, la contradicción quedó abierta: o el PLL seguía sin lockear por otra razón, o
+el problema estaba en el propio diagnóstico.
+
+## Ronda 3: en vez de inferir, medir `PLL_LOCK_0` directamente
+
+Se agregó un segundo diagnóstico, más directo: exponer la señal real **`PLL_LOCK_0`** del macro
+`PF_CCC_C0` (indicador de lock del propio circuito duro del PLL) en vez de depender de un contador
+derivado. Cambios (puramente aditivos, mismo patrón que `clk_out`):
+
+- `mpeg2video.v`: nuevo puerto de salida `pll_lock_out`, conectado a `.PLL_LOCK_0(pll_lock)` en la
+  instancia `u_ccc`.
+- `mpeg2fpga_apb_peripheral.v`: `clk_alive` pasó a reflejar `pll_lock` sincronizado a `PCLK` vía 2FF
+  (en vez del contador de 24 bits) — mismo puerto/ruteo hacia `GPIO_2_F2M_24`, sin cambios de
+  SmartDesign/Tcl necesarios.
+
+Reconstruido y flasheado (mismo flujo de 4 etapas, mismos 55/55 pines). Resultado:
+
+```
+root@mpfs-disco-kit:~# gpioget -c gpiochip1 24
+"24"=active
+root@mpfs-disco-kit:~# gpioget -c gpiochip1 24
+"24"=active
+```
+
+**`PLL_LOCK_0` está activo, de forma consistente.** El PLL genuinamente cree que está lockeado al
+reloj de referencia.
+
+## Reconciliando la contradicción
+
+`LOCK` activo y el heartbeat de la ronda 1/2 inmóvil, con el mismo PLL, es contradictorio si ambos
+diagnósticos fueran igualmente confiables — no lo son. Los dos comparten el mismo sincronizador de 2FF
+hacia `PCLK` (así que un `PRESETn` trabado habría afectado a los dos por igual; como `LOCK` sí se lee
+correctamente, `PRESETn` queda descartado como causa). La diferencia real está en la fuente:
+
+- `LOCK` es una señal simple, de nivel, directamente desde el macro duro del PLL.
+- El heartbeat dependía de un contador de 24 bits propio. El reporte de síntesis marcó explícitamente
+  ese contador como un patrón reconocido (`@N: MO231 :... Found counter in view: ... instance
+  dbg_heartbeat_cnt[23:0]`) — Synplify infiere primitivos/optimiza específicamente estructuras de
+  contador reconocidas, y aunque la cadena de reloj se verificó correcta en el papel, la instrumentación
+  añadida por este proyecto (no el diseño original) es la explicación más probable de un falso negativo,
+  no evidencia de que el reloj siguiera muerto.
+
+Dado que `LOCK` es la señal más directa y confiable disponible (viene del propio circuito de detección
+de lock del hardware, no de lógica añadida por este diagnóstico), se decidió confiar en ese resultado y
+pasar a la prueba que realmente importaba: el acceso real al registro.
+
+## Verificación final: acceso real al registro, dos caminos, ambos exitosos
+
+Sobre el mismo bitstream de la ronda 3 (el path del bridge/regfile no cambia entre rondas — solo cambia
+qué se expone en el pin de diagnóstico), sin necesidad de reflashear nada:
+
+**Lectura cruda por UIO** (mismo mecanismo del Crash #2, offset de registro `VERSION` = 0x0 dentro de la
+página mapeada en `0x400`):
+
+```
+mmap ok, about to read VERSION register at offset 0x400
+VERSION = 0x0000000c
+```
+
+Sin cuelgue. Placa healthy después (uptime normal, sin firma de crash en `dmesg`).
+
+**`insmod` del driver de kernel real** (mismo overlay `compatible = "esbon,mpeg2fpga"`, IRQ 138, del
+Crash #1 — con `target-path` corregido a `/fabric-bus@40000000` por prolijidad, aunque ya se había
+determinado que `/soc` no era la causa del crash original):
+
+```
+mpeg2fpga 40000400.mpeg2fpga: mpeg2fpga hw version 0x000c, irq 100
+```
+
+Esta es exactamente la línea de `dev_info` final de `probe()` que **nunca había aparecido** en ningún
+intento anterior — señal inequívoca de que `probe()` completó de punta a punta:
+`devm_platform_ioremap_resource` → `platform_get_irq` → `devm_request_irq` → escritura de máscara de
+IRQ → lectura de `VERSION` (0x000c, coincide con la lectura UIO). Confirmado además en
+`/proc/interrupts`:
+
+```
+100:       2196          0          0          0 SiFive PLIC 138 Edge      40000400.mpeg2fpga
+```
+
+IRQ Linux 100, mapeada al PLIC ID 138 — exactamente el calculado contra la Tabla 5-1 del MSS TRM al
+principio de este documento. Ya se habían disparado 2196 interrupciones al momento de revisar (sin
+ningún stream real alimentando al decoder, así que probablemente una fuente de error/watchdog
+disparando repetidamente sin datos válidos que procesar — no es un problema de estabilidad, pero queda
+anotado como algo a tener en cuenta cuando se implemente manejo real de interrupciones en el driver).
+
+Placa estable, sin ningún síntoma de crash, en ambos casos.
+
+## Causa raíz real y completa
+
+`PLL_POWERDOWN_N_0` sin conectar (causa raíz #1, arriba) era un bug genuino y su fix era necesario. Con
+ese fix, el PLL lockea (confirmado directamente por `PLL_LOCK_0`) y el acceso real a los registros
+funciona de punta a punta por dos caminos independientes. El heartbeat de las rondas 1-2 que seguía sin
+moverse fue, con alta confianza, un artefacto de la instrumentación de diagnóstico agregada por este
+proyecto (probablemente relacionado con cómo Synplify infiere/optimiza el patrón de contador de 24
+bits), no evidencia de un segundo bug real. No se investigó más a fondo el porqué exacto de ese falso
+negativo porque dejó de ser relevante una vez confirmado el resultado real contra silicio.
+
+## Limpieza
+
+Con el fix verificado en hardware, se removió toda la instrumentación de diagnóstico del código fuente
+(`clk_alive`/`pll_lock_out` de `mpeg2video.v` y `mpeg2fpga_apb_peripheral.v`, el ruteo en
+`FIC_3_PERIPHERALS.tcl`/`MPFS_DISCOVERY_KIT.tcl`, restaurando la atadura a GND original de
+`GPIO_2_F2M_24`), dejando en el árbol únicamente el fix real (`.PLL_POWERDOWN_N_0(1'b1)` en
+`mpeg2video.v`). Se reconstruyó una última vez para producir un `.job` limpio sin el pin de debug. En
+la placa: `rmmod mpeg2fpga` y remoción del overlay de configfs, dejando el sistema en el mismo estado
+que antes de empezar esta fase.
+
+## Lecciones para la próxima vez que algo cuelgue la placa
+
+- **Un crash reproducido por dos caminos de acceso completamente independientes** (con y sin driver de
+  kernel, con y sin IRQ) es la forma más rápida de descartar software/configuración y confirmar que el
+  bug es de hardware/RTL — no hace falta ninguna otra evidencia después de eso.
+- **Un puerto de entrada de una IP dura sin conectar no siempre da error de síntesis** — puede
+  atarse silenciosamente a un valor por defecto (acá GND) que cambia el comportamiento funcional del
+  macro sin ningún warning visible en el flujo normal. Vale la pena revisar el Verilog generado de
+  cualquier IP macro nueva (`component/work/<IP>/*.v`) puerto por puerto contra lo que la instanciación
+  propia conecta, en vez de asumir que "compila sin error" implica "está bien conectado".
+- **Un diagnóstico agregado por uno mismo puede mentir.** El heartbeat de 24 bits parecía la forma más
+  simple y segura de verificar un reloj, y terminó siendo la pieza menos confiable de toda la
+  investigación — mientras que la señal más simple posible (`LOCK`, un nivel estático directo del
+  hardware, sin lógica propia interpuesta) fue la que finalmente destrabó el diagnóstico. Cuando un
+  diagnóstico propio da un resultado que contradice todo lo demás que se pudo verificar (wiring,
+  netlist, configuración), vale la pena sospechar del diagnóstico mismo antes de inventar una segunda
+  causa raíz.
