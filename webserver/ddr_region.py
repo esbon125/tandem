@@ -6,9 +6,9 @@ mmap-able directly with no device-tree overlay needed (unlike mpeg2fpga's
 own registers, which go through UIO + a custom overlay -- see
 driver/mpeg2fpga/tools/push_stream.py).
 
-Two regions matter here, deliberately kept separate so the still-unproven
+Three regions matter here, deliberately kept separate so the still-unproven
 real decode path (Fase 7a's open SIZE=0 investigation) can't collide with
-this test-pattern validation:
+test-pattern validation or the Fase 7c DMA staging buffer:
 
   /dev/udmabuf-ddr-nc0       0xc8000000  mem2axi_bridge's DDR_BASE
                                           (hardware_development,
@@ -18,15 +18,29 @@ this test-pattern validation:
   /dev/udmabuf-ddr-nc-wcb0   0xd8000000  used here for the synthetic test
                                           pattern -- entirely software,
                                           untouched by mpeg2fpga hardware.
+  /dev/udmabuf-ddr-c0        0x88000000  stream_dma.v's STAGING_BASE
+                                          (hardware_development,
+                                          stream_dma.v) -- elementary
+                                          stream bytes for the Fase 7c
+                                          hardware DMA push, see
+                                          dma_push.py. The only one of the
+                                          three that's *cached*, since
+                                          dma_push.py needs the sysfs
+                                          sync_for_device dance anyway
+                                          (see its docstring) and a cached
+                                          mapping is faster for the CPU's
+                                          bulk write into it.
 
-Both are non-cached from Linux's side, so a plain mmap() always sees
-whatever was most recently written, no cache-invalidation dance needed.
+The two non-cached ones need no cache-invalidation dance: a plain mmap()
+always sees whatever was most recently written.
 """
 import mmap
 import os
 
 TEST_PATTERN_DEVICE = "/dev/udmabuf-ddr-nc-wcb0"
 FRAMESTORE_DEVICE = "/dev/udmabuf-ddr-nc0"
+STAGING_DEVICE = "/dev/udmabuf-ddr-c0"
+STAGING_SYSFS = "/sys/class/u-dma-buf/udmabuf-ddr-c0"
 
 REGION_SIZE = 32 * 1024 * 1024  # matches the reserved-memory node size
 
