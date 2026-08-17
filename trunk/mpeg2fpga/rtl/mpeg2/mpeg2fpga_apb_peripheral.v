@@ -53,14 +53,25 @@ module mpeg2fpga_apb_peripheral (
     m_axi_rid, m_axi_rdata, m_axi_rresp, m_axi_rlast, m_axi_ruser, m_axi_rvalid, m_axi_rready
 );
 
-  /* Placeholder until the firmware side (Fase 7) settles on a real
-   * reserved-memory carve-out address for mpeg2fpga's private ~32 MB
-   * window and that address is confirmed against the actual MSS/FIC_1 AXI4
-   * memory map (not yet verified against real hardware/documentation --
-   * do not assume this is correct without checking). Override at
-   * instantiation once known.
+  /* Fase 7a debug (SIZE staying 0 after a real push): DDR_BASE=0 pointed
+   * mem2axi_bridge at physical address 0x0, which "cat /proc/iomem" on the
+   * real board confirms is NOT DDR -- Linux's own "System RAM" only starts
+   * at 0x80000000. Writes there were very likely going nowhere, which
+   * explains vbr_rd_dta (probe.v testpoint 0) never showing any of the
+   * pushed bytes read back.
+   *
+   * 0xc8000000 is "udmabuf-ddr-nc0" (dmesg: "u-dma-buf udmabuf1: assigned
+   * reserved memory node buffer@c8000000", exposed to Linux as
+   * /dev/udmabuf-ddr-nc0) -- an existing 32 MiB reserved-memory carve-out
+   * from the base Discovery Kit reference design, exactly the size of
+   * mpeg2fpga's private window, 32 MiB aligned, non-cached (so a future
+   * Linux-side mmap of the *same* physical bytes -- Fase 7c/7d -- can't see
+   * stale CPU-cached data written by fabric, which never goes through the
+   * cache at all). Reusing it also means Fase 7c doesn't need a new
+   * reserved-memory device-tree entry of its own, same reasoning as
+   * reusing already-proven MSS config in Fase 5b/6b.
    */
-  parameter [37:0] DDR_BASE = 38'h0;
+  parameter [37:0] DDR_BASE = 38'hc8000000;
 
   input        PCLK;
   input        PRESETn;
