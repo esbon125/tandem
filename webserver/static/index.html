@@ -28,7 +28,12 @@ document.getElementById("uploadBtn").onclick = async () => {
   const buf = await file.arrayBuffer();
   const resp = await fetch("/upload", { method: "POST", body: buf });
   const json = await resp.json();
-  statusEl.textContent = `uploaded ${json.bytes} bytes`;
+  if (json.status === "ok") {
+    statusEl.textContent = `uploaded ${json.bytes} bytes, decoder SIZE before/after: ` +
+      `0x${json.regs_before.size.toString(16)} / 0x${json.regs_after.size.toString(16)}`;
+  } else {
+    statusEl.textContent = `uploaded ${json.bytes} bytes, decoder push skipped: ${json.error}`;
+  }
 };
 
 function connectWS() {

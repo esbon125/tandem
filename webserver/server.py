@@ -9,23 +9,32 @@ this needed):
 
   - HTTP  (default :8080): GET /            -> static/index.html
                             POST /upload     -> saves the raw request body
-                                                to disk (decoder wiring is
-                                                a follow-up step, not yet
-                                                connected -- see
-                                                docs/bringup Fase 7b)
+                                                to disk, then pushes it to
+                                                the decoder over APB via
+                                                decoder_push.py (Fase 7a's
+                                                STREAM_PUSH_ADDR register,
+                                                same mechanism as
+                                                driver/mpeg2fpga/tools/
+                                                push_stream.py). Responds
+                                                with the register file
+                                                before/after the push.
   - WS    (default :8081): pushes frames read from a DDRRegion in a loop.
                             Message = 8-byte little-endian (width, height)
                             header + raw RGBA bytes, so the browser side
                             never needs to hardcode a resolution.
 
-Right now the WS loop reads TEST_PATTERN_DEVICE (write_test_pattern.py's
-target) so the browser <-> server <-> WebSocket half of the pipeline can be
-proven independently of the still-unresolved real decode path (Fase 7a).
-Switching FRAME_SOURCE to FRAMESTORE_DEVICE is the next step once that's
-sorted out.
+The WS loop still reads TEST_PATTERN_DEVICE (write_test_pattern.py's
+target), not the real framestore -- SIZE/DISP_SIZE staying 0 after a push
+is still an open question (docs/bringup Fase 7a), so there is no real
+framestore data to serve yet. The /upload response's register dump is the
+intended next observation point for that investigation: it comes from a
+single request/response instead of a manual SSH+scp round trip, using the
+same UIO register file push_stream.py used. Switching FRAME_SOURCE to
+FRAMESTORE_DEVICE is the follow-up once decode is confirmed working.
 """
 import asyncio
 import http.server
+import json
 import os
 import struct
 import threading
@@ -33,6 +42,7 @@ import threading
 import websockets
 
 from ddr_region import DDRRegion, TEST_PATTERN_DEVICE
+from decoder_push import DecoderPusher, OverlayNotApplied
 
 HTTP_PORT = 8080
 WS_PORT = 8081
@@ -69,10 +79,20 @@ class HTTPHandler(http.server.BaseHTTPRequestHandler):
         with open(UPLOAD_PATH, "wb") as f:
             f.write(body)
         print(f"[http] saved upload: {length} bytes -> {UPLOAD_PATH}")
+
+        try:
+            with DecoderPusher() as pusher:
+                before, after = pusher.push(body)
+            print(f"[http] pushed to decoder: before={before} after={after}")
+            response = {"status": "ok", "bytes": length, "regs_before": before, "regs_after": after}
+        except OverlayNotApplied as e:
+            print(f"[http] decoder push skipped: {e}")
+            response = {"status": "saved_only", "bytes": length, "error": str(e)}
+
         self.send_response(200)
         self.send_header("Content-Type", "application/json")
         self.end_headers()
-        self.wfile.write(b'{"status": "ok", "bytes": %d}' % length)
+        self.wfile.write(json.dumps(response).encode())
 
     def _serve_file(self, path, content_type):
         try:
