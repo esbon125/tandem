@@ -1,0 +1,16 @@
+/dts-v1/;
+/plugin/;
+
+/ {
+	fragment@0 {
+		target-path = "/fabric-bus@40000000";
+		__overlay__ {
+			mpeg2fpga_uio: mpeg2fpga@40000400 {
+				compatible = "generic-uio";
+				linux,uio-name = "mpeg2fpga_diag";
+				reg = <0x0 0x40000400 0x0 0x100>;
+				status = "okay";
+			};
+		};
+	};
+};
