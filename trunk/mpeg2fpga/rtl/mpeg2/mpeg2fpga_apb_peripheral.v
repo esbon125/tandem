@@ -20,6 +20,21 @@
  * stream_valid directly, instead of the 8'h00/1'b0 tie-off. mpeg2video's
  * busy output feeds back into the bridge so a push blocks (via APB wait
  * states) until there's room, instead of silently dropping bytes.
+ *
+ * Fase 7c adds a second, autonomous stream source: u_stream_dma (see
+ * stream_dma.v) reads a DDR staging buffer over its own AXI4 master
+ * (promoted to top-level dma_axi_* ports, wired to the SmartDesign's
+ * previously-unused FIC_2_AXI4_TARGET) and drives the same stream_data/
+ * stream_valid pair u_bridge's STREAM_PUSH_ADDR does. A mux picks whichever
+ * source is active, selected by u_stream_dma's own busy output (high =
+ * a DMA transfer owns the pair) -- the two are mutually exclusive by
+ * software contract (don't write STREAM_PUSH_ADDR while a DMA transfer is
+ * running), not by extra interlock hardware, matching every other
+ * register-ordering contract in this design (e.g. DMA_ADDR/DMA_LEN before
+ * DMA_CTRL). u_stream_dma runs on the exact same clk_internal (core_clk)
+ * u_bridge and u_mpeg2 already do -- newly promoted here as top-level
+ * clk_out so the SmartDesign can feed it into FIC_2_ACLK too, avoiding a
+ * second clock-domain crossing entirely (see stream_dma.v's header).
  */
 
 `include "timescale.v"
@@ -43,6 +58,11 @@ module mpeg2fpga_apb_peripheral (
      * independently-generated clock. */
     mem_clk_out,
 
+    /* mpeg2video's internal core clk (clk_out), promoted (Fase 7c) so the
+     * SmartDesign top can feed the same clock into FIC_2_ACLK for
+     * u_stream_dma's AXI4 master -- see stream_dma.v's header comment. */
+    clk_out,
+
     /* AXI4 master to MSS_WRAPPER:FIC_1_AXI4_TARGET (DDR4), via mem2axi_bridge.
      * See mem2axi_bridge.v's port list comment for why the *LOCK, *CACHE,
      * *PROT, *QOS, *REGION, *USER sideband signals are here too. */
@@ -50,7 +70,13 @@ module mpeg2fpga_apb_peripheral (
     m_axi_wdata, m_axi_wstrb, m_axi_wlast, m_axi_wuser, m_axi_wvalid, m_axi_wready,
     m_axi_bid, m_axi_bresp, m_axi_buser, m_axi_bvalid, m_axi_bready,
     m_axi_arid, m_axi_araddr, m_axi_arlen, m_axi_arsize, m_axi_arburst, m_axi_arlock, m_axi_arcache, m_axi_arprot, m_axi_arqos, m_axi_arregion, m_axi_aruser, m_axi_arvalid, m_axi_arready,
-    m_axi_rid, m_axi_rdata, m_axi_rresp, m_axi_rlast, m_axi_ruser, m_axi_rvalid, m_axi_rready
+    m_axi_rid, m_axi_rdata, m_axi_rresp, m_axi_rlast, m_axi_ruser, m_axi_rvalid, m_axi_rready,
+
+    /* AXI4 read-only master to MSS_WRAPPER:FIC_2_AXI4_TARGET (DDR4), via
+     * u_stream_dma -- a second, independent fabric-master path into DDR
+     * (Fase 7c), free since the base reference design never uses FIC_2. */
+    dma_axi_arid, dma_axi_araddr, dma_axi_arlen, dma_axi_arsize, dma_axi_arburst, dma_axi_arlock, dma_axi_arcache, dma_axi_arprot, dma_axi_arqos, dma_axi_arregion, dma_axi_aruser, dma_axi_arvalid, dma_axi_arready,
+    dma_axi_rid, dma_axi_rdata, dma_axi_rresp, dma_axi_rlast, dma_axi_ruser, dma_axi_rvalid, dma_axi_rready
 );
 
   /* Fase 7a debug (SIZE staying 0 after a real push): DDR_BASE=0 pointed
@@ -89,6 +115,7 @@ module mpeg2fpga_apb_peripheral (
   output       interrupt;
 
   output       mem_clk_out;
+  output       clk_out;
 
   output      [3:0]m_axi_awid;
   output     [37:0]m_axi_awaddr;
@@ -139,6 +166,28 @@ module mpeg2fpga_apb_peripheral (
   input            m_axi_rvalid;
   output           m_axi_rready;
 
+  output      [3:0]dma_axi_arid;
+  output     [37:0]dma_axi_araddr;
+  output      [7:0]dma_axi_arlen;
+  output      [2:0]dma_axi_arsize;
+  output      [1:0]dma_axi_arburst;
+  output           dma_axi_arlock;
+  output      [3:0]dma_axi_arcache;
+  output      [2:0]dma_axi_arprot;
+  output      [3:0]dma_axi_arqos;
+  output      [3:0]dma_axi_arregion;
+  output      [0:0]dma_axi_aruser;
+  output           dma_axi_arvalid;
+  input            dma_axi_arready;
+
+  input       [3:0]dma_axi_rid;
+  input      [63:0]dma_axi_rdata;
+  input       [1:0]dma_axi_rresp;
+  input            dma_axi_rlast;
+  input       [0:0]dma_axi_ruser;
+  input            dma_axi_rvalid;
+  output           dma_axi_rready;
+
   wire  [3:0]  reg_addr;
   wire         reg_wr_en;
   wire [31:0]  reg_dta_in;
@@ -181,6 +230,21 @@ module mpeg2fpga_apb_peripheral (
   wire [7:0] stream_data_internal;
   wire       stream_valid_internal;
 
+  /* Fase 7c: stream_dma control (core_clk domain, driven by u_bridge's new
+   * DMA_ADDR/DMA_LEN/DMA_CTRL/DMA_STATUS registers) and its own stream_data/
+   * stream_valid pair, muxed with u_bridge's manual-push pair below. */
+  wire        dma_start;
+  wire [31:0] dma_addr;
+  wire [31:0] dma_len;
+  wire        dma_busy;
+  wire        dma_done;
+  wire [31:0] dma_bytes_done;
+  wire [7:0]  dma_stream_data;
+  wire        dma_stream_valid;
+
+  wire [7:0] stream_data_mux  = dma_busy ? dma_stream_data  : stream_data_internal;
+  wire       stream_valid_mux = dma_busy ? dma_stream_valid : stream_valid_internal;
+
   apb3_mpeg2fpga_bridge u_bridge (
       .PCLK(PCLK), .PRESETn(PRESETn),
       .PSEL(PSEL), .PENABLE(PENABLE), .PWRITE(PWRITE),
@@ -192,8 +256,31 @@ module mpeg2fpga_apb_peripheral (
 
       .busy(busy),
       .stream_data(stream_data_internal),
-      .stream_valid(stream_valid_internal)
+      .stream_valid(stream_valid_internal),
+
+      .dma_start(dma_start), .dma_addr(dma_addr), .dma_len(dma_len),
+      .dma_busy(dma_busy), .dma_done(dma_done), .dma_bytes_done(dma_bytes_done)
   );
+
+  stream_dma u_stream_dma (
+      .clk(clk_internal), .rst_n(rst_n),
+
+      .start(dma_start), .addr(dma_addr), .len(dma_len),
+      .busy(dma_busy), .done(dma_done), .bytes_done(dma_bytes_done),
+
+      .mpeg_busy(busy),
+      .stream_data(dma_stream_data), .stream_valid(dma_stream_valid),
+
+      .m_axi_arid(dma_axi_arid), .m_axi_araddr(dma_axi_araddr), .m_axi_arlen(dma_axi_arlen),
+      .m_axi_arsize(dma_axi_arsize), .m_axi_arburst(dma_axi_arburst),
+      .m_axi_arlock(dma_axi_arlock), .m_axi_arcache(dma_axi_arcache), .m_axi_arprot(dma_axi_arprot),
+      .m_axi_arqos(dma_axi_arqos), .m_axi_arregion(dma_axi_arregion), .m_axi_aruser(dma_axi_aruser),
+      .m_axi_arvalid(dma_axi_arvalid), .m_axi_arready(dma_axi_arready),
+      .m_axi_rid(dma_axi_rid), .m_axi_rdata(dma_axi_rdata), .m_axi_rresp(dma_axi_rresp),
+      .m_axi_rlast(dma_axi_rlast), .m_axi_ruser(dma_axi_ruser), .m_axi_rvalid(dma_axi_rvalid), .m_axi_rready(dma_axi_rready)
+  );
+
+  assign clk_out = clk_internal;
 
   mpeg2video u_mpeg2 (
       .ref_clk(ref_clk),
@@ -202,8 +289,8 @@ module mpeg2fpga_apb_peripheral (
       .mem_rst_out(mem_rst_internal),
       .rst(rst_n),
 
-      .stream_data(stream_data_internal),
-      .stream_valid(stream_valid_internal),
+      .stream_data(stream_data_mux),
+      .stream_valid(stream_valid_mux),
 
       .reg_addr(reg_addr),
       .reg_wr_en(reg_wr_en),

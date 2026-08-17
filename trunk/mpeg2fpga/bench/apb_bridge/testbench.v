@@ -46,6 +46,13 @@ module testbench ();
   wire  [7:0] stream_data;
   wire        stream_valid;
 
+  wire        dma_start;
+  wire [31:0] dma_addr;
+  wire [31:0] dma_len;
+  reg         dma_busy;
+  reg         dma_done;
+  reg  [31:0] dma_bytes_done;
+
   integer     errors;
   integer     checks;
 
@@ -56,7 +63,9 @@ module testbench ();
       .core_clk(core_clk), .core_rst_n(core_rst_n),
       .reg_addr(reg_addr), .reg_wr_en(reg_wr_en), .reg_dta_in(reg_dta_in),
       .reg_rd_en(reg_rd_en), .reg_dta_out(reg_dta_out),
-      .busy(busy), .stream_data(stream_data), .stream_valid(stream_valid)
+      .busy(busy), .stream_data(stream_data), .stream_valid(stream_valid),
+      .dma_start(dma_start), .dma_addr(dma_addr), .dma_len(dma_len),
+      .dma_busy(dma_busy), .dma_done(dma_done), .dma_bytes_done(dma_bytes_done)
   );
 
   fake_regfile fake (
@@ -102,6 +111,9 @@ module testbench ();
     PADDR   = 7'b0;
     PWDATA  = 32'b0;
     busy    = 1'b0;
+    dma_busy = 1'b0;
+    dma_done = 1'b0;
+    dma_bytes_done = 32'b0;
   end
 
   /* APB3 master BFM: one full write or read transfer, polling PREADY.
@@ -166,6 +178,12 @@ module testbench ();
       captured_stream[captured_count] = stream_data;
       captured_count = captured_count + 1;
     end
+
+  /* counts dma_start pulses, to check DMA_CTRL writes do/don't trigger one */
+  integer dma_start_count;
+
+  always @(posedge core_clk)
+    if (dma_start) dma_start_count = dma_start_count + 1;
 
 `ifdef DEBUG_TRACE
   initial $monitor("t=%0t PSEL=%b PENABLE=%b PREADY=%b apb_state=%b req_toggle=%b ack_toggle_sync=%b core_state=%b req_toggle_sync=%b req_toggle_seen=%b reg_wr_en=%b reg_rd_en=%b",
@@ -266,6 +284,74 @@ module testbench ();
     /* a register access right after a stream push must still work normally */
     apb_transfer(1'b0, 4'h0, 32'b0, rdata);
     check_eq("register read still works after stream push", rdata, 32'h0000_0001);
+
+    /* DMA_ADDR/DMA_LEN (Fase 7c): plain holding-register writes, no CDC
+     * pulse involved -- checked directly against the bridge's dma_addr/
+     * dma_len outputs, which are just continuous assigns of the holding
+     * registers.
+     */
+    apb_transfer(1'b1, 5'h11, 32'h0000_1000, rdata);
+    apb_transfer(1'b1, 5'h12, 32'h0000_0080, rdata);
+    check_eq("DMA_ADDR latched", dma_addr, 32'h0000_1000);
+    check_eq("DMA_LEN latched", dma_len, 32'h0000_0080);
+
+    /* Fase 7c debug: DMA_ADDR/DMA_LEN readback (added while investigating a
+     * real-hardware bug where DMA_LEN's written value never reached
+     * stream_dma.v -- lets software read back what the bridge actually
+     * latched, to bisect a write-path bug from a stream_dma-side one). */
+    apb_transfer(1'b0, 5'h11, 32'b0, rdata);
+    check_eq("DMA_ADDR readback", rdata, 32'h0000_1000);
+    apb_transfer(1'b0, 5'h12, 32'b0, rdata);
+    check_eq("DMA_LEN readback", rdata, 32'h0000_0080);
+
+    /* DMA_CTRL start bit: pulses dma_start for one core_clk cycle when the
+     * DUT sees dma_busy low.
+     */
+    dma_start_count = 0;
+    dma_busy = 1'b0;
+    apb_transfer(1'b1, 5'h13, 32'h0000_0001, rdata);
+    repeat (5) @(posedge core_clk);
+    check_eq("DMA_CTRL start: dma_start pulsed once", dma_start_count, 32'd1);
+
+    /* DMA_STATUS read while busy: bit0=1, bit1 (done) still 0 */
+    dma_busy = 1'b1;
+    dma_bytes_done = 32'd40;
+    apb_transfer(1'b0, 5'h14, 32'b0, rdata);
+    check_eq("DMA_STATUS while busy", rdata, {24'd40, 6'b0, 1'b0, 1'b1});   /* done=0, busy=1 */
+
+    /* a DMA_CTRL start write while already busy must be ignored -- software
+     * is expected to poll DMA_STATUS first, same contract as DMA_ADDR/
+     * DMA_LEN must be written before DMA_CTRL.
+     */
+    dma_start_count = 0;
+    apb_transfer(1'b1, 5'h13, 32'h0000_0001, rdata);
+    repeat (5) @(posedge core_clk);
+    check_eq("DMA_CTRL start ignored while busy", dma_start_count, 32'd0);
+
+    /* dma_done pulse sets a sticky bit DMA_STATUS reports until the next
+     * start clears it.
+     */
+    dma_busy = 1'b0;
+    @(posedge core_clk);
+    dma_done = 1'b1;
+    @(posedge core_clk);
+    dma_done = 1'b0;
+    dma_bytes_done = 32'd112;
+    apb_transfer(1'b0, 5'h14, 32'b0, rdata);
+    check_eq("DMA_STATUS done sticky set", rdata, {24'd112, 6'b0, 1'b1, 1'b0});   /* done=1, busy=0 */
+
+    apb_transfer(1'b1, 5'h13, 32'h0000_0001, rdata);   /* new start clears done_sticky */
+    dma_busy = 1'b1;
+    apb_transfer(1'b0, 5'h14, 32'b0, rdata);
+    check_eq("DMA_STATUS done_sticky cleared by new start", rdata, {24'd112, 6'b0, 1'b0, 1'b1});   /* done=0, busy=1 */
+    dma_busy = 1'b0;
+
+    /* regfile/stream-push paths must still be unaffected by DMA register
+     * traffic -- same non-interference guarantee already checked above for
+     * stream push vs. regular registers.
+     */
+    apb_transfer(1'b0, 4'h0, 32'b0, rdata);
+    check_eq("register read still works after DMA register traffic", rdata, 32'h0000_0001);
 
     if (errors == 0)
       $display("ALL TESTS PASSED (%0d checks)", checks);

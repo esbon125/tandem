@@ -32,6 +32,22 @@
  * asserts PREADY) once mpeg2video's own "busy" output (asserted when the
  * input FIFO risks overflow) is low -- APB's own wait-state mechanism
  * becomes the flow control, no separate polling register needed.
+ *
+ * Fase 7c adds four more addresses -- DMA_ADDR/DMA_LEN/DMA_CTRL/DMA_STATUS
+ * (0x11-0x14) -- that control stream_dma.v (a hardware streamer reading a
+ * DDR staging buffer over its own AXI4 master, feeding stream_data/
+ * stream_valid autonomously instead of one byte per APB write). Because
+ * stream_dma.v already lives in core_clk (see its header comment), these
+ * registers need no CDC beyond the toggle-handshake this bridge already
+ * runs for every other address: DMA_ADDR/DMA_LEN writes just latch a
+ * holding register here on the same edge a regfile write would, DMA_CTRL's
+ * start bit pulses stream_dma's `start` input directly (ignored if a
+ * transfer is already running -- software is expected to poll DMA_STATUS
+ * first, not blocked on it the way STREAM_PUSH_ADDR blocks on `busy`), and
+ * DMA_STATUS reads stream_dma's busy/done/bytes_done outputs -- also plain
+ * core_clk wires, needing none of STREAM_PUSH_ADDR/regfile's C_READ_WAIT1/
+ * C_READ_WAIT2 (those exist only to accommodate regfile.v's output being
+ * registered one cycle after reg_rd_en, which doesn't apply here).
  */
 
 `include "timescale.v"
@@ -44,7 +60,11 @@ module apb3_mpeg2fpga_bridge (
     /* mpeg2video side: core_clk domain */
     core_clk, core_rst_n,
     reg_addr, reg_wr_en, reg_dta_in, reg_rd_en, reg_dta_out,
-    busy, stream_data, stream_valid
+    busy, stream_data, stream_valid,
+
+    /* stream_dma.v side: core_clk domain, no CDC needed (see header) */
+    dma_start, dma_addr, dma_len,
+    dma_busy, dma_done, dma_bytes_done
 );
 
   input             PCLK;
@@ -69,6 +89,13 @@ module apb3_mpeg2fpga_bridge (
   output      [7:0] stream_data;
   output reg        stream_valid;
 
+  output reg        dma_start;       /* 1-cycle pulse */
+  output      [31:0]dma_addr;
+  output      [31:0]dma_len;
+  input             dma_busy;
+  input             dma_done;        /* 1-cycle pulse */
+  input       [31:0]dma_bytes_done;
+
   /*
    * APB3 domain: latch the transfer on entering the Access phase
    * (PSEL && PENABLE, first cycle after Setup), then wait for the
@@ -78,6 +105,14 @@ module apb3_mpeg2fpga_bridge (
   localparam A_IDLE = 1'b0, A_WAIT_ACK = 1'b1;
   localparam [2:0] C_IDLE = 3'd0, C_READ_WAIT1 = 3'd1, C_READ_WAIT2 = 3'd2, C_DONE = 3'd3, C_STREAM_WAIT = 3'd4;
   localparam [4:0] STREAM_PUSH_ADDR = 5'h10;
+  localparam [4:0] DMA_ADDR_ADDR = 5'h11, DMA_LEN_ADDR = 5'h12, DMA_CTRL_ADDR = 5'h13, DMA_STATUS_ADDR = 5'h14;
+
+  reg [31:0] dma_addr_r;
+  reg [31:0] dma_len_r;
+  reg        dma_done_sticky;
+
+  assign dma_addr = dma_addr_r;
+  assign dma_len  = dma_len_r;
 
   reg        apb_state;
   reg  [4:0] apb_addr_r;
@@ -162,6 +197,10 @@ module apb3_mpeg2fpga_bridge (
   assign stream_data = apb_wdata_r[7:0];
 
   wire is_stream_push = (apb_addr_r == STREAM_PUSH_ADDR);
+  wire is_dma_addr    = (apb_addr_r == DMA_ADDR_ADDR);
+  wire is_dma_len      = (apb_addr_r == DMA_LEN_ADDR);
+  wire is_dma_ctrl     = (apb_addr_r == DMA_CTRL_ADDR);
+  wire is_dma_status   = (apb_addr_r == DMA_STATUS_ADDR);
 
   always @(posedge core_clk or negedge core_rst_n) begin
     if (!core_rst_n) begin
@@ -174,6 +213,10 @@ module apb3_mpeg2fpga_bridge (
       stream_valid    <= 1'b0;
       rdata_hold      <= 32'b0;
       ack_toggle      <= 1'b0;
+      dma_addr_r      <= 32'b0;
+      dma_len_r       <= 32'b0;
+      dma_start       <= 1'b0;
+      dma_done_sticky <= 1'b0;
     end else begin
       /* 2-FF synchronizer for the APB-domain req_toggle */
       req_toggle_meta <= req_toggle;
@@ -182,12 +225,33 @@ module apb3_mpeg2fpga_bridge (
       reg_wr_en_r  <= 1'b0;
       reg_rd_en_r  <= 1'b0;
       stream_valid <= 1'b0;
+      dma_start    <= 1'b0;
+
+      if (dma_done) dma_done_sticky <= 1'b1;   /* independent of APB activity */
 
       case (core_state)
         C_IDLE: begin
           if (req_toggle_sync != req_toggle_seen) begin
             req_toggle_seen <= req_toggle_sync;
-            if (is_stream_push) begin
+            if (is_dma_addr) begin
+              if (apb_write_r) dma_addr_r <= apb_wdata_r;
+              else rdata_hold <= dma_addr_r;   /* Fase 7c debug: DMA_LEN=0 bug investigation */
+              core_state <= C_DONE;
+            end else if (is_dma_len) begin
+              if (apb_write_r) dma_len_r <= apb_wdata_r;
+              else rdata_hold <= dma_len_r;    /* Fase 7c debug: DMA_LEN=0 bug investigation */
+              core_state <= C_DONE;
+            end else if (is_dma_ctrl) begin
+              if (apb_write_r && apb_wdata_r[0] && !dma_busy) begin
+                dma_start       <= 1'b1;
+                dma_done_sticky <= 1'b0;
+              end
+              core_state <= C_DONE;
+            end else if (is_dma_status) begin
+              if (!apb_write_r)
+                rdata_hold <= {dma_bytes_done[23:0], 6'b0, dma_done_sticky, dma_busy};
+              core_state <= C_DONE;
+            end else if (is_stream_push) begin
               if (apb_write_r) begin
                 if (busy) core_state <= C_STREAM_WAIT;   /* hold PREADY off until mpeg2video has room */
                 else begin

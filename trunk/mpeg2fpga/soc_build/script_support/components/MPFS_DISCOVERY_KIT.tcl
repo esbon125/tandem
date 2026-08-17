@@ -185,7 +185,11 @@ sd_mark_pins_unused -sd_name ${sd_name} -pin_names {MSS_WRAPPER_0:FIC_1_AXI4_INI
 # mem2axi_bridge via FIC_3_PERIPHERALS_0:mem_axi_bif. Was free in the base
 # reference-design MSS config (only FIC_0's target path is used there, by
 # DMA_CONTROLLER/DMA_INITIATOR) -- see rtl/mpeg2/mem2axi_bridge.v header.
-sd_mark_pins_unused -sd_name ${sd_name} -pin_names {MSS_WRAPPER_0:FIC_2_AXI4_TARGET}
+#
+# FIC_2_AXI4_TARGET (Fase 7c): also no longer unused -- connected below to
+# u_stream_dma's AXI4 read-only master via FIC_3_PERIPHERALS_0:DMA_AXI_*.
+# Free for the same reason FIC_1 was (base reference design only uses
+# FIC_0's target path) -- see rtl/mpeg2/stream_dma.v header.
 
 
 
@@ -245,7 +249,12 @@ sd_connect_pins -sd_name ${sd_name} -pin_names {"CLOCKS_AND_RESETS_0:FIC_0_CLK" 
 # a second, independently-generated one nominally at the same frequency.
 # See rtl/mpeg2/mem2axi_bridge.v header comment.
 sd_connect_pins -sd_name ${sd_name} -pin_names {"FIC_3_PERIPHERALS_0:MEM_CLK_MPEG2FPGA" "MSS_WRAPPER_0:FIC_1_ACLK" }
-sd_connect_pins -sd_name ${sd_name} -pin_names {"CLOCKS_AND_RESETS_0:FIC_2_CLK" "MSS_WRAPPER_0:FIC_2_ACLK" }
+# FIC_2_ACLK (Fase 7c): fed by mpeg2video's own core clk (clk_out, via
+# FIC_3_PERIPHERALS_0:CORE_CLK_MPEG2FPGA), NOT by CLOCKS_AND_RESETS_0:
+# FIC_2_CLK -- same reasoning as FIC_1_ACLK above, but for u_stream_dma's
+# stream_data/stream_valid output, which lives in core_clk (not mem_clk).
+# See rtl/mpeg2/stream_dma.v's header comment.
+sd_connect_pins -sd_name ${sd_name} -pin_names {"FIC_3_PERIPHERALS_0:CORE_CLK_MPEG2FPGA" "MSS_WRAPPER_0:FIC_2_ACLK" }
 sd_connect_pins -sd_name ${sd_name} -pin_names {"CLOCKS_AND_RESETS_0:FIC_3_CLK" "FIC_3_PERIPHERALS_0:PCLK" "MSS_WRAPPER_0:FIC_3_PCLK" }
 sd_connect_pins -sd_name ${sd_name} -pin_names {"CLOCKS_AND_RESETS_0:MSS_DLL_LOCKS" "MSS_WRAPPER_0:MSS_DLL_LOCKS" }
 sd_connect_pins -sd_name ${sd_name} -pin_names {"CLOCKS_AND_RESETS_0:MSS_RESETN" "MSS_WRAPPER_0:MSS_RESET_N_F2M" }
@@ -429,6 +438,54 @@ sd_connect_pins -sd_name ${sd_name} -pin_names {"FIC_3_PERIPHERALS_0:MEM_AXI_RRE
 sd_connect_pins -sd_name ${sd_name} -pin_names {"FIC_3_PERIPHERALS_0:MEM_AXI_RLAST" "MSS_WRAPPER_0:FIC_1_AXI4_TARGET_FIC_1_AXI4_S_RLAST" }
 sd_connect_pins -sd_name ${sd_name} -pin_names {"FIC_3_PERIPHERALS_0:MEM_AXI_RVALID" "MSS_WRAPPER_0:FIC_1_AXI4_TARGET_FIC_1_AXI4_S_RVALID" }
 sd_connect_pins -sd_name ${sd_name} -pin_names {"FIC_3_PERIPHERALS_0:MEM_AXI_RREADY" "MSS_WRAPPER_0:FIC_1_AXI4_TARGET_FIC_1_AXI4_S_RREADY" }
+
+# FIC_2_AXI4_TARGET (Fase 7c): u_stream_dma's AXI4 read-only master. Only
+# AR/R are wired to FIC_3_PERIPHERALS_0:DMA_AXI_* -- stream_dma.v never
+# writes DDR, so the AW/W/B channel inputs FIC_2_AXI4_TARGET still requires
+# (Libero errors on any unconnected *input* pin, unlike outputs) are tied
+# to fixed "no transaction" values directly here instead of being routed
+# all the way up through FIC_3_PERIPHERALS for signals that would always be
+# constant anyway.
+sd_connect_pins_to_constant -sd_name ${sd_name} -pin_names {MSS_WRAPPER_0:FIC_2_AXI4_TARGET_FIC_2_AXI4_S_AWVALID} -value {GND}
+sd_connect_pins_to_constant -sd_name ${sd_name} -pin_names {MSS_WRAPPER_0:FIC_2_AXI4_TARGET_FIC_2_AXI4_S_WVALID} -value {GND}
+sd_connect_pins_to_constant -sd_name ${sd_name} -pin_names {MSS_WRAPPER_0:FIC_2_AXI4_TARGET_FIC_2_AXI4_S_WLAST} -value {GND}
+sd_connect_pins_to_constant -sd_name ${sd_name} -pin_names {MSS_WRAPPER_0:FIC_2_AXI4_TARGET_FIC_2_AXI4_S_BREADY} -value {GND}
+sd_connect_pins_to_constant -sd_name ${sd_name} -pin_names {MSS_WRAPPER_0:FIC_2_AXI4_TARGET_FIC_2_AXI4_S_AWID} -value {GND}
+sd_connect_pins_to_constant -sd_name ${sd_name} -pin_names {MSS_WRAPPER_0:FIC_2_AXI4_TARGET_FIC_2_AXI4_S_AWADDR} -value {GND}
+sd_connect_pins_to_constant -sd_name ${sd_name} -pin_names {MSS_WRAPPER_0:FIC_2_AXI4_TARGET_FIC_2_AXI4_S_AWLEN} -value {GND}
+sd_connect_pins_to_constant -sd_name ${sd_name} -pin_names {MSS_WRAPPER_0:FIC_2_AXI4_TARGET_FIC_2_AXI4_S_AWSIZE} -value {GND}
+sd_connect_pins_to_constant -sd_name ${sd_name} -pin_names {MSS_WRAPPER_0:FIC_2_AXI4_TARGET_FIC_2_AXI4_S_AWBURST} -value {GND}
+sd_connect_pins_to_constant -sd_name ${sd_name} -pin_names {MSS_WRAPPER_0:FIC_2_AXI4_TARGET_FIC_2_AXI4_S_AWLOCK} -value {GND}
+sd_connect_pins_to_constant -sd_name ${sd_name} -pin_names {MSS_WRAPPER_0:FIC_2_AXI4_TARGET_FIC_2_AXI4_S_AWCACHE} -value {GND}
+sd_connect_pins_to_constant -sd_name ${sd_name} -pin_names {MSS_WRAPPER_0:FIC_2_AXI4_TARGET_FIC_2_AXI4_S_AWPROT} -value {GND}
+sd_connect_pins_to_constant -sd_name ${sd_name} -pin_names {MSS_WRAPPER_0:FIC_2_AXI4_TARGET_FIC_2_AXI4_S_AWQOS} -value {GND}
+sd_connect_pins_to_constant -sd_name ${sd_name} -pin_names {MSS_WRAPPER_0:FIC_2_AXI4_TARGET_FIC_2_AXI4_S_WDATA} -value {GND}
+sd_connect_pins_to_constant -sd_name ${sd_name} -pin_names {MSS_WRAPPER_0:FIC_2_AXI4_TARGET_FIC_2_AXI4_S_WSTRB} -value {GND}
+# AWREADY/WREADY/BID/BRESP/BVALID are outputs of MSS_WRAPPER_0 we never
+# consume (no write channel on our side to route them to). sd_mark_pins_unused
+# rejects sub-pins of a bif ("Cannot mark pin to unused when it belongs to
+# Bus Interface Pin") -- unlike the AW/W-channel *inputs* just above, these
+# are outputs, so simply leaving them unconnected is safe (a "Floating
+# output bus pin" warning, not an error -- same as m_axi_awregion/aruser
+# etc. already are, see the "Note" comment above).
+
+sd_connect_pins -sd_name ${sd_name} -pin_names {"FIC_3_PERIPHERALS_0:DMA_AXI_ARID" "MSS_WRAPPER_0:FIC_2_AXI4_TARGET_FIC_2_AXI4_S_ARID" }
+sd_connect_pins -sd_name ${sd_name} -pin_names {"FIC_3_PERIPHERALS_0:DMA_AXI_ARADDR" "MSS_WRAPPER_0:FIC_2_AXI4_TARGET_FIC_2_AXI4_S_ARADDR" }
+sd_connect_pins -sd_name ${sd_name} -pin_names {"FIC_3_PERIPHERALS_0:DMA_AXI_ARLEN" "MSS_WRAPPER_0:FIC_2_AXI4_TARGET_FIC_2_AXI4_S_ARLEN" }
+sd_connect_pins -sd_name ${sd_name} -pin_names {"FIC_3_PERIPHERALS_0:DMA_AXI_ARSIZE" "MSS_WRAPPER_0:FIC_2_AXI4_TARGET_FIC_2_AXI4_S_ARSIZE" }
+sd_connect_pins -sd_name ${sd_name} -pin_names {"FIC_3_PERIPHERALS_0:DMA_AXI_ARBURST" "MSS_WRAPPER_0:FIC_2_AXI4_TARGET_FIC_2_AXI4_S_ARBURST" }
+sd_connect_pins -sd_name ${sd_name} -pin_names {"FIC_3_PERIPHERALS_0:DMA_AXI_ARLOCK" "MSS_WRAPPER_0:FIC_2_AXI4_TARGET_FIC_2_AXI4_S_ARLOCK" }
+sd_connect_pins -sd_name ${sd_name} -pin_names {"FIC_3_PERIPHERALS_0:DMA_AXI_ARCACHE" "MSS_WRAPPER_0:FIC_2_AXI4_TARGET_FIC_2_AXI4_S_ARCACHE" }
+sd_connect_pins -sd_name ${sd_name} -pin_names {"FIC_3_PERIPHERALS_0:DMA_AXI_ARPROT" "MSS_WRAPPER_0:FIC_2_AXI4_TARGET_FIC_2_AXI4_S_ARPROT" }
+sd_connect_pins -sd_name ${sd_name} -pin_names {"FIC_3_PERIPHERALS_0:DMA_AXI_ARQOS" "MSS_WRAPPER_0:FIC_2_AXI4_TARGET_FIC_2_AXI4_S_ARQOS" }
+sd_connect_pins -sd_name ${sd_name} -pin_names {"FIC_3_PERIPHERALS_0:DMA_AXI_ARVALID" "MSS_WRAPPER_0:FIC_2_AXI4_TARGET_FIC_2_AXI4_S_ARVALID" }
+sd_connect_pins -sd_name ${sd_name} -pin_names {"FIC_3_PERIPHERALS_0:DMA_AXI_ARREADY" "MSS_WRAPPER_0:FIC_2_AXI4_TARGET_FIC_2_AXI4_S_ARREADY" }
+sd_connect_pins -sd_name ${sd_name} -pin_names {"FIC_3_PERIPHERALS_0:DMA_AXI_RID" "MSS_WRAPPER_0:FIC_2_AXI4_TARGET_FIC_2_AXI4_S_RID" }
+sd_connect_pins -sd_name ${sd_name} -pin_names {"FIC_3_PERIPHERALS_0:DMA_AXI_RDATA" "MSS_WRAPPER_0:FIC_2_AXI4_TARGET_FIC_2_AXI4_S_RDATA" }
+sd_connect_pins -sd_name ${sd_name} -pin_names {"FIC_3_PERIPHERALS_0:DMA_AXI_RRESP" "MSS_WRAPPER_0:FIC_2_AXI4_TARGET_FIC_2_AXI4_S_RRESP" }
+sd_connect_pins -sd_name ${sd_name} -pin_names {"FIC_3_PERIPHERALS_0:DMA_AXI_RLAST" "MSS_WRAPPER_0:FIC_2_AXI4_TARGET_FIC_2_AXI4_S_RLAST" }
+sd_connect_pins -sd_name ${sd_name} -pin_names {"FIC_3_PERIPHERALS_0:DMA_AXI_RVALID" "MSS_WRAPPER_0:FIC_2_AXI4_TARGET_FIC_2_AXI4_S_RVALID" }
+sd_connect_pins -sd_name ${sd_name} -pin_names {"FIC_3_PERIPHERALS_0:DMA_AXI_RREADY" "MSS_WRAPPER_0:FIC_2_AXI4_TARGET_FIC_2_AXI4_S_RREADY" }
 
 # Re-enable auto promotion of pins of type 'pad'
 auto_promote_pad_pins -promote_all 1

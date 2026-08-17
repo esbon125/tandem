@@ -34,6 +34,11 @@ sd_create_scalar_port -sd_name ${sd_name} -port_name {Q0_LANE0_DRI_DRI_ARST_N} -
 sd_create_scalar_port -sd_name ${sd_name} -port_name {Q0_LANE0_DRI_DRI_CLK} -port_direction {OUT}
 sd_create_scalar_port -sd_name ${sd_name} -port_name {MPEG2FPGA_INTERRUPT} -port_direction {OUT}
 sd_create_scalar_port -sd_name ${sd_name} -port_name {MEM_CLK_MPEG2FPGA} -port_direction {OUT}
+# Fase 7c: mpeg2fpga_apb_peripheral's core_clk (clk_out), promoted so
+# MPFS_DISCOVERY_KIT.tcl can feed the same clock into FIC_2_ACLK for
+# u_stream_dma's AXI4 master -- same reasoning as MEM_CLK_MPEG2FPGA/FIC_1
+# above, see rtl/mpeg2/stream_dma.v's header comment.
+sd_create_scalar_port -sd_name ${sd_name} -port_name {CORE_CLK_MPEG2FPGA} -port_direction {OUT}
 
 sd_create_scalar_port -sd_name ${sd_name} -port_name {COREI2C_C0_SCL} -port_direction {INOUT} -port_is_pad {1}
 sd_create_scalar_port -sd_name ${sd_name} -port_name {COREI2C_C0_SDA} -port_direction {INOUT} -port_is_pad {1}
@@ -57,6 +62,16 @@ sd_create_scalar_port -sd_name ${sd_name} -port_name {MEM_AXI_ARREADY} -port_dir
 sd_create_scalar_port -sd_name ${sd_name} -port_name {MEM_AXI_RVALID} -port_direction {IN}
 sd_create_scalar_port -sd_name ${sd_name} -port_name {MEM_AXI_RREADY} -port_direction {OUT}
 sd_create_scalar_port -sd_name ${sd_name} -port_name {MEM_AXI_RLAST} -port_direction {IN}
+
+# Fase 7c: u_stream_dma's AXI4 read-only master, bubbled up the same way
+# MEM_AXI_* is above -- a second, independent fabric-master path into DDR
+# (FIC_2_AXI4_TARGET at the MPFS_DISCOVERY_KIT top), no AW/W/B channels
+# since stream_dma.v never writes DDR.
+sd_create_scalar_port -sd_name ${sd_name} -port_name {DMA_AXI_ARVALID} -port_direction {OUT}
+sd_create_scalar_port -sd_name ${sd_name} -port_name {DMA_AXI_ARREADY} -port_direction {IN}
+sd_create_scalar_port -sd_name ${sd_name} -port_name {DMA_AXI_RVALID} -port_direction {IN}
+sd_create_scalar_port -sd_name ${sd_name} -port_name {DMA_AXI_RREADY} -port_direction {OUT}
+sd_create_scalar_port -sd_name ${sd_name} -port_name {DMA_AXI_RLAST} -port_direction {IN}
 
 # Create top level Bus Ports
 sd_create_bus_port -sd_name ${sd_name} -port_name {APB_MMASTER_in_paddr} -port_direction {IN} -port_range {[31:0]}
@@ -88,6 +103,15 @@ sd_create_bus_port -sd_name ${sd_name} -port_name {MEM_AXI_RID} -port_direction 
 sd_create_bus_port -sd_name ${sd_name} -port_name {MEM_AXI_RDATA} -port_direction {IN} -port_range {[63:0]}
 sd_create_bus_port -sd_name ${sd_name} -port_name {MEM_AXI_RRESP} -port_direction {IN} -port_range {[1:0]}
 
+sd_create_bus_port -sd_name ${sd_name} -port_name {DMA_AXI_ARID} -port_direction {OUT} -port_range {[3:0]}
+sd_create_bus_port -sd_name ${sd_name} -port_name {DMA_AXI_ARADDR} -port_direction {OUT} -port_range {[37:0]}
+sd_create_bus_port -sd_name ${sd_name} -port_name {DMA_AXI_ARLEN} -port_direction {OUT} -port_range {[7:0]}
+sd_create_bus_port -sd_name ${sd_name} -port_name {DMA_AXI_ARSIZE} -port_direction {OUT} -port_range {[2:0]}
+sd_create_bus_port -sd_name ${sd_name} -port_name {DMA_AXI_ARBURST} -port_direction {OUT} -port_range {[1:0]}
+sd_create_bus_port -sd_name ${sd_name} -port_name {DMA_AXI_RID} -port_direction {IN} -port_range {[3:0]}
+sd_create_bus_port -sd_name ${sd_name} -port_name {DMA_AXI_RDATA} -port_direction {IN} -port_range {[63:0]}
+sd_create_bus_port -sd_name ${sd_name} -port_name {DMA_AXI_RRESP} -port_direction {IN} -port_range {[1:0]}
+
 # AXI4 sideband signals actually implemented by MSS_WRAPPER's
 # FIC_1_AXI4_TARGET (see rtl/mpeg2/mem2axi_bridge.v's port list comment).
 # AWREGION/ARREGION and all *USER signals are NOT implemented there (not
@@ -103,6 +127,10 @@ sd_create_scalar_port -sd_name ${sd_name} -port_name {MEM_AXI_ARLOCK} -port_dire
 sd_create_bus_port -sd_name ${sd_name} -port_name {MEM_AXI_ARCACHE} -port_direction {OUT} -port_range {[3:0]}
 sd_create_bus_port -sd_name ${sd_name} -port_name {MEM_AXI_ARPROT} -port_direction {OUT} -port_range {[2:0]}
 sd_create_bus_port -sd_name ${sd_name} -port_name {MEM_AXI_ARQOS} -port_direction {OUT} -port_range {[3:0]}
+sd_create_scalar_port -sd_name ${sd_name} -port_name {DMA_AXI_ARLOCK} -port_direction {OUT}
+sd_create_bus_port -sd_name ${sd_name} -port_name {DMA_AXI_ARCACHE} -port_direction {OUT} -port_range {[3:0]}
+sd_create_bus_port -sd_name ${sd_name} -port_name {DMA_AXI_ARPROT} -port_direction {OUT} -port_range {[2:0]}
+sd_create_bus_port -sd_name ${sd_name} -port_name {DMA_AXI_ARQOS} -port_direction {OUT} -port_range {[3:0]}
 
 # Create top level Bus interface Ports
 sd_create_bif_port -sd_name ${sd_name} -port_name {PLL0_SW_DRI} -port_bif_vlnv {Actel:busdef.dri:PF_DRI:1.0} -port_bif_role {mirroredSlave} -port_bif_mapping {\
@@ -188,6 +216,8 @@ sd_instantiate_hdl_core -sd_name ${sd_name} -hdl_core_name {mpeg2fpga_apb_periph
 # ARUSER *outputs*, which Libero is happy to leave floating).
 sd_connect_pins_to_constant -sd_name ${sd_name} -pin_names {MPEG2FPGA_APB_PERIPHERAL_0:m_axi_buser} -value {GND}
 sd_connect_pins_to_constant -sd_name ${sd_name} -pin_names {MPEG2FPGA_APB_PERIPHERAL_0:m_axi_ruser} -value {GND}
+# Fase 7c: same reasoning, dma_axi_ruser (no dma_axi_buser -- read-only master)
+sd_connect_pins_to_constant -sd_name ${sd_name} -pin_names {MPEG2FPGA_APB_PERIPHERAL_0:dma_axi_ruser} -value {GND}
 
 
 
@@ -213,6 +243,7 @@ sd_connect_pins -sd_name ${sd_name} -pin_names {"IHC_MP_APP_U54_4_IRQ" "MIV_IHC_
 sd_connect_pins -sd_name ${sd_name} -pin_names {"PWM:PWM[0:0]" "PWM_0" }
 sd_connect_pins -sd_name ${sd_name} -pin_names {"MPEG2FPGA_INTERRUPT" "MPEG2FPGA_APB_PERIPHERAL_0:interrupt" }
 sd_connect_pins -sd_name ${sd_name} -pin_names {"MEM_CLK_MPEG2FPGA" "MPEG2FPGA_APB_PERIPHERAL_0:mem_clk_out" }
+sd_connect_pins -sd_name ${sd_name} -pin_names {"CORE_CLK_MPEG2FPGA" "MPEG2FPGA_APB_PERIPHERAL_0:clk_out" }
 
 # Add bus net connections
 sd_connect_pins -sd_name ${sd_name} -pin_names {"COREGPIO_C0:GPIO_OUT" "GPIO_OUT" }
@@ -265,6 +296,25 @@ sd_connect_pins -sd_name ${sd_name} -pin_names {"MEM_AXI_RRESP" "MPEG2FPGA_APB_P
 sd_connect_pins -sd_name ${sd_name} -pin_names {"MEM_AXI_RLAST" "MPEG2FPGA_APB_PERIPHERAL_0:m_axi_rlast" }
 sd_connect_pins -sd_name ${sd_name} -pin_names {"MEM_AXI_RVALID" "MPEG2FPGA_APB_PERIPHERAL_0:m_axi_rvalid" }
 sd_connect_pins -sd_name ${sd_name} -pin_names {"MEM_AXI_RREADY" "MPEG2FPGA_APB_PERIPHERAL_0:m_axi_rready" }
+# Fase 7c: u_stream_dma's AXI4 read-only master, per-signal (same reasoning
+# as MEM_AXI_* above -- no bif, plain sd_connect_pins).
+sd_connect_pins -sd_name ${sd_name} -pin_names {"DMA_AXI_ARID" "MPEG2FPGA_APB_PERIPHERAL_0:dma_axi_arid" }
+sd_connect_pins -sd_name ${sd_name} -pin_names {"DMA_AXI_ARADDR" "MPEG2FPGA_APB_PERIPHERAL_0:dma_axi_araddr" }
+sd_connect_pins -sd_name ${sd_name} -pin_names {"DMA_AXI_ARLEN" "MPEG2FPGA_APB_PERIPHERAL_0:dma_axi_arlen" }
+sd_connect_pins -sd_name ${sd_name} -pin_names {"DMA_AXI_ARSIZE" "MPEG2FPGA_APB_PERIPHERAL_0:dma_axi_arsize" }
+sd_connect_pins -sd_name ${sd_name} -pin_names {"DMA_AXI_ARBURST" "MPEG2FPGA_APB_PERIPHERAL_0:dma_axi_arburst" }
+sd_connect_pins -sd_name ${sd_name} -pin_names {"DMA_AXI_ARLOCK" "MPEG2FPGA_APB_PERIPHERAL_0:dma_axi_arlock" }
+sd_connect_pins -sd_name ${sd_name} -pin_names {"DMA_AXI_ARCACHE" "MPEG2FPGA_APB_PERIPHERAL_0:dma_axi_arcache" }
+sd_connect_pins -sd_name ${sd_name} -pin_names {"DMA_AXI_ARPROT" "MPEG2FPGA_APB_PERIPHERAL_0:dma_axi_arprot" }
+sd_connect_pins -sd_name ${sd_name} -pin_names {"DMA_AXI_ARQOS" "MPEG2FPGA_APB_PERIPHERAL_0:dma_axi_arqos" }
+sd_connect_pins -sd_name ${sd_name} -pin_names {"DMA_AXI_ARVALID" "MPEG2FPGA_APB_PERIPHERAL_0:dma_axi_arvalid" }
+sd_connect_pins -sd_name ${sd_name} -pin_names {"DMA_AXI_ARREADY" "MPEG2FPGA_APB_PERIPHERAL_0:dma_axi_arready" }
+sd_connect_pins -sd_name ${sd_name} -pin_names {"DMA_AXI_RID" "MPEG2FPGA_APB_PERIPHERAL_0:dma_axi_rid" }
+sd_connect_pins -sd_name ${sd_name} -pin_names {"DMA_AXI_RDATA" "MPEG2FPGA_APB_PERIPHERAL_0:dma_axi_rdata" }
+sd_connect_pins -sd_name ${sd_name} -pin_names {"DMA_AXI_RRESP" "MPEG2FPGA_APB_PERIPHERAL_0:dma_axi_rresp" }
+sd_connect_pins -sd_name ${sd_name} -pin_names {"DMA_AXI_RLAST" "MPEG2FPGA_APB_PERIPHERAL_0:dma_axi_rlast" }
+sd_connect_pins -sd_name ${sd_name} -pin_names {"DMA_AXI_RVALID" "MPEG2FPGA_APB_PERIPHERAL_0:dma_axi_rvalid" }
+sd_connect_pins -sd_name ${sd_name} -pin_names {"DMA_AXI_RREADY" "MPEG2FPGA_APB_PERIPHERAL_0:dma_axi_rready" }
 sd_connect_pins -sd_name ${sd_name} -pin_names {"FIC_3_ADDRESS_GENERATION_1:FIC_3_0x43xx_xxxx_0x48xx_xxxx" "RECONFIGURATION_INTERFACE_0:APBS_SLAVE" }
 sd_connect_pins -sd_name ${sd_name} -pin_names {"FIC_3_ADDRESS_GENERATION_1:FIC_3_0x5xxx_xxxx" "MIV_IHC_C0_0:APB_0_M_INITIATOR" }
 sd_connect_pins -sd_name ${sd_name} -pin_names {"PLL0_SW_DRI" "RECONFIGURATION_INTERFACE_0:PLL0_SW_DRI" }
