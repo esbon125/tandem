@@ -29,7 +29,7 @@ module testbench ();
   reg         PSEL;
   reg         PENABLE;
   reg         PWRITE;
-  reg  [5:0]  PADDR;
+  reg  [6:0]  PADDR;
   reg  [31:0] PWDATA;
   wire [31:0] PRDATA;
   wire        PREADY;
@@ -42,6 +42,10 @@ module testbench ();
   wire        reg_rd_en;
   wire [31:0] reg_dta_out;
 
+  reg         busy;
+  wire  [7:0] stream_data;
+  wire        stream_valid;
+
   integer     errors;
   integer     checks;
 
@@ -51,7 +55,8 @@ module testbench ();
       .PADDR(PADDR), .PWDATA(PWDATA), .PRDATA(PRDATA), .PREADY(PREADY),
       .core_clk(core_clk), .core_rst_n(core_rst_n),
       .reg_addr(reg_addr), .reg_wr_en(reg_wr_en), .reg_dta_in(reg_dta_in),
-      .reg_rd_en(reg_rd_en), .reg_dta_out(reg_dta_out)
+      .reg_rd_en(reg_rd_en), .reg_dta_out(reg_dta_out),
+      .busy(busy), .stream_data(stream_data), .stream_valid(stream_valid)
   );
 
   fake_regfile fake (
@@ -94,8 +99,9 @@ module testbench ();
     PSEL    = 1'b0;
     PENABLE = 1'b0;
     PWRITE  = 1'b0;
-    PADDR   = 6'b0;
+    PADDR   = 7'b0;
     PWDATA  = 32'b0;
+    busy    = 1'b0;
   end
 
   /* APB3 master BFM: one full write or read transfer, polling PREADY.
@@ -106,7 +112,7 @@ module testbench ();
    */
   task apb_transfer;
     input         write;
-    input  [3:0]  addr;
+    input  [4:0]  addr;
     input  [31:0] wdata;
     output [31:0] rdata;
     begin
@@ -149,6 +155,18 @@ module testbench ();
 
   reg [31:0] rdata;
 
+  /* captures every stream_data byte the DUT pushes (stream_valid pulses
+   * for exactly one core_clk cycle, gone well before apb_transfer's task
+   * call returns) so the test can check it afterward. */
+  reg [7:0] captured_stream [0:15];
+  integer   captured_count;
+
+  always @(posedge core_clk)
+    if (stream_valid) begin
+      captured_stream[captured_count] = stream_data;
+      captured_count = captured_count + 1;
+    end
+
 `ifdef DEBUG_TRACE
   initial $monitor("t=%0t PSEL=%b PENABLE=%b PREADY=%b apb_state=%b req_toggle=%b ack_toggle_sync=%b core_state=%b req_toggle_sync=%b req_toggle_seen=%b reg_wr_en=%b reg_rd_en=%b",
     $time, PSEL, PENABLE, PREADY, dut.apb_state, dut.req_toggle, dut.ack_toggle_sync,
@@ -159,6 +177,7 @@ module testbench ();
     errors = 0;
     checks = 0;
     rdata  = 32'b0;
+    captured_count = 0;
 
     /* level wait, not two chained edge waits: PRESETn and core_rst_n
      * release at different times (see the reset initial block above), so
@@ -207,6 +226,46 @@ module testbench ();
     check_eq("back-to-back: write_mem[2] unaffected by read", fake.write_mem[2], 32'haaaa_aaaa);
     apb_transfer(1'b0, 4'h3, 32'b0, rdata);
     check_eq("back-to-back: read reg 3", rdata, 32'h2222_2222);
+
+    /* STREAM_PUSH_ADDR (index 5'h10, Fase 7a): a write pulses stream_valid/
+     * stream_data instead of touching the regfile at all -- fake_regfile's
+     * write_mem[0] (reg_addr reads as 0 during a stream push, see the
+     * "assign reg_addr = apb_addr_r[3:0]" comment in the DUT) must stay
+     * untouched, since reg_wr_en is never asserted for this address.
+     */
+    apb_transfer(1'b1, 5'h10, 32'h0000_00ab, rdata);
+    check_eq("stream push: captured byte", {24'b0, captured_stream[captured_count-1]}, 32'h0000_00ab);
+    /* write_mem[0] was set to 0x7f04 by the very first transfer in this test
+     * (watchdog_interval config write, top of this block) -- a stream push
+     * decodes to reg_addr==0 too (apb_addr_r[3:0] of STREAM_PUSH_ADDR is
+     * 0), so this checks reg_wr_en really never fires for it, not that the
+     * register happens to read back as zero. */
+    check_eq("stream push: regfile untouched", fake.write_mem[0], 32'h0000_7f04);
+
+    /* busy backpressure: the transaction must not complete (PREADY stays
+     * low) until mpeg2video's busy output deasserts -- APB's own wait-state
+     * mechanism is the flow control here, no separate polling register.
+     */
+    busy = 1'b1;
+    fork
+      apb_transfer(1'b1, 5'h10, 32'h0000_00cd, rdata);
+      begin
+        repeat (30) @(posedge core_clk);
+        checks = checks + 1;
+        if (PREADY !== 1'b0) begin
+          errors = errors + 1;
+          $display("FAIL stream push: completed while busy was still asserted");
+        end else begin
+          $display("PASS stream push: held off while busy asserted");
+        end
+        busy = 1'b0;
+      end
+    join
+    check_eq("stream push: delivered once busy clears", {24'b0, captured_stream[captured_count-1]}, 32'h0000_00cd);
+
+    /* a register access right after a stream push must still work normally */
+    apb_transfer(1'b0, 4'h0, 32'b0, rdata);
+    check_eq("register read still works after stream push", rdata, 32'h0000_0001);
 
     if (errors == 0)
       $display("ALL TESTS PASSED (%0d checks)", checks);

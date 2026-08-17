@@ -13,8 +13,13 @@
  * tied off, with its AXI4 master promoted to top-level ports here so the
  * SmartDesign can wire them to the MSS's FIC_1_AXI4_TARGET port (chosen
  * because it's free -- see mem2axi_bridge.v's header comment). The video
- * output and stream input paths are still tied off exactly as hdl/top.v
- * did -- Fase 7 (firmware/application layer) scope, not hardware.
+ * output path is still tied off exactly as hdl/top.v did.
+ *
+ * Fase 7a adds the stream input side: u_bridge's new STREAM_PUSH_ADDR
+ * (see apb3_mpeg2fpga_bridge.v) now drives mpeg2video's stream_data/
+ * stream_valid directly, instead of the 8'h00/1'b0 tie-off. mpeg2video's
+ * busy output feeds back into the bridge so a push blocks (via APB wait
+ * states) until there's room, instead of silently dropping bytes.
  */
 
 `include "timescale.v"
@@ -39,8 +44,8 @@ module mpeg2fpga_apb_peripheral (
     mem_clk_out,
 
     /* AXI4 master to MSS_WRAPPER:FIC_1_AXI4_TARGET (DDR4), via mem2axi_bridge.
-     * See mem2axi_bridge.v's port list comment for why the *LOCK/*CACHE/
-     * *PROT/*QOS/*REGION/*USER sideband signals are here too. */
+     * See mem2axi_bridge.v's port list comment for why the *LOCK, *CACHE,
+     * *PROT, *QOS, *REGION, *USER sideband signals are here too. */
     m_axi_awid, m_axi_awaddr, m_axi_awlen, m_axi_awsize, m_axi_awburst, m_axi_awlock, m_axi_awcache, m_axi_awprot, m_axi_awqos, m_axi_awregion, m_axi_awuser, m_axi_awvalid, m_axi_awready,
     m_axi_wdata, m_axi_wstrb, m_axi_wlast, m_axi_wuser, m_axi_wvalid, m_axi_wready,
     m_axi_bid, m_axi_bresp, m_axi_buser, m_axi_bvalid, m_axi_bready,
@@ -62,7 +67,7 @@ module mpeg2fpga_apb_peripheral (
   input        PSEL;
   input        PENABLE;
   input        PWRITE;
-  input  [5:0] PADDR;
+  input  [6:0] PADDR;
   input [31:0] PWDATA;
   output[31:0] PRDATA;
   output       PREADY;
@@ -162,6 +167,8 @@ module mpeg2fpga_apb_peripheral (
    * one real clock instead.
    */
   wire clk_internal;
+  wire [7:0] stream_data_internal;
+  wire       stream_valid_internal;
 
   apb3_mpeg2fpga_bridge u_bridge (
       .PCLK(PCLK), .PRESETn(PRESETn),
@@ -170,7 +177,11 @@ module mpeg2fpga_apb_peripheral (
 
       .core_clk(clk_internal), .core_rst_n(rst_n),
       .reg_addr(reg_addr), .reg_wr_en(reg_wr_en), .reg_dta_in(reg_dta_in),
-      .reg_rd_en(reg_rd_en), .reg_dta_out(reg_dta_out)
+      .reg_rd_en(reg_rd_en), .reg_dta_out(reg_dta_out),
+
+      .busy(busy),
+      .stream_data(stream_data_internal),
+      .stream_valid(stream_valid_internal)
   );
 
   mpeg2video u_mpeg2 (
@@ -180,8 +191,8 @@ module mpeg2fpga_apb_peripheral (
       .mem_rst_out(mem_rst_internal),
       .rst(rst_n),
 
-      .stream_data(8'h00),
-      .stream_valid(1'b0),
+      .stream_data(stream_data_internal),
+      .stream_valid(stream_valid_internal),
 
       .reg_addr(reg_addr),
       .reg_wr_en(reg_wr_en),
