@@ -102,10 +102,26 @@ module apb3_mpeg2fpga_bridge (
    * synchronized ack_toggle to come back before asserting PREADY.
    */
 
-  localparam A_IDLE = 1'b0, A_WAIT_ACK = 1'b1;
+  localparam [1:0] A_IDLE = 2'd0, A_SETTLE = 2'd1, A_WAIT_ACK = 2'd2;
   localparam [2:0] C_IDLE = 3'd0, C_READ_WAIT1 = 3'd1, C_READ_WAIT2 = 3'd2, C_DONE = 3'd3, C_STREAM_WAIT = 3'd4;
   localparam [4:0] STREAM_PUSH_ADDR = 5'h10;
   localparam [4:0] DMA_ADDR_ADDR = 5'h11, DMA_LEN_ADDR = 5'h12, DMA_CTRL_ADDR = 5'h13, DMA_STATUS_ADDR = 5'h14;
+
+  /* Fase 7c PWDATA investigation: hold the Access phase open for this many
+   * extra PCLK cycles, continuously re-latching PADDR/PWDATA/PWRITE every
+   * one of them, instead of committing on the very first PSEL&&PENABLE
+   * cycle -- a real-hardware SmartDebug capture found PADDR/PWRITE correct
+   * at that timing but PWDATA consistently 0, and a first attempt at
+   * latching across the *whole* PSEL-high window (not just Setup+PENABLE)
+   * didn't change anything either (see docs/bringup Fase 7c). This is a
+   * more direct test: does PWDATA ever settle to the real value if given
+   * many more PCLK cycles before we commit? Legal either way -- the
+   * master already has to tolerate PREADY arriving many cycles late (this
+   * bridge's own core_clk CDC round trip already does that on every
+   * ordinary register access), so holding it here a while longer changes
+   * nothing about protocol correctness, only how long we wait before
+   * trusting apb_wdata_r. */
+  localparam [7:0] SETTLE_CYCLES = 8'd64;
 
   reg [31:0] dma_addr_r;
   reg [31:0] dma_len_r;
@@ -114,7 +130,8 @@ module apb3_mpeg2fpga_bridge (
   assign dma_addr = dma_addr_r;
   assign dma_len  = dma_len_r;
 
-  reg        apb_state;
+  reg  [1:0] apb_state;
+  reg  [7:0] settle_cnt;
   reg  [4:0] apb_addr_r;
   reg [31:0] apb_wdata_r;
   reg        apb_write_r;
@@ -127,7 +144,6 @@ module apb3_mpeg2fpga_bridge (
   reg [31:0] rdata_hold;
   reg        ack_toggle;
 
-  wire       apb_access_start = PSEL && PENABLE && (apb_state == A_IDLE);
   wire       apb_ack_matched  = (apb_state == A_WAIT_ACK) && (ack_toggle_sync == req_toggle);
 
   assign PREADY = apb_ack_matched;
@@ -143,6 +159,7 @@ module apb3_mpeg2fpga_bridge (
   always @(posedge PCLK or negedge PRESETn) begin
     if (!PRESETn) begin
       apb_state   <= A_IDLE;
+      settle_cnt  <= 8'b0;
       req_toggle  <= 1'b0;
       apb_addr_r  <= 5'b0;
       apb_wdata_r <= 32'b0;
@@ -154,12 +171,27 @@ module apb3_mpeg2fpga_bridge (
 
       case (apb_state)
         A_IDLE: begin
-          if (apb_access_start) begin
+          if (PSEL && PENABLE) begin
             apb_addr_r  <= PADDR[6:2];
             apb_wdata_r <= PWDATA;
             apb_write_r <= PWRITE;
-            req_toggle  <= ~req_toggle;
-            apb_state   <= A_WAIT_ACK;
+            settle_cnt  <= SETTLE_CYCLES;
+            apb_state   <= A_SETTLE;
+          end
+        end
+        A_SETTLE: begin
+          /* Re-sample every cycle: the master must still hold PSEL/
+           * PENABLE/PADDR/PWDATA/PWRITE stable here, since PREADY hasn't
+           * asserted yet -- same requirement as any other extended APB
+           * wait state. */
+          apb_addr_r  <= PADDR[6:2];
+          apb_wdata_r <= PWDATA;
+          apb_write_r <= PWRITE;
+          if (settle_cnt == 8'd0) begin
+            req_toggle <= ~req_toggle;
+            apb_state  <= A_WAIT_ACK;
+          end else begin
+            settle_cnt <= settle_cnt - 8'd1;
           end
         end
         A_WAIT_ACK: begin
