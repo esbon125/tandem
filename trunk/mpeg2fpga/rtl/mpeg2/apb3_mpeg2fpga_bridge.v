@@ -159,8 +159,23 @@ module apb3_mpeg2fpga_bridge (
    * glitch on the shared bus (invisible to a snapshot read) leaves a mark.
    * Purely additive -- not read by any other logic here, not exposed over
    * APB -- meant to be watched directly via SmartDebug Active Probes since
-   * both are plain DFFs, the same way apb_wdata_r itself was probed. */
+   * both are plain DFFs, the same way apb_wdata_r itself was probed.
+   *
+   * Neither register has any fanout (nothing in this module or elsewhere
+   * reads them) -- without an explicit keep attribute, synthesis dead-code
+   * elimination strips them out entirely, since from its point of view they
+   * do nothing. Same syn_keep/syn_preserve/syn_noprune pattern already used
+   * for the probe-only clock counters in mpeg2video.v -- confirmed by
+   * grepping the post-synthesis netlist that the attribute must sit on each
+   * register's *own* declaration line: mpeg2video.v's cnt_clk (attribute on
+   * its own line) survives synthesis, but cnt_mem/cnt_dot (declared on
+   * their own subsequent lines, without repeating the attribute) don't --
+   * and neither did pwdata_free_r/pwdata_sticky_r the first time they were
+   * combined into one comma-separated `reg` statement under a single
+   * attribute block. */
+  (* syn_keep = 1, syn_preserve = 1, syn_noprune = 1 *)
   reg [31:0] pwdata_free_r;
+  (* syn_keep = 1, syn_preserve = 1, syn_noprune = 1 *)
   reg [31:0] pwdata_sticky_r;
 
   always @(posedge PCLK or negedge PRESETn) begin
