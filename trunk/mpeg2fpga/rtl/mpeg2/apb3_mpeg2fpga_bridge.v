@@ -148,6 +148,31 @@ module apb3_mpeg2fpga_bridge (
 
   assign PREADY = apb_ack_matched;
 
+  /* Fase 7c PWDATA investigation, next step: a completely free-running probe,
+   * with NO protocol gating at all (no PSEL/PENABLE condition), to check
+   * whether PWDATA ever shows anything but 0 at any point in time -- the two
+   * prior settle-cycle experiments above ruled out every "sampled at the
+   * wrong moment" theory, but both still only latched *while* PSEL&&PENABLE
+   * or PSEL was asserted; this removes that qualifier entirely.
+   * pwdata_free_r mirrors PWDATA every single PCLK cycle; pwdata_sticky_r
+   * OR-accumulates it and is cleared only by reset, so even a single-cycle
+   * glitch on the shared bus (invisible to a snapshot read) leaves a mark.
+   * Purely additive -- not read by any other logic here, not exposed over
+   * APB -- meant to be watched directly via SmartDebug Active Probes since
+   * both are plain DFFs, the same way apb_wdata_r itself was probed. */
+  reg [31:0] pwdata_free_r;
+  reg [31:0] pwdata_sticky_r;
+
+  always @(posedge PCLK or negedge PRESETn) begin
+    if (!PRESETn) begin
+      pwdata_free_r   <= 32'b0;
+      pwdata_sticky_r <= 32'b0;
+    end else begin
+      pwdata_free_r   <= PWDATA;
+      pwdata_sticky_r <= pwdata_sticky_r | PWDATA;
+    end
+  end
+
   /* Driven continuously (not registered) from the core-domain rdata_hold:
    * it must be valid in the *same* cycle PREADY first asserts (APB3
    * requires PRDATA and PREADY together), and rdata_hold is guaranteed
