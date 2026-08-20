@@ -35,6 +35,19 @@
  * u_bridge and u_mpeg2 already do -- newly promoted here as top-level
  * clk_out so the SmartDesign can feed it into FIC_2_ACLK too, avoiding a
  * second clock-domain crossing entirely (see stream_dma.v's header).
+ *
+ * Fase 7c PWDATA investigation, root cause found: PWDATA reaching u_bridge
+ * was never actually wrong -- the MSS FIC_3 AXI-to-APB conversion presents
+ * a 32-bit software store as *multiple* single-byte APB write beats (each
+ * with that byte replicated across all 4 PWDATA lanes), using PSTRB to mark
+ * which lane is real on each beat, and apb3_mpeg2fpga_bridge.v was blindly
+ * overwriting its DMA_ADDR/DMA_LEN registers with whatever was on PWDATA on
+ * *every* beat -- so only the last (most-significant-byte) beat survived,
+ * explaining "always reads back 0" for every small test value ever tried
+ * (see docs/bringup). PSTRB is a broadcast signal, not part of the APB_bif
+ * decode chain (CoreAPB3 doesn't even have a PSTRB port -- see
+ * FIC_3_PERIPHERALS.tcl), so it's a new, separate top-level port here,
+ * wired in parallel the same way RECONFIGURATION_INTERFACE_0 already was.
  */
 
 `include "timescale.v"
@@ -43,6 +56,7 @@ module mpeg2fpga_apb_peripheral (
     /* APB3 slave: FIC_3's PCLK domain */
     PCLK, PRESETn,
     PSEL, PENABLE, PWRITE, PADDR, PWDATA, PRDATA, PREADY,
+    PSTRB,
 
     /* mpeg2video's own reference clock and reset (PF_CCC_C0 derives
      * clk/mem_clk/dot_clk from ref_clk internally, see mpeg2video.v)
@@ -108,6 +122,7 @@ module mpeg2fpga_apb_peripheral (
   input [31:0] PWDATA;
   output[31:0] PRDATA;
   output       PREADY;
+  input  [3:0] PSTRB;
 
   input        ref_clk;
   input        rst_n;
@@ -249,6 +264,7 @@ module mpeg2fpga_apb_peripheral (
       .PCLK(PCLK), .PRESETn(PRESETn),
       .PSEL(PSEL), .PENABLE(PENABLE), .PWRITE(PWRITE),
       .PADDR(PADDR), .PWDATA(PWDATA), .PRDATA(PRDATA), .PREADY(PREADY),
+      .PSTRB(PSTRB),
 
       .core_clk(clk_internal), .core_rst_n(rst_n),
       .reg_addr(reg_addr), .reg_wr_en(reg_wr_en), .reg_dta_in(reg_dta_in),

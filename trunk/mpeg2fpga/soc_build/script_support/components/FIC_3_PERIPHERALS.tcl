@@ -248,6 +248,16 @@ sd_connect_pins -sd_name ${sd_name} -pin_names {"CORE_CLK_MPEG2FPGA" "MPEG2FPGA_
 # Add bus net connections
 sd_connect_pins -sd_name ${sd_name} -pin_names {"COREGPIO_C0:GPIO_OUT" "GPIO_OUT" }
 sd_connect_pins -sd_name ${sd_name} -pin_names {"PSTRB" "RECONFIGURATION_INTERFACE_0:PSTRB" }
+# Fase 7c PWDATA investigation: PSTRB is a broadcast signal (same value for
+# every APB slave regardless of which is selected, exactly like PWDATA
+# itself -- it reflects the CPU/AXI write's byte-lane intent, not anything
+# address-decoded), so fan it out here directly rather than trying to plumb
+# it through FIC_3_ADDRESS_GENERATION_1/CoreAPB3's decode chain -- CoreAPB3
+# (Actel:DirectCore:CoreAPB3:4.2.100, see FIC_3_0x4000_0xxx.tcl) has no
+# PSTRB port at all, so routing it "properly" through the existing
+# bus-interface (bif) connections isn't even possible; this bypasses that
+# chain the same way RECONFIGURATION_INTERFACE_0 above already does.
+sd_connect_pins -sd_name ${sd_name} -pin_names {"PSTRB" "MPEG2FPGA_APB_PERIPHERAL_0:PSTRB" }
 
 # Add bus interface net connections
 sd_connect_pins -sd_name ${sd_name} -pin_names {"APB_MMASTER" "FIC_3_ADDRESS_GENERATION_1:APB_MMASTER" }

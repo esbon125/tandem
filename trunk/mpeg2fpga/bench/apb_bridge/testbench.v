@@ -33,6 +33,7 @@ module testbench ();
   reg  [31:0] PWDATA;
   wire [31:0] PRDATA;
   wire        PREADY;
+  reg  [3:0]  PSTRB;
 
   reg         core_clk;
   reg         core_rst_n;
@@ -60,6 +61,7 @@ module testbench ();
       .PCLK(PCLK), .PRESETn(PRESETn),
       .PSEL(PSEL), .PENABLE(PENABLE), .PWRITE(PWRITE),
       .PADDR(PADDR), .PWDATA(PWDATA), .PRDATA(PRDATA), .PREADY(PREADY),
+      .PSTRB(PSTRB),
       .core_clk(core_clk), .core_rst_n(core_rst_n),
       .reg_addr(reg_addr), .reg_wr_en(reg_wr_en), .reg_dta_in(reg_dta_in),
       .reg_rd_en(reg_rd_en), .reg_dta_out(reg_dta_out),
@@ -110,6 +112,7 @@ module testbench ();
     PWRITE  = 1'b0;
     PADDR   = 7'b0;
     PWDATA  = 32'b0;
+    PSTRB   = 4'hF;
     busy    = 1'b0;
     dma_busy = 1'b0;
     dma_done = 1'b0;
@@ -135,6 +138,7 @@ module testbench ();
       PWRITE  = write;
       PADDR   = {addr, 2'b00};
       PWDATA  = wdata;
+      PSTRB   = 4'hF;   /* every existing test expects a plain full-width write */
       @(posedge PCLK);
       #1;
       PENABLE = 1'b1;
@@ -147,6 +151,43 @@ module testbench ();
       rdata   = PRDATA;
       PSEL    = 1'b0;
       PENABLE = 1'b0;
+    end
+  endtask
+
+  /* Same as apb_transfer, but with an explicit PSTRB -- exercises the
+   * byte-lane-selective merge added for the Fase 7c PWDATA investigation
+   * (see apb3_mpeg2fpga_bridge.v's header comment): the MSS presents a
+   * 32-bit store as multiple single-byte beats, each with PSTRB marking
+   * which lane is real, and the bridge must only update that lane instead
+   * of blindly overwriting the whole register. */
+  task apb_transfer_pstrb;
+    input         write;
+    input  [4:0]  addr;
+    input  [31:0] wdata;
+    input  [3:0]  pstrb;
+    output [31:0] rdata;
+    begin
+      @(posedge PCLK);
+      #1;
+      PSEL    = 1'b1;
+      PENABLE = 1'b0;
+      PWRITE  = write;
+      PADDR   = {addr, 2'b00};
+      PWDATA  = wdata;
+      PSTRB   = pstrb;
+      @(posedge PCLK);
+      #1;
+      PENABLE = 1'b1;
+      @(posedge PCLK);
+      #1;
+      while (PREADY !== 1'b1) begin
+        @(posedge PCLK);
+        #1;
+      end
+      rdata   = PRDATA;
+      PSEL    = 1'b0;
+      PENABLE = 1'b0;
+      PSTRB   = 4'hF;
     end
   endtask
 
@@ -303,6 +344,27 @@ module testbench ();
     check_eq("DMA_ADDR readback", rdata, 32'h0000_1000);
     apb_transfer(1'b0, 5'h12, 32'b0, rdata);
     check_eq("DMA_LEN readback", rdata, 32'h0000_0080);
+
+    /* Fase 7c PWDATA investigation, root cause reproduction: real hardware
+     * showed the MSS presenting a 32-bit store as four single-byte APB
+     * beats, each with that byte replicated across all 4 PWDATA lanes and
+     * PSTRB marking the one real lane -- mimic that exact pattern here
+     * (last beat's replicated byte is 0x00, matching every small test value
+     * that was ever tried and always read back 0x00000000 on real hardware)
+     * and confirm the byte-lane merge reassembles the correct 32-bit value
+     * instead of only keeping the last beat. */
+    apb_transfer_pstrb(1'b1, 5'h12, 32'h37373737, 4'b0001, rdata);  /* byte0 = 0x37 */
+    apb_transfer_pstrb(1'b1, 5'h12, 32'h31313131, 4'b0010, rdata);  /* byte1 = 0x31 */
+    apb_transfer_pstrb(1'b1, 5'h12, 32'h00000000, 4'b0100, rdata);  /* byte2 = 0x00 */
+    apb_transfer_pstrb(1'b1, 5'h12, 32'h00000000, 4'b1000, rdata);  /* byte3 = 0x00 (the "always reads 0" beat) */
+    check_eq("DMA_LEN reassembled from 4 narrow PSTRB beats", dma_len, 32'h0000_3137);
+
+    /* A byte lane with PSTRB=0 must be left untouched, not zeroed -- confirms
+     * this is a real per-lane merge, not a masked overwrite that happens to
+     * look right when every lane is eventually written. */
+    apb_transfer_pstrb(1'b1, 5'h11, 32'hAABBCCDD, 4'b1111, rdata);
+    apb_transfer_pstrb(1'b1, 5'h11, 32'h000000EE, 4'b0001, rdata);  /* only byte0 */
+    check_eq("DMA_ADDR partial write leaves other lanes untouched", dma_addr, 32'hAABBCCEE);
 
     /* DMA_CTRL start bit: pulses dma_start for one core_clk cycle when the
      * DUT sees dma_busy low.

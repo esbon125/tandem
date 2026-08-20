@@ -48,6 +48,25 @@
  * core_clk wires, needing none of STREAM_PUSH_ADDR/regfile's C_READ_WAIT1/
  * C_READ_WAIT2 (those exist only to accommodate regfile.v's output being
  * registered one cycle after reg_rd_en, which doesn't apply here).
+ *
+ * Fase 7c PWDATA investigation, one more step: a fifth address,
+ * PWDATA_STICKY_ADDR (0x15), exposes pwdata_sticky_r (see below) for
+ * software readback instead of relying on SmartDebug. Turns out SmartDebug
+ * couldn't have shown it anyway: pwdata_sticky_r survives Synplify synthesis
+ * fine (confirmed present as a real 32-bit SLE bank in the post-synthesis
+ * netlist), but Designer's live-probe database (MPFS_DISCOVERY_KIT_probe.db)
+ * never includes it -- unlike apb_wdata_r/dma_addr_r etc., it drives no
+ * other logic, and place&route's probe-insertion step appears to silently
+ * exclude zero-fanout nets from the live-probe candidate list regardless of
+ * syn_keep/syn_noprune (those only protect against Synplify's own pruning,
+ * a separate, earlier stage). Wiring it into a register software already
+ * reads sidesteps that tool behavior entirely. Synchronized into core_clk
+ * with a plain 2-FF stage (pwdata_sticky_meta/pwdata_sticky_sync below) --
+ * not bit-exact rigorous for an arbitrary-width bus, but pwdata_sticky_r is
+ * monotonic (OR-accumulated, only cleared by reset) and, in practice, long
+ * settled by the time software issues a deliberate read after a write, so
+ * the only possible artifact is a bit not-yet-visible for one extra read,
+ * never a spurious or corrupted one.
  */
 
 `include "timescale.v"
@@ -56,6 +75,7 @@ module apb3_mpeg2fpga_bridge (
     /* APB3 side: PCLK domain */
     PCLK, PRESETn,
     PSEL, PENABLE, PWRITE, PADDR, PWDATA, PRDATA, PREADY,
+    PSTRB,
 
     /* mpeg2video side: core_clk domain */
     core_clk, core_rst_n,
@@ -76,6 +96,14 @@ module apb3_mpeg2fpga_bridge (
   input      [31:0] PWDATA;
   output     [31:0] PRDATA;
   output            PREADY;
+  /* Root-cause fix (Fase 7c PWDATA investigation): the MSS FIC_3 AXI-to-APB
+   * conversion presents a 32-bit software store as multiple single-byte APB
+   * write beats, each with that byte replicated across all 4 PWDATA lanes,
+   * using PSTRB to mark which lane is the real one on each beat -- see
+   * mpeg2fpga_apb_peripheral.v's header comment for the full story. Latched
+   * alongside apb_wdata_r below and used to do a byte-lane-selective merge
+   * into dma_addr_r/dma_len_r instead of a blind 32-bit overwrite. */
+  input       [3:0] PSTRB;
 
   input             core_clk;
   input             core_rst_n;      /* active low, matches mpeg2video's "rst" */
@@ -106,6 +134,7 @@ module apb3_mpeg2fpga_bridge (
   localparam [2:0] C_IDLE = 3'd0, C_READ_WAIT1 = 3'd1, C_READ_WAIT2 = 3'd2, C_DONE = 3'd3, C_STREAM_WAIT = 3'd4;
   localparam [4:0] STREAM_PUSH_ADDR = 5'h10;
   localparam [4:0] DMA_ADDR_ADDR = 5'h11, DMA_LEN_ADDR = 5'h12, DMA_CTRL_ADDR = 5'h13, DMA_STATUS_ADDR = 5'h14;
+  localparam [4:0] PWDATA_STICKY_ADDR = 5'h15;
 
   /* Fase 7c PWDATA investigation: hold the Access phase open for this many
    * extra PCLK cycles, continuously re-latching PADDR/PWDATA/PWRITE every
@@ -135,6 +164,7 @@ module apb3_mpeg2fpga_bridge (
   reg  [4:0] apb_addr_r;
   reg [31:0] apb_wdata_r;
   reg        apb_write_r;
+  reg  [3:0] apb_pstrb_r;
   reg        req_toggle;
   reg        ack_toggle_meta, ack_toggle_sync;
 
@@ -143,6 +173,11 @@ module apb3_mpeg2fpga_bridge (
   reg        reg_wr_en_r, reg_rd_en_r;
   reg [31:0] rdata_hold;
   reg        ack_toggle;
+
+  /* 2-FF synchronizer bringing pwdata_sticky_r (PCLK domain) into core_clk
+   * for PWDATA_STICKY_ADDR reads -- see header comment for why this is
+   * safe despite being a full 32-bit bus, not a single toggle bit. */
+  reg [31:0] pwdata_sticky_meta, pwdata_sticky_sync;
 
   wire       apb_ack_matched  = (apb_state == A_WAIT_ACK) && (ack_toggle_sync == req_toggle);
 
@@ -157,9 +192,11 @@ module apb3_mpeg2fpga_bridge (
    * pwdata_free_r mirrors PWDATA every single PCLK cycle; pwdata_sticky_r
    * OR-accumulates it and is cleared only by reset, so even a single-cycle
    * glitch on the shared bus (invisible to a snapshot read) leaves a mark.
-   * Purely additive -- not read by any other logic here, not exposed over
-   * APB -- meant to be watched directly via SmartDebug Active Probes since
-   * both are plain DFFs, the same way apb_wdata_r itself was probed.
+   * Purely additive -- neither drives any other logic in this always block.
+   * pwdata_free_r is watched directly via SmartDebug Active Probes, the same
+   * way apb_wdata_r itself was probed; pwdata_sticky_r additionally gets a
+   * software-readable path via PWDATA_STICKY_ADDR (0x15, see header comment)
+   * since SmartDebug's probe database turned out to exclude it anyway.
    *
    * Neither register has any fanout (nothing in this module or elsewhere
    * reads them) -- without an explicit keep attribute, synthesis dead-code
@@ -204,6 +241,7 @@ module apb3_mpeg2fpga_bridge (
       apb_addr_r  <= 5'b0;
       apb_wdata_r <= 32'b0;
       apb_write_r <= 1'b0;
+      apb_pstrb_r <= 4'hF;
     end else begin
       /* 2-FF synchronizer for the core-domain ack_toggle */
       ack_toggle_meta <= ack_toggle;
@@ -215,18 +253,20 @@ module apb3_mpeg2fpga_bridge (
             apb_addr_r  <= PADDR[6:2];
             apb_wdata_r <= PWDATA;
             apb_write_r <= PWRITE;
+            apb_pstrb_r <= PSTRB;
             settle_cnt  <= SETTLE_CYCLES;
             apb_state   <= A_SETTLE;
           end
         end
         A_SETTLE: begin
           /* Re-sample every cycle: the master must still hold PSEL/
-           * PENABLE/PADDR/PWDATA/PWRITE stable here, since PREADY hasn't
-           * asserted yet -- same requirement as any other extended APB
-           * wait state. */
+           * PENABLE/PADDR/PWDATA/PWRITE/PSTRB stable here, since PREADY
+           * hasn't asserted yet -- same requirement as any other extended
+           * APB wait state. */
           apb_addr_r  <= PADDR[6:2];
           apb_wdata_r <= PWDATA;
           apb_write_r <= PWRITE;
+          apb_pstrb_r <= PSTRB;
           if (settle_cnt == 8'd0) begin
             req_toggle <= ~req_toggle;
             apb_state  <= A_WAIT_ACK;
@@ -273,6 +313,7 @@ module apb3_mpeg2fpga_bridge (
   wire is_dma_len      = (apb_addr_r == DMA_LEN_ADDR);
   wire is_dma_ctrl     = (apb_addr_r == DMA_CTRL_ADDR);
   wire is_dma_status   = (apb_addr_r == DMA_STATUS_ADDR);
+  wire is_pwdata_sticky = (apb_addr_r == PWDATA_STICKY_ADDR);
 
   always @(posedge core_clk or negedge core_rst_n) begin
     if (!core_rst_n) begin
@@ -289,10 +330,16 @@ module apb3_mpeg2fpga_bridge (
       dma_len_r       <= 32'b0;
       dma_start       <= 1'b0;
       dma_done_sticky <= 1'b0;
+      pwdata_sticky_meta <= 32'b0;
+      pwdata_sticky_sync <= 32'b0;
     end else begin
       /* 2-FF synchronizer for the APB-domain req_toggle */
       req_toggle_meta <= req_toggle;
       req_toggle_sync <= req_toggle_meta;
+
+      /* 2-FF synchronizer for pwdata_sticky_r, see declaration comment */
+      pwdata_sticky_meta <= pwdata_sticky_r;
+      pwdata_sticky_sync <= pwdata_sticky_meta;
 
       reg_wr_en_r  <= 1'b0;
       reg_rd_en_r  <= 1'b0;
@@ -306,12 +353,28 @@ module apb3_mpeg2fpga_bridge (
           if (req_toggle_sync != req_toggle_seen) begin
             req_toggle_seen <= req_toggle_sync;
             if (is_dma_addr) begin
-              if (apb_write_r) dma_addr_r <= apb_wdata_r;
-              else rdata_hold <= dma_addr_r;   /* Fase 7c debug: DMA_LEN=0 bug investigation */
+              /* Byte-lane-selective merge, not a blind 32-bit overwrite --
+               * see mpeg2fpga_apb_peripheral.v's header comment for why:
+               * the MSS presents a 32-bit store as multiple single-byte APB
+               * beats (each replicated across all 4 PWDATA lanes), and only
+               * PSTRB says which lane is real on any given beat. apb_pstrb_r
+               * is a PCLK-domain register read directly here with no extra
+               * synchronizer, same as apb_addr_r/apb_wdata_r/apb_write_r
+               * above -- it's held stable across the same window they are. */
+              if (apb_write_r) begin
+                if (apb_pstrb_r[0]) dma_addr_r[7:0]   <= apb_wdata_r[7:0];
+                if (apb_pstrb_r[1]) dma_addr_r[15:8]  <= apb_wdata_r[15:8];
+                if (apb_pstrb_r[2]) dma_addr_r[23:16] <= apb_wdata_r[23:16];
+                if (apb_pstrb_r[3]) dma_addr_r[31:24] <= apb_wdata_r[31:24];
+              end else rdata_hold <= dma_addr_r;
               core_state <= C_DONE;
             end else if (is_dma_len) begin
-              if (apb_write_r) dma_len_r <= apb_wdata_r;
-              else rdata_hold <= dma_len_r;    /* Fase 7c debug: DMA_LEN=0 bug investigation */
+              if (apb_write_r) begin
+                if (apb_pstrb_r[0]) dma_len_r[7:0]   <= apb_wdata_r[7:0];
+                if (apb_pstrb_r[1]) dma_len_r[15:8]  <= apb_wdata_r[15:8];
+                if (apb_pstrb_r[2]) dma_len_r[23:16] <= apb_wdata_r[23:16];
+                if (apb_pstrb_r[3]) dma_len_r[31:24] <= apb_wdata_r[31:24];
+              end else rdata_hold <= dma_len_r;
               core_state <= C_DONE;
             end else if (is_dma_ctrl) begin
               if (apb_write_r && apb_wdata_r[0] && !dma_busy) begin
@@ -322,6 +385,10 @@ module apb3_mpeg2fpga_bridge (
             end else if (is_dma_status) begin
               if (!apb_write_r)
                 rdata_hold <= {dma_bytes_done[23:0], 6'b0, dma_done_sticky, dma_busy};
+              core_state <= C_DONE;
+            end else if (is_pwdata_sticky) begin
+              if (!apb_write_r)
+                rdata_hold <= pwdata_sticky_sync;
               core_state <= C_DONE;
             end else if (is_stream_push) begin
               if (apb_write_r) begin
