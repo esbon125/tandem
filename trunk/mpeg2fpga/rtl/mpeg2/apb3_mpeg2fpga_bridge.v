@@ -118,13 +118,18 @@ module apb3_mpeg2fpga_bridge (
   input      [31:0] PWDATA;
   output     [31:0] PRDATA;
   output            PREADY;
-  /* Root-cause fix (Fase 7c PWDATA investigation): the MSS FIC_3 AXI-to-APB
-   * conversion presents a 32-bit software store as multiple single-byte APB
-   * write beats, each with that byte replicated across all 4 PWDATA lanes,
-   * using PSTRB to mark which lane is the real one on each beat -- see
-   * mpeg2fpga_apb_peripheral.v's header comment for the full story. Latched
-   * alongside apb_wdata_r below and used to do a byte-lane-selective merge
-   * into dma_addr_r/dma_len_r instead of a blind 32-bit overwrite. */
+  /* Root-cause fix (Fase 7c PWDATA investigation, generalized 2026-08-23):
+   * the MSS FIC_3 AXI-to-APB conversion presents a 32-bit software store as
+   * multiple single-byte APB write beats, each with that byte replicated
+   * across all 4 PWDATA lanes, using PSTRB to mark which lane is the real
+   * one on each beat -- see mpeg2fpga_apb_peripheral.v's header comment for
+   * the full story. Originally only DMA_ADDR/DMA_LEN did a byte-lane-
+   * selective merge downstream of a blind apb_wdata_r overwrite; every
+   * OTHER write path (regfile.v's whole register set via reg_dta_in,
+   * STREAM_PUSH_ADDR's stream_data) still silently took whatever the last
+   * beat happened to leave in apb_wdata_r. Fixed once, upstream, at
+   * apb_wdata_r's own capture (see the A_IDLE/A_SETTLE block below) instead
+   * of per-register downstream -- every write path benefits automatically. */
   input       [3:0] PSTRB;
 
   input             core_clk;
@@ -185,19 +190,34 @@ module apb3_mpeg2fpga_bridge (
   localparam [4:0] DBG_LAST_MEM_REQ_WR_ADDR_ADDR = 5'h1f;
 
   /* Fase 7c PWDATA investigation: hold the Access phase open for this many
-   * extra PCLK cycles, continuously re-latching PADDR/PWDATA/PWRITE every
-   * one of them, instead of committing on the very first PSEL&&PENABLE
-   * cycle -- a real-hardware SmartDebug capture found PADDR/PWRITE correct
-   * at that timing but PWDATA consistently 0, and a first attempt at
-   * latching across the *whole* PSEL-high window (not just Setup+PENABLE)
-   * didn't change anything either (see docs/bringup Fase 7c). This is a
-   * more direct test: does PWDATA ever settle to the real value if given
-   * many more PCLK cycles before we commit? Legal either way -- the
-   * master already has to tolerate PREADY arriving many cycles late (this
-   * bridge's own core_clk CDC round trip already does that on every
-   * ordinary register access), so holding it here a while longer changes
-   * nothing about protocol correctness, only how long we wait before
-   * trusting apb_wdata_r. */
+   * extra PCLK cycles before committing, instead of on the very first
+   * PSEL&&PENABLE cycle -- FIC_3 delivers a single 32-bit software store as
+   * up to 4 separate narrow APB beats over several PCLK cycles, and this
+   * window gives all of them time to arrive before the transaction crosses
+   * to core_clk. Legal either way -- the master already has to tolerate
+   * PREADY arriving many cycles late (this bridge's own core_clk CDC round
+   * trip already does that on every ordinary register access).
+   *
+   * 2026-08-23 correction: earlier revisions of this state re-sampled
+   * PADDR/PWDATA/PWRITE/PSTRB unconditionally on *every* PCLK cycle of this
+   * window, regardless of whether PSEL/PENABLE were still asserted -- on a
+   * shared APB bus, once the real beat(s) finished, this kept blindly
+   * picking up whatever else was on the bus (idle-state noise or a
+   * completely unrelated peripheral's transaction) for the rest of the
+   * window, silently overwriting apb_wdata_r/apb_addr_r with garbage right
+   * before the write committed. Root-caused via two independent real-
+   * hardware reproductions that ruled out narrow-beat splitting itself as
+   * the cause (a genuine single-byte CPU store, immune to splitting,
+   * failed identically) -- see [[fase7a_size_zero_vld_stall]] points 18-24
+   * on the docs branch. Now every sample in A_IDLE/A_SETTLE is qualified
+   * on PSEL&&PENABLE actually being asserted *this cycle*, and merges only
+   * the PSTRB-strobed byte lane(s) into apb_wdata_r instead of overwriting
+   * the whole word -- correct for both a single beat and a multi-beat
+   * narrow-write sequence, and immune to unrelated bus activity in
+   * between. apb_addr_r/apb_write_r are captured once, in A_IDLE, and held
+   * fixed through A_SETTLE (all beats of one logical store share the same
+   * target address/direction; the APB protocol guarantees no other master
+   * can start a new access to this peripheral before PREADY). */
   localparam [7:0] SETTLE_CYCLES = 8'd64;
 
   reg [31:0] dma_addr_r;
@@ -212,7 +232,6 @@ module apb3_mpeg2fpga_bridge (
   reg  [4:0] apb_addr_r;
   reg [31:0] apb_wdata_r;
   reg        apb_write_r;
-  reg  [3:0] apb_pstrb_r;
   reg        req_toggle;
   reg        ack_toggle_meta, ack_toggle_sync;
 
@@ -298,7 +317,6 @@ module apb3_mpeg2fpga_bridge (
       apb_addr_r  <= 5'b0;
       apb_wdata_r <= 32'b0;
       apb_write_r <= 1'b0;
-      apb_pstrb_r <= 4'hF;
     end else begin
       /* 2-FF synchronizer for the core-domain ack_toggle */
       ack_toggle_meta <= ack_toggle;
@@ -308,22 +326,31 @@ module apb3_mpeg2fpga_bridge (
         A_IDLE: begin
           if (PSEL && PENABLE) begin
             apb_addr_r  <= PADDR[6:2];
-            apb_wdata_r <= PWDATA;
             apb_write_r <= PWRITE;
-            apb_pstrb_r <= PSTRB;
+            if (PSTRB[0]) apb_wdata_r[7:0]   <= PWDATA[7:0];
+            if (PSTRB[1]) apb_wdata_r[15:8]  <= PWDATA[15:8];
+            if (PSTRB[2]) apb_wdata_r[23:16] <= PWDATA[23:16];
+            if (PSTRB[3]) apb_wdata_r[31:24] <= PWDATA[31:24];
             settle_cnt  <= SETTLE_CYCLES;
             apb_state   <= A_SETTLE;
           end
         end
         A_SETTLE: begin
-          /* Re-sample every cycle: the master must still hold PSEL/
-           * PENABLE/PADDR/PWDATA/PWRITE/PSTRB stable here, since PREADY
-           * hasn't asserted yet -- same requirement as any other extended
-           * APB wait state. */
-          apb_addr_r  <= PADDR[6:2];
-          apb_wdata_r <= PWDATA;
-          apb_write_r <= PWRITE;
-          apb_pstrb_r <= PSTRB;
+          /* Only sample while this peripheral is genuinely selected and
+           * enabled THIS cycle -- either another narrow beat of the same
+           * software store, or nothing at all (bus idle / a different
+           * peripheral's access) which must NOT disturb the pending write.
+           * PSTRB-gated, persistent per-byte-lane merge: each qualified
+           * cycle only updates the lane(s) it actually strobes, so a
+           * multi-beat sequence assembles correctly regardless of beat
+           * order or count. apb_addr_r/apb_write_r are NOT re-latched here
+           * (see SETTLE_CYCLES comment above). */
+          if (PSEL && PENABLE) begin
+            if (PSTRB[0]) apb_wdata_r[7:0]   <= PWDATA[7:0];
+            if (PSTRB[1]) apb_wdata_r[15:8]  <= PWDATA[15:8];
+            if (PSTRB[2]) apb_wdata_r[23:16] <= PWDATA[23:16];
+            if (PSTRB[3]) apb_wdata_r[31:24] <= PWDATA[31:24];
+          end
           if (settle_cnt == 8'd0) begin
             req_toggle <= ~req_toggle;
             apb_state  <= A_WAIT_ACK;
@@ -430,28 +457,15 @@ module apb3_mpeg2fpga_bridge (
           if (req_toggle_sync != req_toggle_seen) begin
             req_toggle_seen <= req_toggle_sync;
             if (is_dma_addr) begin
-              /* Byte-lane-selective merge, not a blind 32-bit overwrite --
-               * see mpeg2fpga_apb_peripheral.v's header comment for why:
-               * the MSS presents a 32-bit store as multiple single-byte APB
-               * beats (each replicated across all 4 PWDATA lanes), and only
-               * PSTRB says which lane is real on any given beat. apb_pstrb_r
-               * is a PCLK-domain register read directly here with no extra
-               * synchronizer, same as apb_addr_r/apb_wdata_r/apb_write_r
-               * above -- it's held stable across the same window they are. */
-              if (apb_write_r) begin
-                if (apb_pstrb_r[0]) dma_addr_r[7:0]   <= apb_wdata_r[7:0];
-                if (apb_pstrb_r[1]) dma_addr_r[15:8]  <= apb_wdata_r[15:8];
-                if (apb_pstrb_r[2]) dma_addr_r[23:16] <= apb_wdata_r[23:16];
-                if (apb_pstrb_r[3]) dma_addr_r[31:24] <= apb_wdata_r[31:24];
-              end else rdata_hold <= dma_addr_r;
+              /* apb_wdata_r is already a correctly PSTRB-merged value by
+               * this point (see the A_IDLE/A_SETTLE block) -- no separate
+               * per-register byte-lane merge needed here any more. */
+              if (apb_write_r) dma_addr_r <= apb_wdata_r;
+              else rdata_hold <= dma_addr_r;
               core_state <= C_DONE;
             end else if (is_dma_len) begin
-              if (apb_write_r) begin
-                if (apb_pstrb_r[0]) dma_len_r[7:0]   <= apb_wdata_r[7:0];
-                if (apb_pstrb_r[1]) dma_len_r[15:8]  <= apb_wdata_r[15:8];
-                if (apb_pstrb_r[2]) dma_len_r[23:16] <= apb_wdata_r[23:16];
-                if (apb_pstrb_r[3]) dma_len_r[31:24] <= apb_wdata_r[31:24];
-              end else rdata_hold <= dma_len_r;
+              if (apb_write_r) dma_len_r <= apb_wdata_r;
+              else rdata_hold <= dma_len_r;
               core_state <= C_DONE;
             end else if (is_dma_ctrl) begin
               if (apb_write_r && apb_wdata_r[0] && !dma_busy) begin

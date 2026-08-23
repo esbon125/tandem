@@ -499,6 +499,62 @@ module testbench ();
     apb_transfer(1'b0, 5'h1f, 32'b0, rdata);
     check_eq("DBG_LAST_MEM_REQ_WR_ADDR readback", rdata, 32'h001c0000);
 
+    /* 2026-08-23: the PSTRB fix originally only covered DMA_ADDR/DMA_LEN
+     * (each with its own downstream byte-lane merge) -- every other write
+     * path took whatever the last narrow beat left in apb_wdata_r. Real
+     * hardware reproduction: regfile.v's REG_WR_STREAM (address 0, holds
+     * watchdog_interval among other bits) written via narrow PSTRB beats
+     * landed as 0x00000000 regardless of the intended value, which
+     * watchdog.v's watchdog_expire_immediate logic turns into a spurious
+     * full decoder reset. Fixed upstream, once, at apb_wdata_r's own
+     * capture (see apb3_mpeg2fpga_bridge.v's A_IDLE/A_SETTLE block) --
+     * confirm regfile.v writes reassemble correctly from narrow beats too,
+     * not just DMA_ADDR/DMA_LEN. */
+    apb_transfer_pstrb(1'b1, 4'h0, 32'h04040404, 4'b0001, rdata);  /* byte0 = 0x04 (intr-enable bits) */
+    apb_transfer_pstrb(1'b1, 4'h0, 32'hFFFFFFFF, 4'b0010, rdata);  /* byte1 = 0xFF (watchdog_interval) */
+    apb_transfer_pstrb(1'b1, 4'h0, 32'h00000000, 4'b0100, rdata);  /* byte2 = 0x00 */
+    apb_transfer_pstrb(1'b1, 4'h0, 32'h00000000, 4'b1000, rdata);  /* byte3 = 0x00 -- the "always reads 0" beat */
+    check_eq("regfile write reassembled from 4 narrow PSTRB beats", fake.write_mem[0], 32'h0000_FF04);
+
+    /* The exact real-hardware failure mode: a genuinely single-BYTE access
+     * (nothing to split -- only one beat ever occurs) must still land the
+     * struck byte lane correctly, and must NOT be corrupted by whatever
+     * the settle window samples afterward. This is what the pre-fix code
+     * got wrong: A_SETTLE re-latched PADDR/PWDATA/PWRITE/PSTRB
+     * unconditionally every PCLK cycle for the whole 64-cycle window,
+     * regardless of whether PSEL/PENABLE were still asserted -- so once
+     * the one real beat ended and the shared bus reverted to some other
+     * (idle or unrelated-peripheral) value, the DUT would silently
+     * overwrite the already-captured byte with that stale value before
+     * ever committing. Drive the one real beat by hand (not via the
+     * blocking apb_transfer_pstrb task, which would wait out the whole
+     * settle window itself), deassert PSEL/PENABLE while the DUT is still
+     * mid-settle, drive PWDATA/PSTRB to a wrong value for the remainder of
+     * the window, then let the transaction complete on its own. */
+    /* Establish a known baseline in all 4 lanes first, so the single-byte
+     * write below has a predictable prior value to (not) disturb in the
+     * lanes it doesn't touch. */
+    apb_transfer_pstrb(1'b1, 4'h0, 32'hAABBCCDD, 4'b1111, rdata);
+
+    @(posedge PCLK); #1;
+    PSEL = 1'b1; PENABLE = 1'b0; PWRITE = 1'b1;
+    PADDR = {4'h0, 2'b00}; PWDATA = 32'h0000FF00; PSTRB = 4'b0010;  /* byte1=0xFF only */
+    @(posedge PCLK); #1;
+    PENABLE = 1'b1;
+    @(posedge PCLK); #1;
+    PSEL = 1'b0; PENABLE = 1'b0;
+    PWDATA = 32'h00000000;  /* stale/unrelated bus value -- must be ignored for the rest of settle */
+    PSTRB  = 4'hF;
+    while (PREADY !== 1'b1) @(posedge PCLK);
+    #1;
+    check_eq("single-byte write unaffected by bus noise during settle", fake.write_mem[0], 32'hAABB_FFDD);
+
+    /* STREAM_PUSH_ADDR benefits from the same upstream fix -- a narrow
+     * single-byte beat must deliver the correct byte, immune to the same
+     * class of corruption checked above for regfile writes. */
+    apb_transfer_pstrb(1'b1, 5'h10, 32'h000000EF, 4'b0001, rdata);
+    check_eq("stream push: narrow PSTRB beat delivers correct byte", {24'b0, captured_stream[captured_count-1]}, 32'h0000_00EF);
+
     if (errors == 0)
       $display("ALL TESTS PASSED (%0d checks)", checks);
     else
