@@ -43,13 +43,23 @@ sd_create_scalar_port -sd_name ${sd_name} -port_name {CORE_CLK_MPEG2FPGA} -port_
 sd_create_scalar_port -sd_name ${sd_name} -port_name {COREI2C_C0_SCL} -port_direction {INOUT} -port_is_pad {1}
 sd_create_scalar_port -sd_name ${sd_name} -port_name {COREI2C_C0_SDA} -port_direction {INOUT} -port_is_pad {1}
 
-# Fase 6b: mem2axi_bridge's AXI4 master, bubbled up to be connected to
-# MSS_WRAPPER:FIC_1_AXI4_TARGET at the MPFS_DISCOVERY_KIT top (see
-# rtl/mpeg2/mem2axi_bridge.v header comment). ARVALID etc. are outputs of
-# this SmartDesign (same directions as a plain AXI4 master); bif role is
-# mirroredMaster, the complementary boundary-pass-through role for
-# bubbling a "master"-typed HDL+ core port (MPEG2FPGA_APB_PERIPHERAL_0's)
-# up one level of hierarchy.
+# Fase 7a (2026-08-23) EXPERIMENT: the Fase 6b comment here previously
+# claimed "bif role is mirroredMaster" -- but AWVALID/ARVALID etc. below
+# are OUT and AWREADY/ARREADY are IN, i.e. plain master-like directions.
+# Per the WORKING precedent (FIC_0_PERIPHERALS.tcl's AXI4mslave0, which
+# bubbles DMA_CONTROLLER's AXI4 master up to MSS_WRAPPER_0:FIC_0_AXI4_TARGET,
+# role "slave"), a master-direction pass-through boundary port needs role
+# "mirroredSlave", not "mirroredMaster" -- mirroredMaster has slave-like
+# directions (AWVALID in, AWREADY out), which does not match these ports at
+# all. That mismatch is the leading suspect for the original "not
+# compatible" rejection this Fase 6b comment described. Testing the
+# corrected role now via a real bif (previously this was never actually
+# tried as a bif -- MEM_AXI_* were always plain per-signal ports).
+# sd_create_bif_port only GROUPS already-existing ports into a bif -- it
+# does not auto-create them (confirmed against FIC_0_PERIPHERALS.tcl's
+# AXI4mslave0 precedent, whose SLAVE0_* ports are each separately declared
+# via sd_create_scalar_port/sd_create_bus_port before its own
+# sd_create_bif_port call). Declare the underlying ports first.
 sd_create_scalar_port -sd_name ${sd_name} -port_name {MEM_AXI_AWVALID} -port_direction {OUT}
 sd_create_scalar_port -sd_name ${sd_name} -port_name {MEM_AXI_AWREADY} -port_direction {IN}
 sd_create_scalar_port -sd_name ${sd_name} -port_name {MEM_AXI_WVALID} -port_direction {OUT}
@@ -62,6 +72,71 @@ sd_create_scalar_port -sd_name ${sd_name} -port_name {MEM_AXI_ARREADY} -port_dir
 sd_create_scalar_port -sd_name ${sd_name} -port_name {MEM_AXI_RVALID} -port_direction {IN}
 sd_create_scalar_port -sd_name ${sd_name} -port_name {MEM_AXI_RREADY} -port_direction {OUT}
 sd_create_scalar_port -sd_name ${sd_name} -port_name {MEM_AXI_RLAST} -port_direction {IN}
+sd_create_scalar_port -sd_name ${sd_name} -port_name {MEM_AXI_AWLOCK} -port_direction {OUT}
+sd_create_scalar_port -sd_name ${sd_name} -port_name {MEM_AXI_ARLOCK} -port_direction {OUT}
+
+sd_create_bus_port -sd_name ${sd_name} -port_name {MEM_AXI_AWID} -port_direction {OUT} -port_range {[3:0]}
+sd_create_bus_port -sd_name ${sd_name} -port_name {MEM_AXI_AWADDR} -port_direction {OUT} -port_range {[37:0]}
+sd_create_bus_port -sd_name ${sd_name} -port_name {MEM_AXI_AWLEN} -port_direction {OUT} -port_range {[7:0]}
+sd_create_bus_port -sd_name ${sd_name} -port_name {MEM_AXI_AWSIZE} -port_direction {OUT} -port_range {[2:0]}
+sd_create_bus_port -sd_name ${sd_name} -port_name {MEM_AXI_AWBURST} -port_direction {OUT} -port_range {[1:0]}
+sd_create_bus_port -sd_name ${sd_name} -port_name {MEM_AXI_AWCACHE} -port_direction {OUT} -port_range {[3:0]}
+sd_create_bus_port -sd_name ${sd_name} -port_name {MEM_AXI_AWPROT} -port_direction {OUT} -port_range {[2:0]}
+sd_create_bus_port -sd_name ${sd_name} -port_name {MEM_AXI_AWQOS} -port_direction {OUT} -port_range {[3:0]}
+sd_create_bus_port -sd_name ${sd_name} -port_name {MEM_AXI_WDATA} -port_direction {OUT} -port_range {[63:0]}
+sd_create_bus_port -sd_name ${sd_name} -port_name {MEM_AXI_WSTRB} -port_direction {OUT} -port_range {[7:0]}
+sd_create_bus_port -sd_name ${sd_name} -port_name {MEM_AXI_BID} -port_direction {IN} -port_range {[3:0]}
+sd_create_bus_port -sd_name ${sd_name} -port_name {MEM_AXI_BRESP} -port_direction {IN} -port_range {[1:0]}
+sd_create_bus_port -sd_name ${sd_name} -port_name {MEM_AXI_ARID} -port_direction {OUT} -port_range {[3:0]}
+sd_create_bus_port -sd_name ${sd_name} -port_name {MEM_AXI_ARADDR} -port_direction {OUT} -port_range {[37:0]}
+sd_create_bus_port -sd_name ${sd_name} -port_name {MEM_AXI_ARLEN} -port_direction {OUT} -port_range {[7:0]}
+sd_create_bus_port -sd_name ${sd_name} -port_name {MEM_AXI_ARSIZE} -port_direction {OUT} -port_range {[2:0]}
+sd_create_bus_port -sd_name ${sd_name} -port_name {MEM_AXI_ARBURST} -port_direction {OUT} -port_range {[1:0]}
+sd_create_bus_port -sd_name ${sd_name} -port_name {MEM_AXI_ARCACHE} -port_direction {OUT} -port_range {[3:0]}
+sd_create_bus_port -sd_name ${sd_name} -port_name {MEM_AXI_ARPROT} -port_direction {OUT} -port_range {[2:0]}
+sd_create_bus_port -sd_name ${sd_name} -port_name {MEM_AXI_ARQOS} -port_direction {OUT} -port_range {[3:0]}
+sd_create_bus_port -sd_name ${sd_name} -port_name {MEM_AXI_RID} -port_direction {IN} -port_range {[3:0]}
+sd_create_bus_port -sd_name ${sd_name} -port_name {MEM_AXI_RDATA} -port_direction {IN} -port_range {[63:0]}
+sd_create_bus_port -sd_name ${sd_name} -port_name {MEM_AXI_RRESP} -port_direction {IN} -port_range {[1:0]}
+
+sd_create_bif_port -sd_name ${sd_name} -port_name {MEM_AXI_MIRROREDSLAVE} -port_bif_vlnv {AMBA:AMBA4:AXI4:r0p0_0} -port_bif_role {mirroredSlave} -port_bif_mapping {\
+"AWID:MEM_AXI_AWID" \
+"AWADDR:MEM_AXI_AWADDR" \
+"AWLEN:MEM_AXI_AWLEN" \
+"AWSIZE:MEM_AXI_AWSIZE" \
+"AWBURST:MEM_AXI_AWBURST" \
+"AWLOCK:MEM_AXI_AWLOCK" \
+"AWCACHE:MEM_AXI_AWCACHE" \
+"AWPROT:MEM_AXI_AWPROT" \
+"AWQOS:MEM_AXI_AWQOS" \
+"AWVALID:MEM_AXI_AWVALID" \
+"AWREADY:MEM_AXI_AWREADY" \
+"WDATA:MEM_AXI_WDATA" \
+"WSTRB:MEM_AXI_WSTRB" \
+"WLAST:MEM_AXI_WLAST" \
+"WVALID:MEM_AXI_WVALID" \
+"WREADY:MEM_AXI_WREADY" \
+"BID:MEM_AXI_BID" \
+"BRESP:MEM_AXI_BRESP" \
+"BVALID:MEM_AXI_BVALID" \
+"BREADY:MEM_AXI_BREADY" \
+"ARID:MEM_AXI_ARID" \
+"ARADDR:MEM_AXI_ARADDR" \
+"ARLEN:MEM_AXI_ARLEN" \
+"ARSIZE:MEM_AXI_ARSIZE" \
+"ARBURST:MEM_AXI_ARBURST" \
+"ARLOCK:MEM_AXI_ARLOCK" \
+"ARCACHE:MEM_AXI_ARCACHE" \
+"ARPROT:MEM_AXI_ARPROT" \
+"ARQOS:MEM_AXI_ARQOS" \
+"ARVALID:MEM_AXI_ARVALID" \
+"ARREADY:MEM_AXI_ARREADY" \
+"RID:MEM_AXI_RID" \
+"RDATA:MEM_AXI_RDATA" \
+"RRESP:MEM_AXI_RRESP" \
+"RLAST:MEM_AXI_RLAST" \
+"RVALID:MEM_AXI_RVALID" \
+"RREADY:MEM_AXI_RREADY" }
 
 # Fase 7c: u_stream_dma's AXI4 read-only master, bubbled up the same way
 # MEM_AXI_* is above -- a second, independent fabric-master path into DDR
@@ -84,25 +159,6 @@ sd_create_bus_port -sd_name ${sd_name} -port_name {GPIO_OUT} -port_direction {OU
 sd_create_bus_port -sd_name ${sd_name} -port_name {PLL0_SW_DRI_CTRL} -port_direction {OUT} -port_range {[10:0]}
 sd_create_bus_port -sd_name ${sd_name} -port_name {Q0_LANE0_DRI_DRI_WDATA} -port_direction {OUT} -port_range {[32:0]}
 
-sd_create_bus_port -sd_name ${sd_name} -port_name {MEM_AXI_AWID} -port_direction {OUT} -port_range {[3:0]}
-sd_create_bus_port -sd_name ${sd_name} -port_name {MEM_AXI_AWADDR} -port_direction {OUT} -port_range {[37:0]}
-sd_create_bus_port -sd_name ${sd_name} -port_name {MEM_AXI_AWLEN} -port_direction {OUT} -port_range {[7:0]}
-sd_create_bus_port -sd_name ${sd_name} -port_name {MEM_AXI_AWSIZE} -port_direction {OUT} -port_range {[2:0]}
-sd_create_bus_port -sd_name ${sd_name} -port_name {MEM_AXI_AWBURST} -port_direction {OUT} -port_range {[1:0]}
-sd_create_bus_port -sd_name ${sd_name} -port_name {MEM_AXI_WDATA} -port_direction {OUT} -port_range {[63:0]}
-sd_create_bus_port -sd_name ${sd_name} -port_name {MEM_AXI_WSTRB} -port_direction {OUT} -port_range {[7:0]}
-sd_create_bus_port -sd_name ${sd_name} -port_name {MEM_AXI_ARID} -port_direction {OUT} -port_range {[3:0]}
-sd_create_bus_port -sd_name ${sd_name} -port_name {MEM_AXI_ARADDR} -port_direction {OUT} -port_range {[37:0]}
-sd_create_bus_port -sd_name ${sd_name} -port_name {MEM_AXI_ARLEN} -port_direction {OUT} -port_range {[7:0]}
-sd_create_bus_port -sd_name ${sd_name} -port_name {MEM_AXI_ARSIZE} -port_direction {OUT} -port_range {[2:0]}
-sd_create_bus_port -sd_name ${sd_name} -port_name {MEM_AXI_ARBURST} -port_direction {OUT} -port_range {[1:0]}
-
-sd_create_bus_port -sd_name ${sd_name} -port_name {MEM_AXI_BID} -port_direction {IN} -port_range {[3:0]}
-sd_create_bus_port -sd_name ${sd_name} -port_name {MEM_AXI_BRESP} -port_direction {IN} -port_range {[1:0]}
-sd_create_bus_port -sd_name ${sd_name} -port_name {MEM_AXI_RID} -port_direction {IN} -port_range {[3:0]}
-sd_create_bus_port -sd_name ${sd_name} -port_name {MEM_AXI_RDATA} -port_direction {IN} -port_range {[63:0]}
-sd_create_bus_port -sd_name ${sd_name} -port_name {MEM_AXI_RRESP} -port_direction {IN} -port_range {[1:0]}
-
 sd_create_bus_port -sd_name ${sd_name} -port_name {DMA_AXI_ARID} -port_direction {OUT} -port_range {[3:0]}
 sd_create_bus_port -sd_name ${sd_name} -port_name {DMA_AXI_ARADDR} -port_direction {OUT} -port_range {[37:0]}
 sd_create_bus_port -sd_name ${sd_name} -port_name {DMA_AXI_ARLEN} -port_direction {OUT} -port_range {[7:0]}
@@ -116,17 +172,10 @@ sd_create_bus_port -sd_name ${sd_name} -port_name {DMA_AXI_RRESP} -port_directio
 # FIC_1_AXI4_TARGET (see rtl/mpeg2/mem2axi_bridge.v's port list comment).
 # AWREGION/ARREGION and all *USER signals are NOT implemented there (not
 # even present as ports on MSS_WRAPPER, confirmed against MSS_WRAPPER.tcl)
-# -- same reduced subset the working FIC_0_AXI4_TARGET connection uses --
-# so mem2axi_bridge's fixed-value ports for those are simply left
-# unconnected past mpeg2fpga_apb_peripheral.v, not promoted any further.
-sd_create_scalar_port -sd_name ${sd_name} -port_name {MEM_AXI_AWLOCK} -port_direction {OUT}
-sd_create_bus_port -sd_name ${sd_name} -port_name {MEM_AXI_AWCACHE} -port_direction {OUT} -port_range {[3:0]}
-sd_create_bus_port -sd_name ${sd_name} -port_name {MEM_AXI_AWPROT} -port_direction {OUT} -port_range {[2:0]}
-sd_create_bus_port -sd_name ${sd_name} -port_name {MEM_AXI_AWQOS} -port_direction {OUT} -port_range {[3:0]}
-sd_create_scalar_port -sd_name ${sd_name} -port_name {MEM_AXI_ARLOCK} -port_direction {OUT}
-sd_create_bus_port -sd_name ${sd_name} -port_name {MEM_AXI_ARCACHE} -port_direction {OUT} -port_range {[3:0]}
-sd_create_bus_port -sd_name ${sd_name} -port_name {MEM_AXI_ARPROT} -port_direction {OUT} -port_range {[2:0]}
-sd_create_bus_port -sd_name ${sd_name} -port_name {MEM_AXI_ARQOS} -port_direction {OUT} -port_range {[3:0]}
+# -- same reduced subset the working FIC_0_AXI4_TARGET connection uses.
+# MEM_AXI_AWLOCK/AWCACHE/AWPROT/AWQOS/ARLOCK/ARCACHE/ARPROT/ARQOS are now
+# created as part of the MEM_AXI_MIRROREDSLAVE bif above (matching
+# FIC_1_AXI4_TARGET's own mapping exactly), not declared separately here.
 sd_create_scalar_port -sd_name ${sd_name} -port_name {DMA_AXI_ARLOCK} -port_direction {OUT}
 sd_create_bus_port -sd_name ${sd_name} -port_name {DMA_AXI_ARCACHE} -port_direction {OUT} -port_range {[3:0]}
 sd_create_bus_port -sd_name ${sd_name} -port_name {DMA_AXI_ARPROT} -port_direction {OUT} -port_range {[2:0]}
@@ -151,18 +200,20 @@ sd_create_bif_port -sd_name ${sd_name} -port_name {APB_MMASTER} -port_bif_vlnv {
 "PREADY:APB_MMASTER_in_pready" \
 "PSLVERR:APB_MMASTER_in_pslverr" }
 
-# Note: mem2axi_bridge's AXI4 master (Fase 6b) is deliberately NOT wrapped
-# in an sd_create_bif_port here -- hdl_core_add_bif's "master"-role bif on
-# MPEG2FPGA_APB_PERIPHERAL_0:mem_axi_bif reported "not compatible" against
-# every bif role tried (master/mirroredMaster/mirroredSlave) when connecting
-# to a boundary bif port of the same AMBA:AMBA4:AXI4:r0p0_0 busdef, for
-# reasons that didn't resolve from Libero's Tcl reference docs or the
-# working catalog-IP precedent (FIC_0_PERIPHERALS.tcl's AXI4mslave0/
-# AXI4mmaster0, sourced from actual DirectCore IP, not an hdl_core_add_bif
-# core). Plain per-signal sd_connect_pins below sidesteps bus-interface
-# compatibility checking entirely -- it only requires matching pin widths,
-# which are already verified against the real MSS_WRAPPER port widths (see
-# the scalar/bus port declarations above).
+# Note: mem2axi_bridge's AXI4 master (Fase 6b) was originally NOT wrapped
+# in an sd_create_bif_port here -- an earlier attempt to declare
+# MPEG2FPGA_APB_PERIPHERAL_0:mem_axi_bif via hdl_core_add_bif reportedly
+# got "not compatible" against every role tried (master/mirroredMaster/
+# mirroredSlave) when connecting to a boundary bif port of the same
+# AMBA:AMBA4:AXI4:r0p0_0 busdef, for reasons that were never pinned down.
+# Fase 7a (2026-08-23): retrying with role mirroredSlave (matching the
+# working catalog-IP precedent, FIC_0_PERIPHERALS.tcl's AXI4mslave0, whose
+# port directions -- AWVALID out/AWREADY in, same as MEM_AXI_* here -- also
+# use mirroredSlave, not mirroredMaster) via MEM_AXI_MIRROREDSLAVE above.
+# If this still reports "not compatible", the original comment's claim of
+# having tried every role stands and the incompatibility is unrelated to
+# role choice; if it works, the original attempt likely used the wrong role.
+# u_stream_dma's DMA_AXI_* below is unrelated and still per-signal.
 
 # Add CORE_I2C_C0_0_WRAPPER_1 instance
 sd_instantiate_component -sd_name ${sd_name} -component_name {CORE_I2C_C0_0_WRAPPER} -instance_name {CORE_I2C_C0_0_WRAPPER_1}
@@ -266,46 +317,10 @@ sd_connect_pins -sd_name ${sd_name} -pin_names {"CORE_I2C_C0_0_WRAPPER_1:APBslav
 sd_connect_pins -sd_name ${sd_name} -pin_names {"CoreUARTapb_C0_0:APB_bif" "FIC_3_ADDRESS_GENERATION_1:FIC_3_0x4000_03xx" }
 sd_connect_pins -sd_name ${sd_name} -pin_names {"FIC_3_ADDRESS_GENERATION_1:FIC_3_0x4000_00xx" "PWM:APBslave" }
 sd_connect_pins -sd_name ${sd_name} -pin_names {"FIC_3_ADDRESS_GENERATION_1:FIC_3_0x4000_04xx" "MPEG2FPGA_APB_PERIPHERAL_0:APB_bif" }
-# Fase 6b: mem2axi_bridge's AXI4 master, per-signal (see the "Note" comment
-# in the bus interface ports section above for why this isn't a single
-# bif-based sd_connect_pins call).
-sd_connect_pins -sd_name ${sd_name} -pin_names {"MEM_AXI_AWID" "MPEG2FPGA_APB_PERIPHERAL_0:m_axi_awid" }
-sd_connect_pins -sd_name ${sd_name} -pin_names {"MEM_AXI_AWADDR" "MPEG2FPGA_APB_PERIPHERAL_0:m_axi_awaddr" }
-sd_connect_pins -sd_name ${sd_name} -pin_names {"MEM_AXI_AWLEN" "MPEG2FPGA_APB_PERIPHERAL_0:m_axi_awlen" }
-sd_connect_pins -sd_name ${sd_name} -pin_names {"MEM_AXI_AWSIZE" "MPEG2FPGA_APB_PERIPHERAL_0:m_axi_awsize" }
-sd_connect_pins -sd_name ${sd_name} -pin_names {"MEM_AXI_AWBURST" "MPEG2FPGA_APB_PERIPHERAL_0:m_axi_awburst" }
-sd_connect_pins -sd_name ${sd_name} -pin_names {"MEM_AXI_AWLOCK" "MPEG2FPGA_APB_PERIPHERAL_0:m_axi_awlock" }
-sd_connect_pins -sd_name ${sd_name} -pin_names {"MEM_AXI_AWCACHE" "MPEG2FPGA_APB_PERIPHERAL_0:m_axi_awcache" }
-sd_connect_pins -sd_name ${sd_name} -pin_names {"MEM_AXI_AWPROT" "MPEG2FPGA_APB_PERIPHERAL_0:m_axi_awprot" }
-sd_connect_pins -sd_name ${sd_name} -pin_names {"MEM_AXI_AWQOS" "MPEG2FPGA_APB_PERIPHERAL_0:m_axi_awqos" }
-sd_connect_pins -sd_name ${sd_name} -pin_names {"MEM_AXI_AWVALID" "MPEG2FPGA_APB_PERIPHERAL_0:m_axi_awvalid" }
-sd_connect_pins -sd_name ${sd_name} -pin_names {"MEM_AXI_AWREADY" "MPEG2FPGA_APB_PERIPHERAL_0:m_axi_awready" }
-sd_connect_pins -sd_name ${sd_name} -pin_names {"MEM_AXI_WDATA" "MPEG2FPGA_APB_PERIPHERAL_0:m_axi_wdata" }
-sd_connect_pins -sd_name ${sd_name} -pin_names {"MEM_AXI_WSTRB" "MPEG2FPGA_APB_PERIPHERAL_0:m_axi_wstrb" }
-sd_connect_pins -sd_name ${sd_name} -pin_names {"MEM_AXI_WLAST" "MPEG2FPGA_APB_PERIPHERAL_0:m_axi_wlast" }
-sd_connect_pins -sd_name ${sd_name} -pin_names {"MEM_AXI_WVALID" "MPEG2FPGA_APB_PERIPHERAL_0:m_axi_wvalid" }
-sd_connect_pins -sd_name ${sd_name} -pin_names {"MEM_AXI_WREADY" "MPEG2FPGA_APB_PERIPHERAL_0:m_axi_wready" }
-sd_connect_pins -sd_name ${sd_name} -pin_names {"MEM_AXI_BID" "MPEG2FPGA_APB_PERIPHERAL_0:m_axi_bid" }
-sd_connect_pins -sd_name ${sd_name} -pin_names {"MEM_AXI_BRESP" "MPEG2FPGA_APB_PERIPHERAL_0:m_axi_bresp" }
-sd_connect_pins -sd_name ${sd_name} -pin_names {"MEM_AXI_BVALID" "MPEG2FPGA_APB_PERIPHERAL_0:m_axi_bvalid" }
-sd_connect_pins -sd_name ${sd_name} -pin_names {"MEM_AXI_BREADY" "MPEG2FPGA_APB_PERIPHERAL_0:m_axi_bready" }
-sd_connect_pins -sd_name ${sd_name} -pin_names {"MEM_AXI_ARID" "MPEG2FPGA_APB_PERIPHERAL_0:m_axi_arid" }
-sd_connect_pins -sd_name ${sd_name} -pin_names {"MEM_AXI_ARADDR" "MPEG2FPGA_APB_PERIPHERAL_0:m_axi_araddr" }
-sd_connect_pins -sd_name ${sd_name} -pin_names {"MEM_AXI_ARLEN" "MPEG2FPGA_APB_PERIPHERAL_0:m_axi_arlen" }
-sd_connect_pins -sd_name ${sd_name} -pin_names {"MEM_AXI_ARSIZE" "MPEG2FPGA_APB_PERIPHERAL_0:m_axi_arsize" }
-sd_connect_pins -sd_name ${sd_name} -pin_names {"MEM_AXI_ARBURST" "MPEG2FPGA_APB_PERIPHERAL_0:m_axi_arburst" }
-sd_connect_pins -sd_name ${sd_name} -pin_names {"MEM_AXI_ARLOCK" "MPEG2FPGA_APB_PERIPHERAL_0:m_axi_arlock" }
-sd_connect_pins -sd_name ${sd_name} -pin_names {"MEM_AXI_ARCACHE" "MPEG2FPGA_APB_PERIPHERAL_0:m_axi_arcache" }
-sd_connect_pins -sd_name ${sd_name} -pin_names {"MEM_AXI_ARPROT" "MPEG2FPGA_APB_PERIPHERAL_0:m_axi_arprot" }
-sd_connect_pins -sd_name ${sd_name} -pin_names {"MEM_AXI_ARQOS" "MPEG2FPGA_APB_PERIPHERAL_0:m_axi_arqos" }
-sd_connect_pins -sd_name ${sd_name} -pin_names {"MEM_AXI_ARVALID" "MPEG2FPGA_APB_PERIPHERAL_0:m_axi_arvalid" }
-sd_connect_pins -sd_name ${sd_name} -pin_names {"MEM_AXI_ARREADY" "MPEG2FPGA_APB_PERIPHERAL_0:m_axi_arready" }
-sd_connect_pins -sd_name ${sd_name} -pin_names {"MEM_AXI_RID" "MPEG2FPGA_APB_PERIPHERAL_0:m_axi_rid" }
-sd_connect_pins -sd_name ${sd_name} -pin_names {"MEM_AXI_RDATA" "MPEG2FPGA_APB_PERIPHERAL_0:m_axi_rdata" }
-sd_connect_pins -sd_name ${sd_name} -pin_names {"MEM_AXI_RRESP" "MPEG2FPGA_APB_PERIPHERAL_0:m_axi_rresp" }
-sd_connect_pins -sd_name ${sd_name} -pin_names {"MEM_AXI_RLAST" "MPEG2FPGA_APB_PERIPHERAL_0:m_axi_rlast" }
-sd_connect_pins -sd_name ${sd_name} -pin_names {"MEM_AXI_RVALID" "MPEG2FPGA_APB_PERIPHERAL_0:m_axi_rvalid" }
-sd_connect_pins -sd_name ${sd_name} -pin_names {"MEM_AXI_RREADY" "MPEG2FPGA_APB_PERIPHERAL_0:m_axi_rready" }
+# Fase 7a (2026-08-23) EXPERIMENT: mem2axi_bridge's AXI4 master, now a
+# single bif-to-bif connect (was per-signal -- see the comment on
+# MEM_AXI_MIRROREDSLAVE above for why).
+sd_connect_pins -sd_name ${sd_name} -pin_names {"MPEG2FPGA_APB_PERIPHERAL_0:mem_axi_bif" "MEM_AXI_MIRROREDSLAVE" }
 # Fase 7c: u_stream_dma's AXI4 read-only master, per-signal (same reasoning
 # as MEM_AXI_* above -- no bif, plain sd_connect_pins).
 sd_connect_pins -sd_name ${sd_name} -pin_names {"DMA_AXI_ARID" "MPEG2FPGA_APB_PERIPHERAL_0:dma_axi_arid" }

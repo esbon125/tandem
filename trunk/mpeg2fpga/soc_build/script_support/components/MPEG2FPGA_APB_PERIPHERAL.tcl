@@ -24,3 +24,54 @@ hdl_core_add_bif -hdl_core_name {mpeg2fpga_apb_peripheral} -bif_definition {APB:
 # connects each m_axi_* pin individually instead (plain sd_connect_pins,
 # which only checks pin width, not bus-interface type) -- see the "Note"
 # comment there.
+#
+# Fase 7a (2026-08-23) TEMPORARY EXPERIMENT: re-enabling this to capture
+# Libero's exact rejection message, now that the per-signal bypass above is
+# the prime suspect for why m_axi_awready never arrives on real hardware
+# (mem2axi_bridge's AXI write FSM never completes a single transaction).
+# REVERT after reading the error -- this is not meant to stay enabled.
+hdl_core_add_bif -hdl_core_name {mpeg2fpga_apb_peripheral} -bif_definition {AXI4:AMBA:AMBA4:mirroredSlave} -bif_name {mem_axi_bif} -signal_map {\
+"AWID:m_axi_awid" \
+"AWADDR:m_axi_awaddr" \
+"AWLEN:m_axi_awlen" \
+"AWSIZE:m_axi_awsize" \
+"AWBURST:m_axi_awburst" \
+"AWLOCK:m_axi_awlock" \
+"AWCACHE:m_axi_awcache" \
+"AWPROT:m_axi_awprot" \
+"AWQOS:m_axi_awqos" \
+"AWREGION:m_axi_awregion" \
+"AWUSER:m_axi_awuser" \
+"AWVALID:m_axi_awvalid" \
+"AWREADY:m_axi_awready" \
+"WDATA:m_axi_wdata" \
+"WSTRB:m_axi_wstrb" \
+"WLAST:m_axi_wlast" \
+"WUSER:m_axi_wuser" \
+"WVALID:m_axi_wvalid" \
+"WREADY:m_axi_wready" \
+"BID:m_axi_bid" \
+"BRESP:m_axi_bresp" \
+"BUSER:m_axi_buser" \
+"BVALID:m_axi_bvalid" \
+"BREADY:m_axi_bready" \
+"ARID:m_axi_arid" \
+"ARADDR:m_axi_araddr" \
+"ARLEN:m_axi_arlen" \
+"ARSIZE:m_axi_arsize" \
+"ARBURST:m_axi_arburst" \
+"ARLOCK:m_axi_arlock" \
+"ARCACHE:m_axi_arcache" \
+"ARPROT:m_axi_arprot" \
+"ARQOS:m_axi_arqos" \
+"ARREGION:m_axi_arregion" \
+"ARUSER:m_axi_aruser" \
+"ARVALID:m_axi_arvalid" \
+"ARREADY:m_axi_arready" \
+"RID:m_axi_rid" \
+"RDATA:m_axi_rdata" \
+"RRESP:m_axi_rresp" \
+"RLAST:m_axi_rlast" \
+"RUSER:m_axi_ruser" \
+"RVALID:m_axi_rvalid" \
+"RREADY:m_axi_rready" }

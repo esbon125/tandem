@@ -394,50 +394,10 @@ sd_connect_pins -sd_name ${sd_name} -pin_names {"FIC_3_PERIPHERALS_0:PSTRB" "MSS
 sd_connect_pins -sd_name ${sd_name} -pin_names {"FIC_0_PERIPHERALS_0:AXI4mmaster0" "MSS_WRAPPER_0:FIC_0_AXI4_INITIATOR" }
 sd_connect_pins -sd_name ${sd_name} -pin_names {"FIC_0_PERIPHERALS_0:AXI4mslave0" "MSS_WRAPPER_0:FIC_0_AXI4_TARGET" }
 sd_connect_pins -sd_name ${sd_name} -pin_names {"FIC_3_PERIPHERALS_0:APB_MMASTER" "MSS_WRAPPER_0:FIC_3_APB_INITIATOR" }
-# Fase 6b: per-signal, not a single bif-based connect -- see the "Note"
-# comment in FIC_3_PERIPHERALS.tcl's bus interface ports section for why.
-# MSS_WRAPPER's FIC_1_AXI4_TARGET implements a reduced signal set (no
-# AWREGION/ARREGION, no *USER signals -- confirmed against MSS_WRAPPER.tcl,
-# same reduced set the working FIC_0_AXI4_TARGET connection above uses), so
-# only these are connected; mem2axi_bridge's fixed-value ports for the rest
-# are simply left unconnected past FIC_3_PERIPHERALS.
-sd_connect_pins -sd_name ${sd_name} -pin_names {"FIC_3_PERIPHERALS_0:MEM_AXI_AWID" "MSS_WRAPPER_0:FIC_1_AXI4_TARGET_FIC_1_AXI4_S_AWID" }
-sd_connect_pins -sd_name ${sd_name} -pin_names {"FIC_3_PERIPHERALS_0:MEM_AXI_AWADDR" "MSS_WRAPPER_0:FIC_1_AXI4_TARGET_FIC_1_AXI4_S_AWADDR" }
-sd_connect_pins -sd_name ${sd_name} -pin_names {"FIC_3_PERIPHERALS_0:MEM_AXI_AWLEN" "MSS_WRAPPER_0:FIC_1_AXI4_TARGET_FIC_1_AXI4_S_AWLEN" }
-sd_connect_pins -sd_name ${sd_name} -pin_names {"FIC_3_PERIPHERALS_0:MEM_AXI_AWSIZE" "MSS_WRAPPER_0:FIC_1_AXI4_TARGET_FIC_1_AXI4_S_AWSIZE" }
-sd_connect_pins -sd_name ${sd_name} -pin_names {"FIC_3_PERIPHERALS_0:MEM_AXI_AWBURST" "MSS_WRAPPER_0:FIC_1_AXI4_TARGET_FIC_1_AXI4_S_AWBURST" }
-sd_connect_pins -sd_name ${sd_name} -pin_names {"FIC_3_PERIPHERALS_0:MEM_AXI_AWLOCK" "MSS_WRAPPER_0:FIC_1_AXI4_TARGET_FIC_1_AXI4_S_AWLOCK" }
-sd_connect_pins -sd_name ${sd_name} -pin_names {"FIC_3_PERIPHERALS_0:MEM_AXI_AWCACHE" "MSS_WRAPPER_0:FIC_1_AXI4_TARGET_FIC_1_AXI4_S_AWCACHE" }
-sd_connect_pins -sd_name ${sd_name} -pin_names {"FIC_3_PERIPHERALS_0:MEM_AXI_AWPROT" "MSS_WRAPPER_0:FIC_1_AXI4_TARGET_FIC_1_AXI4_S_AWPROT" }
-sd_connect_pins -sd_name ${sd_name} -pin_names {"FIC_3_PERIPHERALS_0:MEM_AXI_AWQOS" "MSS_WRAPPER_0:FIC_1_AXI4_TARGET_FIC_1_AXI4_S_AWQOS" }
-sd_connect_pins -sd_name ${sd_name} -pin_names {"FIC_3_PERIPHERALS_0:MEM_AXI_AWVALID" "MSS_WRAPPER_0:FIC_1_AXI4_TARGET_FIC_1_AXI4_S_AWVALID" }
-sd_connect_pins -sd_name ${sd_name} -pin_names {"FIC_3_PERIPHERALS_0:MEM_AXI_AWREADY" "MSS_WRAPPER_0:FIC_1_AXI4_TARGET_FIC_1_AXI4_S_AWREADY" }
-sd_connect_pins -sd_name ${sd_name} -pin_names {"FIC_3_PERIPHERALS_0:MEM_AXI_WDATA" "MSS_WRAPPER_0:FIC_1_AXI4_TARGET_FIC_1_AXI4_S_WDATA" }
-sd_connect_pins -sd_name ${sd_name} -pin_names {"FIC_3_PERIPHERALS_0:MEM_AXI_WSTRB" "MSS_WRAPPER_0:FIC_1_AXI4_TARGET_FIC_1_AXI4_S_WSTRB" }
-sd_connect_pins -sd_name ${sd_name} -pin_names {"FIC_3_PERIPHERALS_0:MEM_AXI_WLAST" "MSS_WRAPPER_0:FIC_1_AXI4_TARGET_FIC_1_AXI4_S_WLAST" }
-sd_connect_pins -sd_name ${sd_name} -pin_names {"FIC_3_PERIPHERALS_0:MEM_AXI_WVALID" "MSS_WRAPPER_0:FIC_1_AXI4_TARGET_FIC_1_AXI4_S_WVALID" }
-sd_connect_pins -sd_name ${sd_name} -pin_names {"FIC_3_PERIPHERALS_0:MEM_AXI_WREADY" "MSS_WRAPPER_0:FIC_1_AXI4_TARGET_FIC_1_AXI4_S_WREADY" }
-sd_connect_pins -sd_name ${sd_name} -pin_names {"FIC_3_PERIPHERALS_0:MEM_AXI_BID" "MSS_WRAPPER_0:FIC_1_AXI4_TARGET_FIC_1_AXI4_S_BID" }
-sd_connect_pins -sd_name ${sd_name} -pin_names {"FIC_3_PERIPHERALS_0:MEM_AXI_BRESP" "MSS_WRAPPER_0:FIC_1_AXI4_TARGET_FIC_1_AXI4_S_BRESP" }
-sd_connect_pins -sd_name ${sd_name} -pin_names {"FIC_3_PERIPHERALS_0:MEM_AXI_BVALID" "MSS_WRAPPER_0:FIC_1_AXI4_TARGET_FIC_1_AXI4_S_BVALID" }
-sd_connect_pins -sd_name ${sd_name} -pin_names {"FIC_3_PERIPHERALS_0:MEM_AXI_BREADY" "MSS_WRAPPER_0:FIC_1_AXI4_TARGET_FIC_1_AXI4_S_BREADY" }
-sd_connect_pins -sd_name ${sd_name} -pin_names {"FIC_3_PERIPHERALS_0:MEM_AXI_ARID" "MSS_WRAPPER_0:FIC_1_AXI4_TARGET_FIC_1_AXI4_S_ARID" }
-sd_connect_pins -sd_name ${sd_name} -pin_names {"FIC_3_PERIPHERALS_0:MEM_AXI_ARADDR" "MSS_WRAPPER_0:FIC_1_AXI4_TARGET_FIC_1_AXI4_S_ARADDR" }
-sd_connect_pins -sd_name ${sd_name} -pin_names {"FIC_3_PERIPHERALS_0:MEM_AXI_ARLEN" "MSS_WRAPPER_0:FIC_1_AXI4_TARGET_FIC_1_AXI4_S_ARLEN" }
-sd_connect_pins -sd_name ${sd_name} -pin_names {"FIC_3_PERIPHERALS_0:MEM_AXI_ARSIZE" "MSS_WRAPPER_0:FIC_1_AXI4_TARGET_FIC_1_AXI4_S_ARSIZE" }
-sd_connect_pins -sd_name ${sd_name} -pin_names {"FIC_3_PERIPHERALS_0:MEM_AXI_ARBURST" "MSS_WRAPPER_0:FIC_1_AXI4_TARGET_FIC_1_AXI4_S_ARBURST" }
-sd_connect_pins -sd_name ${sd_name} -pin_names {"FIC_3_PERIPHERALS_0:MEM_AXI_ARLOCK" "MSS_WRAPPER_0:FIC_1_AXI4_TARGET_FIC_1_AXI4_S_ARLOCK" }
-sd_connect_pins -sd_name ${sd_name} -pin_names {"FIC_3_PERIPHERALS_0:MEM_AXI_ARCACHE" "MSS_WRAPPER_0:FIC_1_AXI4_TARGET_FIC_1_AXI4_S_ARCACHE" }
-sd_connect_pins -sd_name ${sd_name} -pin_names {"FIC_3_PERIPHERALS_0:MEM_AXI_ARPROT" "MSS_WRAPPER_0:FIC_1_AXI4_TARGET_FIC_1_AXI4_S_ARPROT" }
-sd_connect_pins -sd_name ${sd_name} -pin_names {"FIC_3_PERIPHERALS_0:MEM_AXI_ARQOS" "MSS_WRAPPER_0:FIC_1_AXI4_TARGET_FIC_1_AXI4_S_ARQOS" }
-sd_connect_pins -sd_name ${sd_name} -pin_names {"FIC_3_PERIPHERALS_0:MEM_AXI_ARVALID" "MSS_WRAPPER_0:FIC_1_AXI4_TARGET_FIC_1_AXI4_S_ARVALID" }
-sd_connect_pins -sd_name ${sd_name} -pin_names {"FIC_3_PERIPHERALS_0:MEM_AXI_ARREADY" "MSS_WRAPPER_0:FIC_1_AXI4_TARGET_FIC_1_AXI4_S_ARREADY" }
-sd_connect_pins -sd_name ${sd_name} -pin_names {"FIC_3_PERIPHERALS_0:MEM_AXI_RID" "MSS_WRAPPER_0:FIC_1_AXI4_TARGET_FIC_1_AXI4_S_RID" }
-sd_connect_pins -sd_name ${sd_name} -pin_names {"FIC_3_PERIPHERALS_0:MEM_AXI_RDATA" "MSS_WRAPPER_0:FIC_1_AXI4_TARGET_FIC_1_AXI4_S_RDATA" }
-sd_connect_pins -sd_name ${sd_name} -pin_names {"FIC_3_PERIPHERALS_0:MEM_AXI_RRESP" "MSS_WRAPPER_0:FIC_1_AXI4_TARGET_FIC_1_AXI4_S_RRESP" }
-sd_connect_pins -sd_name ${sd_name} -pin_names {"FIC_3_PERIPHERALS_0:MEM_AXI_RLAST" "MSS_WRAPPER_0:FIC_1_AXI4_TARGET_FIC_1_AXI4_S_RLAST" }
-sd_connect_pins -sd_name ${sd_name} -pin_names {"FIC_3_PERIPHERALS_0:MEM_AXI_RVALID" "MSS_WRAPPER_0:FIC_1_AXI4_TARGET_FIC_1_AXI4_S_RVALID" }
-sd_connect_pins -sd_name ${sd_name} -pin_names {"FIC_3_PERIPHERALS_0:MEM_AXI_RREADY" "MSS_WRAPPER_0:FIC_1_AXI4_TARGET_FIC_1_AXI4_S_RREADY" }
+# Fase 7a (2026-08-23) EXPERIMENT: single bif-to-bif connect (was 37
+# per-signal sd_connect_pins calls) -- see FIC_3_PERIPHERALS.tcl's
+# MEM_AXI_MIRROREDSLAVE comment for why.
+sd_connect_pins -sd_name ${sd_name} -pin_names {"FIC_3_PERIPHERALS_0:MEM_AXI_MIRROREDSLAVE" "MSS_WRAPPER_0:FIC_1_AXI4_TARGET" }
 
 # FIC_2_AXI4_TARGET (Fase 7c): u_stream_dma's AXI4 read-only master. Only
 # AR/R are wired to FIC_3_PERIPHERALS_0:DMA_AXI_* -- stream_dma.v never
