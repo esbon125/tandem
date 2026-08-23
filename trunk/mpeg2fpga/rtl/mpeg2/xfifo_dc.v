@@ -56,17 +56,33 @@ module xfifo_dc (
    reg 			  fifo_wr_ack;
    reg 			  fifo_overflow;
 
-   assign empty = fifo_empty;
-   assign full = fifo_full;
-   assign prog_empty = fifo_empty_n;
-   assign prog_full = fifo_full_n;
-   assign valid = fifo_valid;
-   assign underflow = fifo_underflow;
-   assign wr_ack = fifo_wr_ack;
-   assign overflow = fifo_overflow;
+   /* Fase 7a fix (2026-08-22): these were unconditional assigns, but
+    * fifo_empty/fifo_full/fifo_empty_n/fifo_full_n/fifo_valid/fifo_underflow/
+    * fifo_wr_ack/fifo_overflow are only ever driven inside the
+    * USE_GENERIC==1'b1 branch below (generic_fifo_dc path). With
+    * USE_GENERIC==0 (the real CoreFIFO path used for dta_width 35/64/88),
+    * those regs/wires are never assigned -- fifo_valid/fifo_underflow/
+    * fifo_wr_ack/fifo_overflow stay at their power-up 'bx forever -- while
+    * the CoreFIFO instance below *also* drives valid/underflow/wr_ack/
+    * overflow directly via .DVLD/.UNDERFLOW/.WACK/.OVERFLOW on the very same
+    * nets. That's two drivers on one wire (a real, constant X vs the FIFO's
+    * real value), which is undefined behavior. Gating these assigns behind
+    * the same generate condition as their sources makes each net have
+    * exactly one driver in either configuration -- in the USE_GENERIC==0
+    * case, the CoreFIFO instance's own port connections are the sole driver,
+    * same as empty/full/prog_empty/prog_full already effectively were
+    * (fifo_empty/fifo_full/etc float at Z when unused, which don't contend). */
+   generate
+   if (USE_GENERIC == 1'b1) begin
+      assign empty = fifo_empty;
+      assign full = fifo_full;
+      assign prog_empty = fifo_empty_n;
+      assign prog_full = fifo_full_n;
+      assign valid = fifo_valid;
+      assign underflow = fifo_underflow;
+      assign wr_ack = fifo_wr_ack;
+      assign overflow = fifo_overflow;
 
-   if (USE_GENERIC == 1'b1
-       ) begin
       always @(posedge rd_clk)
 	if (~rst) fifo_valid <= 1'b0;
 	else fifo_valid <= rd_en && ~fifo_empty;
@@ -82,7 +98,8 @@ module xfifo_dc (
    always @(posedge wr_clk)
      if (~rst) fifo_overflow <= 1'b0;
      else fifo_overflow <= wr_en && fifo_full;
-end 
+   end
+   endgenerate
 
    generate
       if (USE_GENERIC == 1'b1)

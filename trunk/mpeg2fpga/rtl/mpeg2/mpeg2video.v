@@ -57,7 +57,10 @@ module mpeg2video(clk, mem_clk, dot_clk,
              r, g, b, y, u, v, pixel_en, h_sync, v_sync, c_sync,                                                                  // clocked with dot_clk
              mem_req_rd_cmd, mem_req_rd_addr, mem_req_rd_dta, mem_req_rd_en, mem_req_rd_valid,                                    // clocked with mem_clk
              mem_res_wr_dta, mem_res_wr_en, mem_res_wr_almost_full,                                                               // clocked with mem_clk
-             testpoint_dip, testpoint_dip_en, testpoint
+             testpoint_dip, testpoint_dip_en, testpoint,
+             vbuf_wr_addr, vbuf_rd_addr,                                                                                        // clocked with clk; Fase 7a debug
+             disp_service_cnt, vbr_service_cnt, vbr_starved_cnt, arbiter_flags,                                                 // clocked with clk; Fase 7a debug
+             mem_res_valid_cnt, dbg_last_mem_req_wr_addr                                                                        // clocked with clk; Fase 7a debug
 	     );
 
   input            clk;                     // clock. Typically a multiple of 27 Mhz as MPEG2 timestamps have a 27 Mhz resolution.
@@ -72,7 +75,10 @@ module mpeg2video(ref_clk, clk_out, mem_clk_out, mem_rst_out,
              r, g, b, y, u, v, pixel_en, h_sync, v_sync, c_sync,                                                                  // clocked with dot_clk
              mem_req_rd_cmd, mem_req_rd_addr, mem_req_rd_dta, mem_req_rd_en, mem_req_rd_valid,                                    // clocked with mem_clk
              mem_res_wr_dta, mem_res_wr_en, mem_res_wr_almost_full,                                                               // clocked with mem_clk
-             testpoint_dip, testpoint_dip_en, testpoint
+             testpoint_dip, testpoint_dip_en, testpoint,
+             vbuf_wr_addr, vbuf_rd_addr,                                                                                        // clocked with clk; Fase 7a debug
+             disp_service_cnt, vbr_service_cnt, vbr_starved_cnt, arbiter_flags,                                                 // clocked with clk; Fase 7a debug
+             mem_res_valid_cnt, dbg_last_mem_req_wr_addr                                                                        // clocked with clk; Fase 7a debug
 	     );
 
   input            ref_clk;
@@ -131,6 +137,20 @@ module mpeg2video(ref_clk, clk_out, mem_clk_out, mem_rst_out,
   output reg       busy;                    // assert busy when input fifo risks overflow
   output           error;
   output           interrupt;               // asserted when image size changes, or when vld error occurs. cleared when status register read.
+
+  /* Fase 7a debug (2026-08-21): circular video buffer read/write addresses,
+   * promoted all the way to the top so mpeg2fpga_apb_peripheral.v can latch
+   * them into APB-readable debug registers -- see that file's comment for
+   * why (VLD-stall investigation: checking whether vbuf writes actually
+   * land inside [VBUF, VBUF_END] or alias FRAME_0_Y on real hardware). */
+  output      [21:0]vbuf_wr_addr;
+  output      [21:0]vbuf_rd_addr;
+  output      [31:0]disp_service_cnt;
+  output      [31:0]vbr_service_cnt;
+  output      [31:0]vbr_starved_cnt;
+  output      [31:0]arbiter_flags;
+  output      [31:0]mem_res_valid_cnt;
+  output      [21:0]dbg_last_mem_req_wr_addr;
 
   /* memory controller interface */
   output      [1:0]mem_req_rd_cmd;
@@ -1393,7 +1413,16 @@ always @(posedge dot_clk)
     /* tag fifo status for probe */
     .tag_wr_almost_full(tag_wr_almost_full),
     .tag_wr_full(tag_wr_full),
-    .tag_wr_overflow(tag_wr_overflow)
+    .tag_wr_overflow(tag_wr_overflow),
+    /* Fase 7a debug */
+    .vbuf_wr_addr(vbuf_wr_addr),
+    .vbuf_rd_addr(vbuf_rd_addr),
+    .disp_service_cnt(disp_service_cnt),
+    .vbr_service_cnt(vbr_service_cnt),
+    .vbr_starved_cnt(vbr_starved_cnt),
+    .arbiter_flags(arbiter_flags),
+    .mem_res_valid_cnt(mem_res_valid_cnt),
+    .dbg_last_mem_req_wr_addr(dbg_last_mem_req_wr_addr)
     );
 
   /*

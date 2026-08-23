@@ -84,7 +84,29 @@ module apb3_mpeg2fpga_bridge (
 
     /* stream_dma.v side: core_clk domain, no CDC needed (see header) */
     dma_start, dma_addr, dma_len,
-    dma_busy, dma_done, dma_bytes_done
+    dma_busy, dma_done, dma_bytes_done,
+
+    /* Fase 7a debug (2026-08-21): mpeg2video's circular video buffer
+     * addresses, core_clk domain like dma_addr/dma_len above -- read
+     * directly in C_IDLE below, no extra synchronizer needed since the
+     * req_toggle/ack_toggle handshake already is the CDC boundary. */
+    vbuf_wr_addr, vbuf_rd_addr,
+
+    /* Fase 7a debug (2026-08-22): framestore_request.v's fixed-priority
+     * memory arbiter starvation counters, same core_clk-domain treatment. */
+    disp_service_cnt, vbr_service_cnt, vbr_starved_cnt,
+    arbiter_flags, mem_res_valid_cnt,
+
+    /* Fase 7a debug (2026-08-23): mem2axi_bridge.v's own view of the last
+     * write address, genuinely in the mem_clk domain (unlike every other
+     * debug signal above, which all happened to already be core_clk) --
+     * needs a real 2-FF synchronizer here, see the always block below. */
+    dbg_last_write_addr_from_fifo, dbg_last_write_awaddr_issued,
+
+    /* Fase 7a debug (2026-08-23): framestore_request.v's own view of the
+     * address it hands to mem_request_fifo's write port -- core_clk
+     * domain, same as vbuf_wr_addr, no extra CDC needed. */
+    dbg_last_mem_req_wr_addr
 );
 
   input             PCLK;
@@ -124,6 +146,25 @@ module apb3_mpeg2fpga_bridge (
   input             dma_done;        /* 1-cycle pulse */
   input       [31:0]dma_bytes_done;
 
+  input       [21:0]vbuf_wr_addr;    /* mpeg2video's vbuf write pointer, core_clk domain */
+  input       [21:0]vbuf_rd_addr;    /* mpeg2video's vbuf read pointer, core_clk domain */
+
+  input       [31:0]disp_service_cnt; /* cycles state==STATE_DISP, core_clk domain, free-running */
+  input       [31:0]vbr_service_cnt;  /* cycles state==STATE_VBR, core_clk domain, free-running */
+  input       [31:0]vbr_starved_cnt;  /* cycles do_vbr true but arbiter picked something else */
+
+  /* Fase 7a debug (2026-08-22): live snapshot -- bits[10:0]=state (one-hot),
+   * [11]=do_vbr, [12]=do_disp, [13]=vbuf_empty, [14]=vbr_rd_almost_empty,
+   * [15]=mem_req_wr_almost_full, [16]=tag_wr_almost_full, [17]=vbuf_holdoff,
+   * [18]=vbw_rd_empty, [31:19]=0. See framestore_request.v's comment. */
+  input       [31:0]arbiter_flags;
+
+  input       [31:0]mem_res_valid_cnt; /* cycles mem_res_rd_valid true, core_clk domain, free-running */
+
+  input       [21:0]dbg_last_write_addr_from_fifo; /* mem_clk domain -- genuine CDC needed */
+  input       [37:0]dbg_last_write_awaddr_issued;  /* mem_clk domain -- genuine CDC needed */
+  input       [21:0]dbg_last_mem_req_wr_addr;       /* core_clk domain, no CDC needed */
+
   /*
    * APB3 domain: latch the transfer on entering the Access phase
    * (PSEL && PENABLE, first cycle after Setup), then wait for the
@@ -135,6 +176,13 @@ module apb3_mpeg2fpga_bridge (
   localparam [4:0] STREAM_PUSH_ADDR = 5'h10;
   localparam [4:0] DMA_ADDR_ADDR = 5'h11, DMA_LEN_ADDR = 5'h12, DMA_CTRL_ADDR = 5'h13, DMA_STATUS_ADDR = 5'h14;
   localparam [4:0] PWDATA_STICKY_ADDR = 5'h15;
+  localparam [4:0] VBUF_WR_ADDR_ADDR = 5'h16, VBUF_RD_ADDR_ADDR = 5'h17;
+  localparam [4:0] DISP_SERVICE_CNT_ADDR = 5'h18, VBR_SERVICE_CNT_ADDR = 5'h19, VBR_STARVED_CNT_ADDR = 5'h1a;
+  localparam [4:0] ARBITER_FLAGS_ADDR = 5'h1b;
+  localparam [4:0] MEM_RES_VALID_CNT_ADDR = 5'h1c;
+  localparam [4:0] DBG_LAST_WRITE_ADDR_FROM_FIFO_ADDR = 5'h1d;
+  localparam [4:0] DBG_LAST_WRITE_AWADDR_ISSUED_ADDR = 5'h1e;
+  localparam [4:0] DBG_LAST_MEM_REQ_WR_ADDR_ADDR = 5'h1f;
 
   /* Fase 7c PWDATA investigation: hold the Access phase open for this many
    * extra PCLK cycles, continuously re-latching PADDR/PWDATA/PWRITE every
@@ -178,6 +226,15 @@ module apb3_mpeg2fpga_bridge (
    * for PWDATA_STICKY_ADDR reads -- see header comment for why this is
    * safe despite being a full 32-bit bus, not a single toggle bit. */
   reg [31:0] pwdata_sticky_meta, pwdata_sticky_sync;
+
+  /* Fase 7a debug (2026-08-23): 2-FF synchronizer bringing mem2axi_bridge's
+   * mem_clk-domain debug registers into core_clk, same reasoning as
+   * pwdata_sticky_meta/sync above (quasi-static once a write happens, only
+   * possible artifact is a one-read staleness, never a torn/corrupted
+   * value in practice for a debug-only signal read well after the write
+   * that set it). */
+  reg [21:0] dbg_last_write_addr_from_fifo_meta, dbg_last_write_addr_from_fifo_sync;
+  reg [37:0] dbg_last_write_awaddr_issued_meta, dbg_last_write_awaddr_issued_sync;
 
   wire       apb_ack_matched  = (apb_state == A_WAIT_ACK) && (ack_toggle_sync == req_toggle);
 
@@ -314,6 +371,16 @@ module apb3_mpeg2fpga_bridge (
   wire is_dma_ctrl     = (apb_addr_r == DMA_CTRL_ADDR);
   wire is_dma_status   = (apb_addr_r == DMA_STATUS_ADDR);
   wire is_pwdata_sticky = (apb_addr_r == PWDATA_STICKY_ADDR);
+  wire is_vbuf_wr_addr  = (apb_addr_r == VBUF_WR_ADDR_ADDR);
+  wire is_vbuf_rd_addr  = (apb_addr_r == VBUF_RD_ADDR_ADDR);
+  wire is_disp_service_cnt = (apb_addr_r == DISP_SERVICE_CNT_ADDR);
+  wire is_vbr_service_cnt  = (apb_addr_r == VBR_SERVICE_CNT_ADDR);
+  wire is_vbr_starved_cnt  = (apb_addr_r == VBR_STARVED_CNT_ADDR);
+  wire is_arbiter_flags    = (apb_addr_r == ARBITER_FLAGS_ADDR);
+  wire is_mem_res_valid_cnt = (apb_addr_r == MEM_RES_VALID_CNT_ADDR);
+  wire is_dbg_last_write_addr_from_fifo = (apb_addr_r == DBG_LAST_WRITE_ADDR_FROM_FIFO_ADDR);
+  wire is_dbg_last_write_awaddr_issued  = (apb_addr_r == DBG_LAST_WRITE_AWADDR_ISSUED_ADDR);
+  wire is_dbg_last_mem_req_wr_addr = (apb_addr_r == DBG_LAST_MEM_REQ_WR_ADDR_ADDR);
 
   always @(posedge core_clk or negedge core_rst_n) begin
     if (!core_rst_n) begin
@@ -332,10 +399,20 @@ module apb3_mpeg2fpga_bridge (
       dma_done_sticky <= 1'b0;
       pwdata_sticky_meta <= 32'b0;
       pwdata_sticky_sync <= 32'b0;
+      dbg_last_write_addr_from_fifo_meta <= 22'b0;
+      dbg_last_write_addr_from_fifo_sync <= 22'b0;
+      dbg_last_write_awaddr_issued_meta  <= 38'b0;
+      dbg_last_write_awaddr_issued_sync  <= 38'b0;
     end else begin
       /* 2-FF synchronizer for the APB-domain req_toggle */
       req_toggle_meta <= req_toggle;
       req_toggle_sync <= req_toggle_meta;
+
+      /* 2-FF synchronizer for mem2axi_bridge's mem_clk-domain debug regs */
+      dbg_last_write_addr_from_fifo_meta <= dbg_last_write_addr_from_fifo;
+      dbg_last_write_addr_from_fifo_sync <= dbg_last_write_addr_from_fifo_meta;
+      dbg_last_write_awaddr_issued_meta  <= dbg_last_write_awaddr_issued;
+      dbg_last_write_awaddr_issued_sync  <= dbg_last_write_awaddr_issued_meta;
 
       /* 2-FF synchronizer for pwdata_sticky_r, see declaration comment */
       pwdata_sticky_meta <= pwdata_sticky_r;
@@ -389,6 +466,46 @@ module apb3_mpeg2fpga_bridge (
             end else if (is_pwdata_sticky) begin
               if (!apb_write_r)
                 rdata_hold <= pwdata_sticky_sync;
+              core_state <= C_DONE;
+            end else if (is_vbuf_wr_addr) begin
+              if (!apb_write_r)
+                rdata_hold <= {10'b0, vbuf_wr_addr};
+              core_state <= C_DONE;
+            end else if (is_vbuf_rd_addr) begin
+              if (!apb_write_r)
+                rdata_hold <= {10'b0, vbuf_rd_addr};
+              core_state <= C_DONE;
+            end else if (is_disp_service_cnt) begin
+              if (!apb_write_r)
+                rdata_hold <= disp_service_cnt;
+              core_state <= C_DONE;
+            end else if (is_vbr_service_cnt) begin
+              if (!apb_write_r)
+                rdata_hold <= vbr_service_cnt;
+              core_state <= C_DONE;
+            end else if (is_vbr_starved_cnt) begin
+              if (!apb_write_r)
+                rdata_hold <= vbr_starved_cnt;
+              core_state <= C_DONE;
+            end else if (is_arbiter_flags) begin
+              if (!apb_write_r)
+                rdata_hold <= arbiter_flags;
+              core_state <= C_DONE;
+            end else if (is_mem_res_valid_cnt) begin
+              if (!apb_write_r)
+                rdata_hold <= mem_res_valid_cnt;
+              core_state <= C_DONE;
+            end else if (is_dbg_last_write_addr_from_fifo) begin
+              if (!apb_write_r)
+                rdata_hold <= {10'b0, dbg_last_write_addr_from_fifo_sync};
+              core_state <= C_DONE;
+            end else if (is_dbg_last_write_awaddr_issued) begin
+              if (!apb_write_r)
+                rdata_hold <= dbg_last_write_awaddr_issued_sync[31:0];
+              core_state <= C_DONE;
+            end else if (is_dbg_last_mem_req_wr_addr) begin
+              if (!apb_write_r)
+                rdata_hold <= {10'b0, dbg_last_mem_req_wr_addr};
               core_state <= C_DONE;
             end else if (is_stream_push) begin
               if (apb_write_r) begin

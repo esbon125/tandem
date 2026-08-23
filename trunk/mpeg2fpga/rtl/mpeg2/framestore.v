@@ -136,8 +136,11 @@ module framestore(rst, clk, mem_clk,
                   vbr_wr_full, vbr_wr_almost_full, vbr_wr_dta, vbr_wr_en, vbr_wr_ack, vb_flush, vbr_rd_almost_empty,
                   mem_req_rd_cmd, mem_req_rd_addr, mem_req_rd_dta, mem_req_rd_en, mem_req_rd_valid, 
                   mem_res_wr_dta, mem_res_wr_en, mem_res_wr_almost_full, mem_res_wr_full, mem_res_wr_overflow,
-                  mem_req_wr_almost_full, mem_req_wr_full, mem_req_wr_overflow, 
-		  tag_wr_almost_full, tag_wr_full, tag_wr_overflow
+                  mem_req_wr_almost_full, mem_req_wr_full, mem_req_wr_overflow,
+		  tag_wr_almost_full, tag_wr_full, tag_wr_overflow,
+                  vbuf_wr_addr, vbuf_rd_addr,
+                  disp_service_cnt, vbr_service_cnt, vbr_starved_cnt,
+                  arbiter_flags, mem_res_valid_cnt, dbg_last_mem_req_wr_addr
                   );
 
   input            rst;
@@ -207,6 +210,20 @@ module framestore(rst, clk, mem_clk,
   input       [21:0]osd_rd_addr;
   input       [63:0]osd_rd_dta;
   input             osd_wr_almost_full;
+
+  /* Fase 7a debug (2026-08-21): circular video buffer addresses, promoted
+   * for real-hardware readback -- see mpeg2fpga_apb_peripheral.v. */
+  output      [21:0]vbuf_wr_addr;
+  output      [21:0]vbuf_rd_addr;
+
+  /* Fase 7a debug (2026-08-22): arbiter starvation counters, see
+   * framestore_request.v's comment. */
+  output      [31:0]disp_service_cnt;
+  output      [31:0]vbr_service_cnt;
+  output      [31:0]vbr_starved_cnt;
+  output      [31:0]arbiter_flags;
+  output      [31:0]mem_res_valid_cnt;
+  output      [21:0]dbg_last_mem_req_wr_addr;
 
   /* local fifo registers */
 
@@ -301,7 +318,14 @@ module framestore(rst, clk, mem_clk,
     .mem_req_wr_almost_full(mem_req_wr_almost_full),
     .tag_wr_dta(tag_wr_dta),
     .tag_wr_en(tag_wr_en),
-    .tag_wr_almost_full(tag_wr_almost_full)
+    .tag_wr_almost_full(tag_wr_almost_full),
+    .vbuf_wr_addr(vbuf_wr_addr),
+    .vbuf_rd_addr(vbuf_rd_addr),
+    .disp_service_cnt(disp_service_cnt),
+    .vbr_service_cnt(vbr_service_cnt),
+    .vbr_starved_cnt(vbr_starved_cnt),
+    .arbiter_flags(arbiter_flags),
+    .dbg_last_mem_req_wr_addr(dbg_last_mem_req_wr_addr)
     );
 
   /* accept data read from memory controller */
@@ -335,7 +359,8 @@ module framestore(rst, clk, mem_clk,
     .tag_rd_dta(tag_rd_dta),
     .tag_rd_en(tag_rd_en),
     .tag_rd_empty(tag_rd_empty),
-    .tag_rd_valid(tag_rd_valid)
+    .tag_rd_valid(tag_rd_valid),
+    .mem_res_valid_cnt(mem_res_valid_cnt)
     );
 
   

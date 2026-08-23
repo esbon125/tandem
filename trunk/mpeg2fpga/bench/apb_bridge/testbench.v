@@ -54,6 +54,18 @@ module testbench ();
   reg         dma_done;
   reg  [31:0] dma_bytes_done;
 
+  reg  [21:0] vbuf_wr_addr;
+  reg  [21:0] vbuf_rd_addr;
+
+  reg  [31:0] disp_service_cnt;
+  reg  [31:0] vbr_service_cnt;
+  reg  [31:0] vbr_starved_cnt;
+  reg  [31:0] arbiter_flags;
+  reg  [31:0] mem_res_valid_cnt;
+  reg  [21:0] dbg_last_write_addr_from_fifo;
+  reg  [37:0] dbg_last_write_awaddr_issued;
+  reg  [21:0] dbg_last_mem_req_wr_addr;
+
   integer     errors;
   integer     checks;
 
@@ -67,7 +79,14 @@ module testbench ();
       .reg_rd_en(reg_rd_en), .reg_dta_out(reg_dta_out),
       .busy(busy), .stream_data(stream_data), .stream_valid(stream_valid),
       .dma_start(dma_start), .dma_addr(dma_addr), .dma_len(dma_len),
-      .dma_busy(dma_busy), .dma_done(dma_done), .dma_bytes_done(dma_bytes_done)
+      .dma_busy(dma_busy), .dma_done(dma_done), .dma_bytes_done(dma_bytes_done),
+      .vbuf_wr_addr(vbuf_wr_addr), .vbuf_rd_addr(vbuf_rd_addr),
+      .disp_service_cnt(disp_service_cnt), .vbr_service_cnt(vbr_service_cnt),
+      .vbr_starved_cnt(vbr_starved_cnt), .arbiter_flags(arbiter_flags),
+      .mem_res_valid_cnt(mem_res_valid_cnt),
+      .dbg_last_write_addr_from_fifo(dbg_last_write_addr_from_fifo),
+      .dbg_last_write_awaddr_issued(dbg_last_write_awaddr_issued),
+      .dbg_last_mem_req_wr_addr(dbg_last_mem_req_wr_addr)
   );
 
   fake_regfile fake (
@@ -117,6 +136,16 @@ module testbench ();
     dma_busy = 1'b0;
     dma_done = 1'b0;
     dma_bytes_done = 32'b0;
+    vbuf_wr_addr = 22'b0;
+    vbuf_rd_addr = 22'b0;
+    disp_service_cnt = 32'b0;
+    vbr_service_cnt = 32'b0;
+    vbr_starved_cnt = 32'b0;
+    arbiter_flags = 32'b0;
+    mem_res_valid_cnt = 32'b0;
+    dbg_last_write_addr_from_fifo = 22'b0;
+    dbg_last_write_awaddr_issued = 38'b0;
+    dbg_last_mem_req_wr_addr = 22'b0;
   end
 
   /* APB3 master BFM: one full write or read transfer, polling PREADY.
@@ -414,6 +443,61 @@ module testbench ();
      */
     apb_transfer(1'b0, 4'h0, 32'b0, rdata);
     check_eq("register read still works after DMA register traffic", rdata, 32'h0000_0001);
+
+    /* Fase 7a debug (2026-08-21): vbuf_wr_addr/vbuf_rd_addr readback -- plain
+     * core_clk-domain inputs, zero-extended into the low 22 bits of PRDATA,
+     * same treatment as dma_addr/dma_len (no extra synchronizer, see
+     * apb3_mpeg2fpga_bridge.v's port comment). */
+    vbuf_wr_addr = 22'h1c0000;   /* VBUF (mem_codes.v, MP_AT_HL map) */
+    vbuf_rd_addr = 22'h000001;
+    apb_transfer(1'b0, 5'h16, 32'b0, rdata);
+    check_eq("VBUF_WR_ADDR readback", rdata, 32'h001c_0000);
+    apb_transfer(1'b0, 5'h17, 32'b0, rdata);
+    check_eq("VBUF_RD_ADDR readback", rdata, 32'h0000_0001);
+
+    /* a write to these addresses must be a harmless no-op (read-only debug
+     * registers) -- rdata_hold only updates on !apb_write_r in the DUT. */
+    apb_transfer(1'b1, 5'h16, 32'hFFFF_FFFF, rdata);
+    vbuf_wr_addr = 22'h1c0000;
+    apb_transfer(1'b0, 5'h16, 32'b0, rdata);
+    check_eq("VBUF_WR_ADDR write is a no-op", rdata, 32'h001c_0000);
+
+    /* Fase 7a debug (2026-08-22): arbiter starvation counters -- plain
+     * 32-bit core_clk-domain readback, same treatment as the two above. */
+    disp_service_cnt = 32'd123456;
+    vbr_service_cnt  = 32'd16;
+    vbr_starved_cnt  = 32'd987654;
+    apb_transfer(1'b0, 5'h18, 32'b0, rdata);
+    check_eq("DISP_SERVICE_CNT readback", rdata, 32'd123456);
+    apb_transfer(1'b0, 5'h19, 32'b0, rdata);
+    check_eq("VBR_SERVICE_CNT readback", rdata, 32'd16);
+    apb_transfer(1'b0, 5'h1a, 32'b0, rdata);
+    check_eq("VBR_STARVED_CNT readback", rdata, 32'd987654);
+
+    arbiter_flags = 32'hDEAD_1234;
+    apb_transfer(1'b0, 5'h1b, 32'b0, rdata);
+    check_eq("ARBITER_FLAGS readback", rdata, 32'hDEAD_1234);
+
+    mem_res_valid_cnt = 32'd424242;
+    apb_transfer(1'b0, 5'h1c, 32'b0, rdata);
+    check_eq("MEM_RES_VALID_CNT readback", rdata, 32'd424242);
+
+    /* Fase 7a debug (2026-08-23): dbg_last_write_addr_from_fifo/
+     * dbg_last_write_awaddr_issued -- genuinely mem_clk-domain in real
+     * hardware, but this testbench drives them combinationally as plain
+     * regs (no independent mem_clk here), so a few core_clk cycles of
+     * settle time are enough to clear the 2-FF synchronizer. */
+    dbg_last_write_addr_from_fifo = 22'h1c0000;
+    dbg_last_write_awaddr_issued  = 38'h00_c8e00000;
+    repeat (4) @(posedge core_clk);
+    apb_transfer(1'b0, 5'h1d, 32'b0, rdata);
+    check_eq("DBG_LAST_WRITE_ADDR_FROM_FIFO readback", rdata, 32'h001c0000);
+    apb_transfer(1'b0, 5'h1e, 32'b0, rdata);
+    check_eq("DBG_LAST_WRITE_AWADDR_ISSUED readback", rdata, 32'hc8e00000);
+
+    dbg_last_mem_req_wr_addr = 22'h1c0000;
+    apb_transfer(1'b0, 5'h1f, 32'b0, rdata);
+    check_eq("DBG_LAST_MEM_REQ_WR_ADDR readback", rdata, 32'h001c0000);
 
     if (errors == 0)
       $display("ALL TESTS PASSED (%0d checks)", checks);

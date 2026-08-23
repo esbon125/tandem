@@ -230,6 +230,18 @@ module mpeg2fpga_apb_peripheral (
 
   wire [33:0]  testpoint;
 
+  /* Fase 7a debug (2026-08-21) */
+  wire [21:0]  vbuf_wr_addr_internal;
+  wire [21:0]  vbuf_rd_addr_internal;
+  wire [31:0]  disp_service_cnt_internal;
+  wire [31:0]  vbr_service_cnt_internal;
+  wire [31:0]  vbr_starved_cnt_internal;
+  wire [31:0]  arbiter_flags_internal;
+  wire [31:0]  mem_res_valid_cnt_internal;
+  wire [21:0]  dbg_last_write_addr_from_fifo_internal;
+  wire [37:0]  dbg_last_write_awaddr_issued_internal;
+  wire [21:0]  dbg_last_mem_req_wr_addr_internal;
+
   /* mpeg2video's internal "clk" (PF_CCC_C0-derived from ref_clk) is what
    * regfile.v actually samples reg_addr/reg_wr_en/reg_rd_en/reg_dta_in on
    * (doc/mpeg2fpga.txt sec. 1.2.4: "clocked with clk") -- the bridge's
@@ -275,7 +287,19 @@ module mpeg2fpga_apb_peripheral (
       .stream_valid(stream_valid_internal),
 
       .dma_start(dma_start), .dma_addr(dma_addr), .dma_len(dma_len),
-      .dma_busy(dma_busy), .dma_done(dma_done), .dma_bytes_done(dma_bytes_done)
+      .dma_busy(dma_busy), .dma_done(dma_done), .dma_bytes_done(dma_bytes_done),
+
+      .vbuf_wr_addr(vbuf_wr_addr_internal), .vbuf_rd_addr(vbuf_rd_addr_internal),
+
+      .disp_service_cnt(disp_service_cnt_internal),
+      .vbr_service_cnt(vbr_service_cnt_internal),
+      .vbr_starved_cnt(vbr_starved_cnt_internal),
+      .arbiter_flags(arbiter_flags_internal),
+      .mem_res_valid_cnt(mem_res_valid_cnt_internal),
+
+      .dbg_last_write_addr_from_fifo(dbg_last_write_addr_from_fifo_internal),
+      .dbg_last_write_awaddr_issued(dbg_last_write_awaddr_issued_internal),
+      .dbg_last_mem_req_wr_addr(dbg_last_mem_req_wr_addr_internal)
   );
 
   stream_dma u_stream_dma (
@@ -334,7 +358,17 @@ module mpeg2fpga_apb_peripheral (
 
       .testpoint_dip(4'h0),
       .testpoint_dip_en(1'b0),
-      .testpoint(testpoint)
+      .testpoint(testpoint),
+
+      .vbuf_wr_addr(vbuf_wr_addr_internal),
+      .vbuf_rd_addr(vbuf_rd_addr_internal),
+
+      .disp_service_cnt(disp_service_cnt_internal),
+      .vbr_service_cnt(vbr_service_cnt_internal),
+      .vbr_starved_cnt(vbr_starved_cnt_internal),
+      .arbiter_flags(arbiter_flags_internal),
+      .mem_res_valid_cnt(mem_res_valid_cnt_internal),
+      .dbg_last_mem_req_wr_addr(dbg_last_mem_req_wr_addr_internal)
   );
 
   assign mem_clk_out = mem_clk_internal;
@@ -367,7 +401,10 @@ module mpeg2fpga_apb_peripheral (
       .m_axi_arqos(m_axi_arqos), .m_axi_arregion(m_axi_arregion), .m_axi_aruser(m_axi_aruser),
       .m_axi_arvalid(m_axi_arvalid), .m_axi_arready(m_axi_arready),
       .m_axi_rid(m_axi_rid), .m_axi_rdata(m_axi_rdata), .m_axi_rresp(m_axi_rresp),
-      .m_axi_rlast(m_axi_rlast), .m_axi_ruser(m_axi_ruser), .m_axi_rvalid(m_axi_rvalid), .m_axi_rready(m_axi_rready)
+      .m_axi_rlast(m_axi_rlast), .m_axi_ruser(m_axi_ruser), .m_axi_rvalid(m_axi_rvalid), .m_axi_rready(m_axi_rready),
+
+      .dbg_last_write_addr_from_fifo(dbg_last_write_addr_from_fifo_internal),
+      .dbg_last_write_awaddr_issued(dbg_last_write_awaddr_issued_internal)
   );
 
 endmodule

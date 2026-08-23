@@ -50,8 +50,11 @@ module framestore_request(rst, clk,
                   vbw_rd_empty, vbw_rd_almost_empty, vbw_rd_en, vbw_rd_valid, vbw_rd_dta, vbw_wr_almost_full,
                   vbr_wr_full, vbr_wr_almost_full, vbr_rd_almost_empty,
                   vb_flush,
-                  mem_req_wr_cmd, mem_req_wr_addr, mem_req_wr_dta, mem_req_wr_en, mem_req_wr_almost_full, 
-                  tag_wr_dta, tag_wr_en, tag_wr_almost_full
+                  mem_req_wr_cmd, mem_req_wr_addr, mem_req_wr_dta, mem_req_wr_en, mem_req_wr_almost_full,
+                  tag_wr_dta, tag_wr_en, tag_wr_almost_full,
+                  vbuf_wr_addr, vbuf_rd_addr,
+                  disp_service_cnt, vbr_service_cnt, vbr_starved_cnt,
+                  arbiter_flags, dbg_last_mem_req_wr_addr
                   );
 
   input            rst;
@@ -152,8 +155,12 @@ module framestore_request(rst, clk,
    * circular video buffer addresses 
    */
 
-  reg [21:0]vbuf_wr_addr;
-  reg [21:0]vbuf_rd_addr;
+  /* Fase 7a debug (2026-08-21): promoted to output ports so real hardware
+   * can read them via mpeg2fpga_apb_peripheral.v's debug registers -- see
+   * that file's comment for why (VLD-stall investigation, checking whether
+   * vbuf writes land at VBUF as intended or alias FRAME_0_Y). */
+  output reg [21:0]vbuf_wr_addr;
+  output reg [21:0]vbuf_rd_addr;
 
   reg       vbuf_full;
   reg       vbuf_empty;
@@ -236,6 +243,38 @@ module framestore_request(rst, clk,
   always @(posedge clk)
     if (~rst) previous <= STATE_INIT;
     else previous <= state;
+
+  /* Fase 7a debug (2026-08-22): arbiter starvation instrumentation.
+   * framestore_request.v uses a *fixed*-priority arbiter (disp > vbr > fwd >
+   * bwd > vbw > recon > osd, see the next-state case above), not round-robin
+   * -- disp_service_cnt/vbr_service_cnt count how many cycles each actually
+   * gets serviced (state==STATE_DISP/STATE_VBR), and vbr_starved_cnt counts
+   * cycles where do_vbr was true (vbr had a real, ready request) but
+   * something higher-priority won the arbiter instead (next != STATE_VBR) --
+   * the direct signature of disp starving vbr, as opposed to vbr simply
+   * having nothing to do. All free-running, wrap silently (only deltas
+   * across a short sampling window matter, not absolute values). */
+  output reg [31:0] disp_service_cnt;
+  output reg [31:0] vbr_service_cnt;
+  output reg [31:0] vbr_starved_cnt;
+
+  always @(posedge clk)
+    if (~rst) disp_service_cnt <= 32'b0;
+    else if (state == STATE_DISP) disp_service_cnt <= disp_service_cnt + 32'd1;
+
+  always @(posedge clk)
+    if (~rst) vbr_service_cnt <= 32'b0;
+    else if (state == STATE_VBR) vbr_service_cnt <= vbr_service_cnt + 32'd1;
+
+  always @(posedge clk)
+    if (~rst) vbr_starved_cnt <= 32'b0;
+    else if (do_vbr && (next != STATE_VBR)) vbr_starved_cnt <= vbr_starved_cnt + 32'd1;
+
+  /* Fase 7a debug (2026-08-22): live snapshot register -- declared here,
+   * driven further down (after vbuf_holdoff's own declaration, which Icarus
+   * requires textually precede its use here, unlike do_vbr/do_disp/etc which
+   * have early forward `wire` declarations at the top of the module). */
+  output reg [31:0] arbiter_flags;
 
   /*
    * Read data from fifo's
@@ -442,6 +481,24 @@ module framestore_request(rst, clk,
   always @*
     next_vbuf_empty = (next_vbuf_wr_addr == next_vbuf_rd_addr);
 
+  /* Fase 7a debug (2026-08-23, corrected): mem2axi_bridge.v's own view of
+   * the last write address (dbg_last_write_addr_from_fifo,
+   * apb3_mpeg2fpga_bridge.v 0x1d) reads 0. First cut of this register just
+   * captured mem_req_wr_addr on any mem_req_wr_en -- but that fires for
+   * every dispatch type (VBW/RECON/OSD/CLEAR all write, DISP/VBR/FWD/BWD
+   * all read through the same mem_req_wr_en/mem_req_wr_cmd pair), so on
+   * real hardware it was actually tracking DISP's continuous FRAME-region
+   * read-address churn, not VBW at all -- a self-inflicted scoping bug
+   * (confirmed: it kept drifting by small amounts with watchdog_status
+   * staying 0, matching DISP's free-running scan, not a VBW write burst
+   * or a CLEAR sweep). Filtered here to the exact same condition
+   * vbuf_wr_addr's own increment uses, so this is genuinely VBW-only. */
+  output reg [21:0] dbg_last_mem_req_wr_addr;
+
+  always @(posedge clk)
+    if (~rst) dbg_last_mem_req_wr_addr <= 22'b0;
+    else if ((previous == STATE_VBW) && vbw_rd_valid) dbg_last_mem_req_wr_addr <= vbuf_wr_addr;
+
   always @(posedge clk)
     if (~rst) vbuf_wr_addr <= VBUF;
     else if (vb_flush) vbuf_wr_addr <= VBUF;
@@ -484,6 +541,20 @@ module framestore_request(rst, clk,
   assign do_recon   =                                          ~recon_rd_empty            && ~mem_req_wr_almost_full;
   assign do_vbw     = ~vbuf_full           && ~vbuf_holdoff && ~vbw_rd_empty              && ~mem_req_wr_almost_full;
   assign do_osd     =                                          ~osd_rd_empty              && ~mem_req_wr_almost_full;
+
+  /* Fase 7a debug (2026-08-22): live snapshot of the FSM state and every
+   * term of do_vbr's own gating expression -- disp_service_cnt/
+   * vbr_starved_cnt (above) ruled out priority starvation (disp never
+   * fires, vbr never loses an arbitration), so whatever is holding do_vbr
+   * low is one of its own AND'ed conditions; this makes each one directly
+   * observable instead of inferring by elimination. Registered every clk
+   * (not a raw combinational passthrough) to avoid glitches on read, same
+   * reasoning as probe.v's testpoint registers. */
+  always @(posedge clk)
+    if (~rst) arbiter_flags <= 32'b0;
+    else arbiter_flags <= {13'b0, vbw_rd_empty, vbuf_holdoff, tag_wr_almost_full,
+                            mem_req_wr_almost_full, vbr_rd_almost_empty, vbuf_empty,
+                            do_disp, do_vbr, state};
 
 `ifdef DEBUG
   always @(posedge clk)

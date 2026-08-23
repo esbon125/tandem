@@ -315,8 +315,21 @@ module fifo_dc (
 			  .prog_thresh(prog_thresh)
 			  )
 	 xfifo_dc (
-		   .rst(~rst), 
-		   .wr_clk(wr_clk), 
+		   /* Fase 7a fix (2026-08-22): was .rst(~rst) -- a copy-paste
+		    * artifact from the xilinx_fifo_dc branch below (which does
+		    * need the inversion for that hard IP). xfifo_dc's own rst
+		    * port is documented low-active, matching this module's own
+		    * rst port and CoreFIFO's WRESET_N/RRESET_N -- no inversion
+		    * needed, exactly like fifo_sc's parallel xfifo_sc branch
+		    * (FIFO_XILINX==0 case) already does correctly.
+		    * Confirmed via a testbench instantiating the real generated
+		    * CoreFIFO components (fifo_mem_rsp_dc_64x128 and
+		    * fifo_mem_req_dc_88x64): with ~rst, sresetn_wclk/sresetn_rclk
+		    * inside corefifo_async never deassert after reset release,
+		    * so wptr/rptr never advance and the fifo never delivers any
+		    * data past the first sample -- see bench/mem_response_corefifo. */
+		   .rst(rst),
+		   .wr_clk(wr_clk),
 		   .din(din), 
 		   .wr_en(wr_en), 
 		   .full(full), 

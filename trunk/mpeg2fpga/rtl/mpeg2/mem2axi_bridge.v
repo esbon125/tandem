@@ -71,7 +71,10 @@ module mem2axi_bridge (
     m_axi_wdata, m_axi_wstrb, m_axi_wlast, m_axi_wuser, m_axi_wvalid, m_axi_wready,
     m_axi_bid, m_axi_bresp, m_axi_buser, m_axi_bvalid, m_axi_bready,
     m_axi_arid, m_axi_araddr, m_axi_arlen, m_axi_arsize, m_axi_arburst, m_axi_arlock, m_axi_arcache, m_axi_arprot, m_axi_arqos, m_axi_arregion, m_axi_aruser, m_axi_arvalid, m_axi_arready,
-    m_axi_rid, m_axi_rdata, m_axi_rresp, m_axi_rlast, m_axi_ruser, m_axi_rvalid, m_axi_rready
+    m_axi_rid, m_axi_rdata, m_axi_rresp, m_axi_rlast, m_axi_ruser, m_axi_rvalid, m_axi_rready,
+
+    /* Fase 7a debug (2026-08-23) */
+    dbg_last_write_addr_from_fifo, dbg_last_write_awaddr_issued
 );
 
   parameter [37:0] DDR_BASE = 38'h0;
@@ -218,6 +221,31 @@ module mem2axi_bridge (
   always @(posedge clk)
     if (~rst) state <= S_IDLE;
     else state <= next;
+
+  /* Fase 7a debug (2026-08-23): bisect "mpeg2fpga -> fifo" from "fifo ->
+   * memory" -- dbg_last_write_addr_from_fifo mirrors whatever address this
+   * bridge actually receives from mem_request_fifo for the last WRITE
+   * command popped (free-running, independent of the state machine, same
+   * pattern as Fase 7c's pwdata_free_r); dbg_last_write_awaddr_issued
+   * mirrors the AXI4 AWADDR that was actually accepted (awready) on the
+   * real fabric. If the first reads back wrong, the bug is upstream of this
+   * module (mpeg2fpga/wrapper/fifo); if it reads correct but the second
+   * doesn't match DDR_BASE+addr*8, the bug is in this module or downstream
+   * of it (AXI4 interconnect / DDR4 controller). mem_clk domain -- read out
+   * through a real 2-FF synchronizer in apb3_mpeg2fpga_bridge.v. */
+  output reg [21:0] dbg_last_write_addr_from_fifo;
+  output reg [37:0] dbg_last_write_awaddr_issued;
+
+  always @(posedge clk)
+    if (~rst) begin
+      dbg_last_write_addr_from_fifo <= 22'b0;
+      dbg_last_write_awaddr_issued  <= 38'b0;
+    end else begin
+      if (mem_req_rd_valid && (mem_req_rd_cmd == CMD_WRITE))
+        dbg_last_write_addr_from_fifo <= mem_req_rd_addr;
+      if (m_axi_awvalid && m_axi_awready)
+        dbg_last_write_awaddr_issued <= m_axi_awaddr;
+    end
 
   /* latch the popped request as soon as it is presented */
   always @(posedge clk)

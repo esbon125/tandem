@@ -45,8 +45,9 @@ module framestore_response(rst, clk,
                   bwd_wr_dta_full, bwd_wr_dta_en, bwd_wr_dta_ack, bwd_wr_dta, bwd_wr_dta_almost_full,
                   disp_wr_dta_full, disp_wr_dta_en, disp_wr_dta_ack, disp_wr_dta, disp_wr_dta_almost_full,
                   vbr_wr_full, vbr_wr_en, vbr_wr_ack, vbr_wr_dta, vbr_wr_almost_full, 
-                  mem_res_rd_dta, mem_res_rd_en, mem_res_rd_empty, mem_res_rd_valid, 
-                  tag_rd_dta, tag_rd_empty, tag_rd_en, tag_rd_valid
+                  mem_res_rd_dta, mem_res_rd_en, mem_res_rd_empty, mem_res_rd_valid,
+                  tag_rd_dta, tag_rd_empty, tag_rd_en, tag_rd_valid,
+                  mem_res_valid_cnt
                   );
 
   input            rst;
@@ -109,6 +110,19 @@ module framestore_response(rst, clk,
 
   wire             fifos_not_ready = fwd_wr_dta_full || bwd_wr_dta_full || disp_wr_dta_full || vbr_wr_full || tag_rd_empty || mem_res_rd_empty;
   wire             fifos_ready = ~fifos_not_ready;
+
+  /* Fase 7a debug (2026-08-22): does a real memory read response ever
+   * arrive at all? fifos_not_ready above includes mem_res_rd_empty -- if
+   * mem_response_fifo (dual-clock, mem_clk->clk) never delivers anything,
+   * this FSM sits in STATE_WAIT forever, tag_rd_en never fires, and
+   * mem_tag_fifo fills and stays full -- exactly the tag_wr_almost_full=1
+   * signature already confirmed via arbiter_flags. Free-running, counts
+   * every cycle mem_res_rd_valid is asserted, since reset. */
+  output reg [31:0] mem_res_valid_cnt;
+
+  always @(posedge clk)
+    if (~rst) mem_res_valid_cnt <= 32'b0;
+    else if (mem_res_rd_valid) mem_res_valid_cnt <= mem_res_valid_cnt + 32'd1;
 
   /* next state logic */
   always @*

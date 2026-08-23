@@ -203,6 +203,34 @@ module testbench();
 		     .testpoint_dip_en(1'b1)
 		     );
 
+`ifdef DEBUG_VBW_TRACE
+   /* Fase 7a debug (2026-08-23): does framestore_request.v ever hand a
+    * wrong (zero) address to mem_req_wr_addr during a real STATE_VBW
+    * dispatch, in simulation? Real hardware shows dbg_last_mem_req_wr_addr
+    * matching vbuf_wr_addr correctly at the framestore_request.v side but
+    * mem2axi_bridge.v receiving 0 -- if that's a CoreFIFO-specific data
+    * bug, this simulation (generic_fifo_dc, not the real CoreFIFO) should
+    * NOT reproduce it and framestore_request.v's own addr should always
+    * track vbuf_wr_addr correctly here. */
+   integer vbw_cycle_trace_count = 0;
+   reg     vbw_cycle_trace_armed = 0;
+   always @(posedge clk) begin
+     #1;
+     if (!vbw_cycle_trace_armed && mpeg2.framestore.framestore_request.vbw_rd_valid)
+       vbw_cycle_trace_armed = 1;
+     if (vbw_cycle_trace_armed && vbw_cycle_trace_count < 40) begin
+       vbw_cycle_trace_count = vbw_cycle_trace_count + 1;
+       $display("t=%0t state=%b next=%b previous=%b vbw_rd_en=%b vbw_rd_valid=%b vbw_rd_dta=%h vbuf_holdoff=%b | mem_req_wr_en=%b mem_req_wr_addr=%h mem_req_wr_dta=%h vbuf_wr_addr=%h",
+                 $time,
+                 mpeg2.framestore.framestore_request.state, mpeg2.framestore.framestore_request.next, mpeg2.framestore.framestore_request.previous,
+                 mpeg2.framestore.framestore_request.vbw_rd_en, mpeg2.framestore.framestore_request.vbw_rd_valid, mpeg2.framestore.framestore_request.vbw_rd_dta,
+                 mpeg2.framestore.framestore_request.vbuf_holdoff,
+                 mpeg2.framestore.framestore_request.mem_req_wr_en, mpeg2.framestore.framestore_request.mem_req_wr_addr,
+                 mpeg2.framestore.framestore_request.mem_req_wr_dta, mpeg2.vbuf_wr_addr);
+     end
+   end
+`endif
+
    /*
     * Memory controller
     */
@@ -232,6 +260,8 @@ module testbench();
      begin
 	 $dumpfile("testbench.lxt");
 	 $dumpvars(0, testbench.mpeg2.probe);
+	 $dumpvars(0, testbench.mpeg2.getbits_fifo);
+	 $dumpvars(0, testbench.mpeg2.vld);
 	 //        $dumpvars(0, testbench.mpeg2.resample.resample_dta);
 	 //        $dumpvars(0, testbench.mpeg2.resample.resample_bilinear);
 	 //       $dumpvars(0, testbench.mpeg2.probe);
