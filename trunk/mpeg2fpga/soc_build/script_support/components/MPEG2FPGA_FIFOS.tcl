@@ -1,9 +1,12 @@
 # Recreate the three COREFIFO instances that xfifo_dc.v (rtl/mpeg2/xfifo_dc.v,
 # Fase 0 -- FIFO_XILINX=0 path) instantiates by name: fifo_pixel_stream_dc_35x1024,
-# fifo_mem_req_dc_88x64, fifo_mem_rsp_dc_64x128. Exact params copied from the
+# fifo_mem_req_dc_88x64, fifo_mem_rsp_dc_64x128. Params otherwise copied from the
 # "Component Description (Tcl)" comment Libero embeds in each originally
-# SmartGen-generated wrapper under trunk/mpeg2fpga/mpeg2fpga/component/work/,
-# so behavior matches the Fase 0 solo work exactly.
+# SmartGen-generated wrapper under trunk/mpeg2fpga/mpeg2fpga/component/work/ (the
+# Fase 0 solo work), EXCEPT FWFT is forced false here: framestore_response.v and
+# mem2axi_bridge.v read these FIFOs assuming standard "assert RE, valid data
+# registered one cycle later" timing (same protocol xfifo_sc.v's hand-written
+# mem_tag_fifo implements), not COREFIFO's FWFT dout_valid semantics.
 
 create_and_configure_core -core_vlnv {Actel:DirectCore:COREFIFO:3.1.101} -component_name {fifo_pixel_stream_dc_35x1024} -params {\
 "AE_STATIC_EN:true"  \
@@ -15,7 +18,7 @@ create_and_configure_core -core_vlnv {Actel:DirectCore:COREFIFO:3.1.101} -compon
 "ECC:0"  \
 "ESTOP:true"  \
 "FSTOP:true"  \
-"FWFT:true"  \
+"FWFT:false"  \
 "NUM_STAGES:2"  \
 "OVERFLOW_EN:true"  \
 "PIPE:1"  \
@@ -45,7 +48,7 @@ create_and_configure_core -core_vlnv {Actel:DirectCore:COREFIFO:3.1.101} -compon
 "ECC:0"  \
 "ESTOP:true"  \
 "FSTOP:true"  \
-"FWFT:true"  \
+"FWFT:false"  \
 "NUM_STAGES:2"  \
 "OVERFLOW_EN:true"  \
 "PIPE:1"  \
@@ -75,7 +78,7 @@ create_and_configure_core -core_vlnv {Actel:DirectCore:COREFIFO:3.1.101} -compon
 "ECC:0"  \
 "ESTOP:true"  \
 "FSTOP:true"  \
-"FWFT:true"  \
+"FWFT:false"  \
 "NUM_STAGES:2"  \
 "OVERFLOW_EN:true"  \
 "PIPE:1"  \
