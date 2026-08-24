@@ -67,7 +67,7 @@ module mpeg2video(clk, mem_clk, dot_clk,
   input            mem_clk;                 // memory clock. Typically 133-166 MHz.
   input            dot_clk;                 // video clock. Typically between 25 and 75 Mhz, depending upon MPEG2 resolution and frame rate.
 `else
-module mpeg2video(ref_clk, clk_out, mem_clk_out, mem_rst_out,
+module mpeg2video(ref_clk, clk_out, mem_clk_out, mem_rst_out, core_rst_out,
              rst,                                                                                                                 // clocked with clk
              stream_data, stream_valid,                                                                                           // clocked with clk
 	     reg_addr, reg_wr_en, reg_dta_in, reg_rd_en, reg_dta_out,                                                             // clocked with clk
@@ -98,15 +98,27 @@ module mpeg2video(ref_clk, clk_out, mem_clk_out, mem_rst_out,
    * mem2axi_bridge.v's header comment and the Fase 5b/5d bring-up notes it
    * references for the class of bug this avoids.
    */
+  /* core_rst_out (2026-08-23, real-hardware stall investigation): sync_rst
+   * re-exposed for the exact same reason mem_rst_out already is -- any
+   * core_clk-domain module outside this one that needs to track "reset
+   * pin OR watchdog expiry" (not just the raw external pin) must use this,
+   * not `rst` directly. stream_dma.v is the first consumer: it previously
+   * saw only the raw `rst` pin, so a watchdog-triggered reset left its
+   * AXI4 read master un-reset while framestore_request.v/mem2axi_bridge.v
+   * (already on mem_rst, mem_clk's equivalent of this signal) reset
+   * cleanly -- see stream_dma.v's header comment and
+   * fase7a_size_zero_vld_stall (docs branch) for the full investigation. */
   output           clk_out;
   output           mem_clk_out;
   output           mem_rst_out;
+  output           core_rst_out;
   wire            clk;                     // clock. Typically a multiple of 27 Mhz as MPEG2 timestamps have a 27 Mhz resolution.
   wire            mem_clk;                 // memory clock. Typically 133-166 MHz.
   wire            dot_clk;                 // video clock. Typically between 25 and 75 Mhz, depending upon MPEG2 resolution and frame rate.
   assign clk_out = clk;
   assign mem_clk_out = mem_clk;
   assign mem_rst_out = mem_rst;
+  assign core_rst_out = sync_rst;
 `endif
 
   input            rst;                     // active low reset. Internally synchronized.

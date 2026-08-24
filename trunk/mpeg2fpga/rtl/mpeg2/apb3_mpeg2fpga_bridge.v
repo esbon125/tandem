@@ -161,7 +161,15 @@ module apb3_mpeg2fpga_bridge (
   /* Fase 7a debug (2026-08-22): live snapshot -- bits[10:0]=state (one-hot),
    * [11]=do_vbr, [12]=do_disp, [13]=vbuf_empty, [14]=vbr_rd_almost_empty,
    * [15]=mem_req_wr_almost_full, [16]=tag_wr_almost_full, [17]=vbuf_holdoff,
-   * [18]=vbw_rd_empty, [31:19]=0. See framestore_request.v's comment. */
+   * [18]=vbw_rd_empty, See framestore_request.v's comment.
+   * Fase 7a debug (2026-08-23): [21:19]=stream_dma.v's own FSM state
+   * (S_IDLE/S_AR/S_RDATA/S_DRAIN/S_PAD/S_DONE), [22]=dma_axi_arvalid,
+   * [23]=dma_axi_rvalid, [31:24]=0 -- packed in by mpeg2fpga_apb_
+   * peripheral.v (arbiter_flags_combined), not framestore_request.v itself,
+   * since stream_dma is a separate module this signal never otherwise
+   * touches. Lets software confirm whether stream_dma is still mid-
+   * transaction after a watchdog-triggered reset -- see stream_dma.v's
+   * header comment for why that could happen. */
   input       [31:0]arbiter_flags;
 
   input       [31:0]mem_res_valid_cnt; /* cycles mem_res_rd_valid true, core_clk domain, free-running */

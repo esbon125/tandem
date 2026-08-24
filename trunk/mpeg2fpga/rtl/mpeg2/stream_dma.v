@@ -48,6 +48,23 @@
  * is trusted not to write STREAM_PUSH_ADDR while a DMA transfer is running,
  * same as every other cross-register ordering contract in this design
  * (e.g. DMA_ADDR/DMA_LEN must be written before DMA_CTRL).
+ *
+ * Reset domain fix (2026-08-23, real-hardware stall investigation -- see
+ * docs/bringup and fase7a_size_zero_vld_stall on the docs branch): rst_n
+ * was previously wired to the module's raw external hard-reset pin only.
+ * mpeg2video's own memory-write path (framestore_request.v, mem2axi_
+ * bridge.v) resets on rst_n *or* an internal watchdog expiry (mpeg2video.v's
+ * sync_rst/mem_rst) -- this module did not, since it only ever saw the raw
+ * pin. A watchdog-triggered reset therefore cleanly reset everything else
+ * while potentially leaving this module's AXI4 read master mid-transaction
+ * (m_axi_arvalid or m_axi_rready still asserted, addr_r/bytes_left/beat_r
+ * holding stale state from before the reset) -- a real, reproducible
+ * mechanism for wedging the shared FIC_2/DDR-controller fabric port after
+ * a watchdog fires mid-DMA-push, confirmed via mem2axi_bridge completing
+ * exactly one AXI4 write post-reset and then freezing. Now takes the same
+ * watchdog-inclusive reset mem2axi_bridge already does (see rst_n's
+ * connection in mpeg2fpga_apb_peripheral.v -- core_rst_out, not the raw
+ * external pin).
  */
 
 `include "timescale.v"
@@ -67,7 +84,19 @@ module stream_dma (
      * tied to fixed values for the same reason mem2axi_bridge.v's are --
      * Libero's bus-interface check needs the full AXI4 signal set present. */
     m_axi_arid, m_axi_araddr, m_axi_arlen, m_axi_arsize, m_axi_arburst, m_axi_arlock, m_axi_arcache, m_axi_arprot, m_axi_arqos, m_axi_arregion, m_axi_aruser, m_axi_arvalid, m_axi_arready,
-    m_axi_rid, m_axi_rdata, m_axi_rresp, m_axi_rlast, m_axi_ruser, m_axi_rvalid, m_axi_rready
+    m_axi_rid, m_axi_rdata, m_axi_rresp, m_axi_rlast, m_axi_ruser, m_axi_rvalid, m_axi_rready,
+
+    /* Fase 7a debug (2026-08-23): raw FSM state, packed into
+     * apb3_mpeg2fpga_bridge.v's ARBITER_FLAGS readback alongside
+     * dma_axi_arvalid/dma_axi_rvalid (already reachable at the
+     * mpeg2fpga_apb_peripheral.v level) -- see that module's header
+     * comment for why this exists: rst_n here is the raw external hard
+     * reset, NOT mpeg2video's watchdog-inclusive sync_rst, so a watchdog-
+     * triggered reset can leave this module's AXI4 read master mid-
+     * transaction while everything else cleanly resets. This lets that be
+     * confirmed directly instead of inferred from mem2axi_bridge's
+     * downstream symptoms. */
+    dbg_state
 );
 
   parameter [37:0] STAGING_BASE = 38'h88000000;
@@ -108,6 +137,9 @@ module stream_dma (
   input        [0:0]m_axi_ruser;
   input             m_axi_rvalid;
   output            m_axi_rready;
+
+  output      [2:0] dbg_state;
+  assign dbg_state = state;
 
   /* fixed AXI4 attributes -- id 1 (distinct from mem2axi_bridge's id 0,
    * harmless either way since they sit on independent FIC ports, but keeps

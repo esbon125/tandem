@@ -227,6 +227,10 @@ module mpeg2fpga_apb_peripheral (
 
   wire         mem_clk_internal;
   wire         mem_rst_internal;
+  /* Fase 7a debug (2026-08-23): mpeg2video's core_clk-domain equivalent of
+   * mem_rst_internal above (reset pin OR watchdog expiry) -- see
+   * mpeg2video.v's core_rst_out comment and stream_dma.v's header. */
+  wire         core_rst_internal;
 
   wire [33:0]  testpoint;
 
@@ -272,6 +276,19 @@ module mpeg2fpga_apb_peripheral (
   wire [7:0] stream_data_mux  = dma_busy ? dma_stream_data  : stream_data_internal;
   wire       stream_valid_mux = dma_busy ? dma_stream_valid : stream_valid_internal;
 
+  /* Fase 7a debug (2026-08-23): stream_dma.v's own FSM state, packed into
+   * ARBITER_FLAGS's previously-unused [31:19] bits (see arbiter_flags_
+   * internal's own [18:0]-only usage below) instead of claiming a new APB
+   * address -- lets software directly confirm/refute whether stream_dma is
+   * still mid-transaction (S_AR/S_RDATA/S_DRAIN with dma_axi_arvalid or
+   * dma_axi_rvalid stuck asserted) after a watchdog-triggered reset,
+   * instead of only inferring it from mem2axi_bridge's downstream symptoms.
+   * dma_axi_arvalid/dma_axi_rvalid are already this module's own top-level
+   * wires (real AXI4 signals to FIC_2), no new plumbing needed for those. */
+  wire [2:0] dma_state_dbg;
+  wire [31:0] arbiter_flags_combined =
+      {8'b0, dma_axi_rvalid, dma_axi_arvalid, dma_state_dbg, arbiter_flags_internal[18:0]};
+
   apb3_mpeg2fpga_bridge u_bridge (
       .PCLK(PCLK), .PRESETn(PRESETn),
       .PSEL(PSEL), .PENABLE(PENABLE), .PWRITE(PWRITE),
@@ -294,7 +311,7 @@ module mpeg2fpga_apb_peripheral (
       .disp_service_cnt(disp_service_cnt_internal),
       .vbr_service_cnt(vbr_service_cnt_internal),
       .vbr_starved_cnt(vbr_starved_cnt_internal),
-      .arbiter_flags(arbiter_flags_internal),
+      .arbiter_flags(arbiter_flags_combined),
       .mem_res_valid_cnt(mem_res_valid_cnt_internal),
 
       .dbg_last_write_addr_from_fifo(dbg_last_write_addr_from_fifo_internal),
@@ -303,7 +320,7 @@ module mpeg2fpga_apb_peripheral (
   );
 
   stream_dma u_stream_dma (
-      .clk(clk_internal), .rst_n(rst_n),
+      .clk(clk_internal), .rst_n(core_rst_internal),
 
       .start(dma_start), .addr(dma_addr), .len(dma_len),
       .busy(dma_busy), .done(dma_done), .bytes_done(dma_bytes_done),
@@ -317,7 +334,8 @@ module mpeg2fpga_apb_peripheral (
       .m_axi_arqos(dma_axi_arqos), .m_axi_arregion(dma_axi_arregion), .m_axi_aruser(dma_axi_aruser),
       .m_axi_arvalid(dma_axi_arvalid), .m_axi_arready(dma_axi_arready),
       .m_axi_rid(dma_axi_rid), .m_axi_rdata(dma_axi_rdata), .m_axi_rresp(dma_axi_rresp),
-      .m_axi_rlast(dma_axi_rlast), .m_axi_ruser(dma_axi_ruser), .m_axi_rvalid(dma_axi_rvalid), .m_axi_rready(dma_axi_rready)
+      .m_axi_rlast(dma_axi_rlast), .m_axi_ruser(dma_axi_ruser), .m_axi_rvalid(dma_axi_rvalid), .m_axi_rready(dma_axi_rready),
+      .dbg_state(dma_state_dbg)
   );
 
   assign clk_out = clk_internal;
@@ -327,6 +345,7 @@ module mpeg2fpga_apb_peripheral (
       .clk_out(clk_internal),
       .mem_clk_out(mem_clk_internal),
       .mem_rst_out(mem_rst_internal),
+      .core_rst_out(core_rst_internal),
       .rst(rst_n),
 
       .stream_data(stream_data_mux),
