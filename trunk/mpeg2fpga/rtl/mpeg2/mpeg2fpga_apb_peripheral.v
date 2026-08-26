@@ -221,6 +221,7 @@ module mpeg2fpga_apb_peripheral (
   wire [63:0]  mem_req_rd_dta;
   wire         mem_req_rd_en;
   wire         mem_req_rd_valid;
+  wire         mem_req_rd_empty;   // 2026-08-26: see framestore.v's header comment
   wire [63:0]  mem_res_wr_dta;
   wire         mem_res_wr_en;
   wire         mem_res_wr_almost_full;
@@ -400,6 +401,7 @@ module mpeg2fpga_apb_peripheral (
       .mem_req_rd_dta(mem_req_rd_dta),
       .mem_req_rd_en(mem_req_rd_en),
       .mem_req_rd_valid(mem_req_rd_valid),
+      .mem_req_rd_empty(mem_req_rd_empty),
 
       .mem_res_wr_dta(mem_res_wr_dta),
       .mem_res_wr_en(mem_res_wr_en),
@@ -434,6 +436,7 @@ module mpeg2fpga_apb_peripheral (
       .mem_req_rd_dta(mem_req_rd_dta),
       .mem_req_rd_en(mem_req_rd_en),
       .mem_req_rd_valid(mem_req_rd_valid),
+      .mem_req_rd_empty(mem_req_rd_empty),
 
       .mem_res_wr_dta(mem_res_wr_dta),
       .mem_res_wr_en(mem_res_wr_en),

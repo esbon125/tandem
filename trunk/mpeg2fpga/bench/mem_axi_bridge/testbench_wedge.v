@@ -52,6 +52,7 @@ module testbench_wedge ();
   reg  [63:0] mem_req_rd_dta;
   wire        mem_req_rd_en;
   reg         mem_req_rd_valid;
+  wire        mem_req_rd_empty;
   wire [63:0] mem_res_wr_dta;
   wire        mem_res_wr_en;
   reg         mem_res_wr_almost_full;
@@ -98,6 +99,7 @@ module testbench_wedge ();
       .clk(clk), .rst(dut_rst), .watchdog_rst(dut_watchdog_rst),
       .mem_req_rd_cmd(mem_req_rd_cmd), .mem_req_rd_addr(mem_req_rd_addr),
       .mem_req_rd_dta(mem_req_rd_dta), .mem_req_rd_en(mem_req_rd_en), .mem_req_rd_valid(mem_req_rd_valid),
+      .mem_req_rd_empty(mem_req_rd_empty),
       .mem_res_wr_dta(mem_res_wr_dta), .mem_res_wr_en(mem_res_wr_en), .mem_res_wr_almost_full(mem_res_wr_almost_full),
       .m_axi_awid(m_axi_awid), .m_axi_awaddr(m_axi_awaddr), .m_axi_awlen(m_axi_awlen),
       .m_axi_awsize(m_axi_awsize), .m_axi_awburst(m_axi_awburst), .m_axi_awvalid(m_axi_awvalid), .m_axi_awready(m_axi_awready),
@@ -144,6 +146,10 @@ module testbench_wedge ();
   reg  [21:0] q_addr;
   reg  [63:0] q_dta;
   reg         q_pending;
+
+  /* 2026-08-26: dut now gates rd_en on ~mem_req_rd_empty -- see
+   * testbench.v's identical comment. */
+  assign mem_req_rd_empty = ~q_pending;
 
   always @(posedge clk)
     if (~dut_rst) begin

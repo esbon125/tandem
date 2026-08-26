@@ -40,6 +40,7 @@ module testbench ();
   reg  [63:0] mem_req_rd_dta;
   wire        mem_req_rd_en;
   reg         mem_req_rd_valid;
+  wire        mem_req_rd_empty;
 
   wire [63:0] mem_res_wr_dta;
   wire        mem_res_wr_en;
@@ -92,6 +93,7 @@ module testbench ();
       .clk(mem_clk), .rst(rst),
       .mem_req_rd_cmd(mem_req_rd_cmd), .mem_req_rd_addr(mem_req_rd_addr),
       .mem_req_rd_dta(mem_req_rd_dta), .mem_req_rd_en(mem_req_rd_en), .mem_req_rd_valid(mem_req_rd_valid),
+      .mem_req_rd_empty(mem_req_rd_empty),
       .mem_res_wr_dta(mem_res_wr_dta), .mem_res_wr_en(mem_res_wr_en), .mem_res_wr_almost_full(mem_res_wr_almost_full),
       .m_axi_awid(m_axi_awid), .m_axi_awaddr(m_axi_awaddr), .m_axi_awlen(m_axi_awlen),
       .m_axi_awsize(m_axi_awsize), .m_axi_awburst(m_axi_awburst), .m_axi_awvalid(m_axi_awvalid), .m_axi_awready(m_axi_awready),
@@ -227,6 +229,120 @@ module testbench ();
       .prog_empty()
       );
 
+  /* FOURTH instance -- 2026-08-26, the actual fix under test: a real
+   * mem2axi_bridge (dut2) driving/driven-by a real mem_request_fifo
+   * (same orientation as mem_request_fifo_test2 above, wr_clk=clk/
+   * rd_clk=mem_clk), end to end, with mem_req_rd_en now gated on
+   * ~mem_req_rd_empty instead of held continuously high (see mem2axi_
+   * bridge.v's header comment). Pushes 60 real CMD_WRITE requests
+   * (matching the real stuck-at-60 hardware occupancy) and checks all
+   * 60 actually reach slave2 as AXI4 writes -- proving the fix pops the
+   * whole fifo instead of stalling after ~3 like req2 above (unfixed
+   * RE-held-high) does. */
+  reg  [87:0] e2e_din;
+  reg         e2e_wr_en;
+  wire        e2e_full;
+  wire [87:0] e2e_dout;
+  wire        e2e_rd_en;
+  wire        e2e_valid;
+  wire        e2e_empty;
+
+  wire [1:0]  e2e_mem_req_rd_cmd  = e2e_dout[87:86];
+  wire [21:0] e2e_mem_req_rd_addr = e2e_dout[85:64];
+  wire [63:0] e2e_mem_req_rd_dta  = e2e_dout[63:0];
+
+  fifo_dc #(
+      .addr_width(9'd6),
+      .dta_width(9'd88),
+      .prog_thresh(9'd32),
+      .FIFO_XILINX(0)
+      )
+      mem_request_fifo_e2e (
+      .wr_rst(rst),
+      .rd_rst(rst),
+      .wr_clk(clk),
+      .din(e2e_din),
+      .wr_en(e2e_wr_en),
+      .full(e2e_full),
+      .wr_ack(),
+      .overflow(),
+      .prog_full(),
+      .rd_clk(mem_clk),
+      .dout(e2e_dout),
+      .rd_en(e2e_rd_en),
+      .empty(e2e_empty),
+      .valid(e2e_valid),
+      .underflow(),
+      .prog_empty()
+      );
+
+  wire  [3:0] m2_axi_awid;
+  wire [37:0] m2_axi_awaddr;
+  wire  [7:0] m2_axi_awlen;
+  wire  [2:0] m2_axi_awsize;
+  wire  [1:0] m2_axi_awburst;
+  wire        m2_axi_awvalid;
+  wire        m2_axi_awready;
+  wire [63:0] m2_axi_wdata;
+  wire  [7:0] m2_axi_wstrb;
+  wire        m2_axi_wlast;
+  wire        m2_axi_wvalid;
+  wire        m2_axi_wready;
+  wire  [3:0] m2_axi_bid;
+  wire  [1:0] m2_axi_bresp;
+  wire        m2_axi_bvalid;
+  wire        m2_axi_bready;
+  wire  [3:0] m2_axi_arid;
+  wire [37:0] m2_axi_araddr;
+  wire  [7:0] m2_axi_arlen;
+  wire  [2:0] m2_axi_arsize;
+  wire  [1:0] m2_axi_arburst;
+  wire        m2_axi_arvalid;
+  wire        m2_axi_arready;
+  wire  [3:0] m2_axi_rid;
+  wire [63:0] m2_axi_rdata;
+  wire  [1:0] m2_axi_rresp;
+  wire        m2_axi_rlast;
+  wire        m2_axi_rvalid;
+  wire        m2_axi_rready;
+  wire [63:0] e2e_mem_res_wr_dta;
+  wire        e2e_mem_res_wr_en;
+
+  mem2axi_bridge #(.DDR_BASE(38'h02000000)) dut2 (
+      .clk(mem_clk), .rst(rst),
+      .mem_req_rd_cmd(e2e_mem_req_rd_cmd), .mem_req_rd_addr(e2e_mem_req_rd_addr),
+      .mem_req_rd_dta(e2e_mem_req_rd_dta), .mem_req_rd_en(e2e_rd_en), .mem_req_rd_valid(e2e_valid),
+      .mem_req_rd_empty(e2e_empty),
+      .mem_res_wr_dta(e2e_mem_res_wr_dta), .mem_res_wr_en(e2e_mem_res_wr_en), .mem_res_wr_almost_full(1'b0),
+      .m_axi_awid(m2_axi_awid), .m_axi_awaddr(m2_axi_awaddr), .m_axi_awlen(m2_axi_awlen),
+      .m_axi_awsize(m2_axi_awsize), .m_axi_awburst(m2_axi_awburst), .m_axi_awvalid(m2_axi_awvalid), .m_axi_awready(m2_axi_awready),
+      .m_axi_wdata(m2_axi_wdata), .m_axi_wstrb(m2_axi_wstrb), .m_axi_wlast(m2_axi_wlast), .m_axi_wvalid(m2_axi_wvalid), .m_axi_wready(m2_axi_wready),
+      .m_axi_bid(m2_axi_bid), .m_axi_bresp(m2_axi_bresp), .m_axi_bvalid(m2_axi_bvalid), .m_axi_bready(m2_axi_bready),
+      .m_axi_arid(m2_axi_arid), .m_axi_araddr(m2_axi_araddr), .m_axi_arlen(m2_axi_arlen),
+      .m_axi_arsize(m2_axi_arsize), .m_axi_arburst(m2_axi_arburst), .m_axi_arvalid(m2_axi_arvalid), .m_axi_arready(m2_axi_arready),
+      .m_axi_rid(m2_axi_rid), .m_axi_rdata(m2_axi_rdata), .m_axi_rresp(m2_axi_rresp),
+      .m_axi_rlast(m2_axi_rlast), .m_axi_rvalid(m2_axi_rvalid), .m_axi_rready(m2_axi_rready)
+  );
+
+  fake_axi_ddr slave2 (
+      .clk(mem_clk), .rst(rst),
+      .m_axi_awid(m2_axi_awid), .m_axi_awaddr(m2_axi_awaddr), .m_axi_awlen(m2_axi_awlen),
+      .m_axi_awsize(m2_axi_awsize), .m_axi_awburst(m2_axi_awburst), .m_axi_awvalid(m2_axi_awvalid), .m_axi_awready(m2_axi_awready),
+      .m_axi_wdata(m2_axi_wdata), .m_axi_wstrb(m2_axi_wstrb), .m_axi_wlast(m2_axi_wlast), .m_axi_wvalid(m2_axi_wvalid), .m_axi_wready(m2_axi_wready),
+      .m_axi_bid(m2_axi_bid), .m_axi_bresp(m2_axi_bresp), .m_axi_bvalid(m2_axi_bvalid), .m_axi_bready(m2_axi_bready),
+      .m_axi_arid(m2_axi_arid), .m_axi_araddr(m2_axi_araddr), .m_axi_arlen(m2_axi_arlen),
+      .m_axi_arsize(m2_axi_arsize), .m_axi_arburst(m2_axi_arburst), .m_axi_arvalid(m2_axi_arvalid), .m_axi_arready(m2_axi_arready),
+      .m_axi_rid(m2_axi_rid), .m_axi_rdata(m2_axi_rdata), .m_axi_rresp(m2_axi_rresp),
+      .m_axi_rlast(m2_axi_rlast), .m_axi_rvalid(m2_axi_rvalid), .m_axi_rready(m2_axi_rready)
+  );
+
+  /* count real AXI4 writes dut2 completes, to verify all 60 pushed
+   * CMD_WRITEs actually drain instead of stalling like req2 does */
+  integer e2e_writes_done;
+  always @(posedge mem_clk)
+    if (~rst) e2e_writes_done <= 0;
+    else if (m2_axi_awvalid && m2_axi_awready) e2e_writes_done <= e2e_writes_done + 1;
+
   /* clocks -- genuinely different rates/phases, matching real core_clk/mem_clk */
   initial begin
     mem_clk = 1'b0;
@@ -261,6 +377,8 @@ module testbench ();
     req_wr_en = 1'b0;
     req2_din = 88'b0;
     req2_wr_en = 1'b0;
+    e2e_din = 88'b0;
+    e2e_wr_en = 1'b0;
   end
 
   assign req_rd_en = rst & ~req_empty;
@@ -270,6 +388,10 @@ module testbench ();
   reg  [21:0] q_addr;
   reg  [63:0] q_dta;
   reg         q_pending;
+
+  /* 2026-08-26: dut now gates rd_en on ~mem_req_rd_empty -- see
+   * bench/mem_axi_bridge/testbench.v's identical comment. */
+  assign mem_req_rd_empty = ~q_pending;
 
   always @(posedge mem_clk)
     if (~rst) begin
@@ -505,6 +627,60 @@ module testbench ();
         errors = errors + 1;
         $display("[%0t] RESULT req_fifo_test2: FAIL -- only %0d/60 words delivered before timeout (req2_empty=%b req2_full=%b). Hypothesis REPRODUCED.",
                   $time, got_count, req2_empty, req2_full);
+      end
+    end
+
+    /* FOURTH test -- the actual fix, end to end: real mem2axi_bridge (dut2)
+     * + real mem_request_fifo (mem_request_fifo_e2e), mem_req_rd_en now
+     * gated on ~empty. Push 60 real CMD_WRITE requests (distinct addresses/
+     * data, matching the real stuck-at-60 hardware occupancy) and confirm
+     * dut2 actually completes all 60 AXI4 writes instead of stalling like
+     * req_fifo_test2 (unfixed) does above. */
+    begin : e2e_fix_test
+      integer     i;
+      integer     timeout;
+      reg  [21:0] e2e_addr;
+      reg  [31:0] e2e_dta_half;
+
+      for (i = 0; i < 60; i = i + 1) begin
+        e2e_addr     = 22'h001000 + i[21:0];
+        e2e_dta_half = 32'hE2E0_0000 + i[31:0];
+        @(posedge clk);
+        #1;
+        /* explicit-width locals above -- packing "22'h001000 + i" (an
+         * unsized integer) directly inside a concatenation self-determines
+         * the sum's width from its widest operand (32 bits, from i), not
+         * the 22-bit literal, silently growing the concatenation past 88
+         * bits and truncating/misaligning every field (first attempt here
+         * showed cmd_r always decoding as CMD_NOOP). */
+        e2e_din   = {2'b11 /* CMD_WRITE */, e2e_addr, e2e_dta_half, e2e_dta_half};
+        e2e_wr_en = 1'b1;
+        @(posedge clk);
+        #1;
+        e2e_wr_en = 1'b0;
+      end
+
+      $display("[%0t] e2e_fix_test: pushed 60 real CMD_WRITE requests, e2e_empty=%b", $time, e2e_empty);
+
+      timeout = 0;
+      while (e2e_writes_done < 60 && timeout < 20000) begin
+        @(posedge mem_clk);
+        timeout = timeout + 1;
+`ifdef DEBUG_E2E
+        if (timeout < 40)
+          $display("[%0t] dbg: state=%0d next=%0d rd_en=%b valid=%b empty=%b cmd_r=%b addr_r=%h awvalid=%b awready=%b writes_done=%0d",
+                    $time, dut2.state, dut2.next, e2e_rd_en, e2e_valid, e2e_empty,
+                    dut2.cmd_r, dut2.addr_r, m2_axi_awvalid, m2_axi_awready, e2e_writes_done);
+`endif
+      end
+
+      checks = checks + 1;
+      if (e2e_writes_done == 60) begin
+        $display("[%0t] RESULT e2e_fix_test: PASS -- all 60 real AXI4 writes completed through the fixed mem2axi_bridge + real CoreFIFO. FIX CONFIRMED IN SIM.", $time);
+      end else begin
+        errors = errors + 1;
+        $display("[%0t] RESULT e2e_fix_test: FAIL -- only %0d/60 writes completed before timeout (e2e_empty=%b e2e_full=%b). Fix did NOT resolve the stall in sim.",
+                  $time, e2e_writes_done, e2e_empty, e2e_full);
       end
     end
 

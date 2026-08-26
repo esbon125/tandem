@@ -84,7 +84,7 @@ module mem2axi_bridge (
     clk, rst, watchdog_rst,
 
     /* mpeg2video memory-controller interface (mem_clk domain) */
-    mem_req_rd_cmd, mem_req_rd_addr, mem_req_rd_dta, mem_req_rd_en, mem_req_rd_valid,
+    mem_req_rd_cmd, mem_req_rd_addr, mem_req_rd_dta, mem_req_rd_en, mem_req_rd_valid, mem_req_rd_empty,
     mem_res_wr_dta, mem_res_wr_en, mem_res_wr_almost_full,
 
     /* AXI4 master (FIC_1 fabric-master side). AWLOCK/AWCACHE/AWPROT/AWQOS/
@@ -115,6 +115,7 @@ module mem2axi_bridge (
   input      [63:0]mem_req_rd_dta;
   output reg       mem_req_rd_en;
   input            mem_req_rd_valid;
+  input            mem_req_rd_empty;
   output reg [63:0]mem_res_wr_dta;
   output reg       mem_res_wr_en;
   input            mem_res_wr_almost_full;
@@ -304,11 +305,28 @@ module mem2axi_bridge (
       dta_r  <= mem_req_rd_dta;
     end
 
-  /* pop mem_req_rd fifo: hold rd_en while idle so a request is captured the
-   * cycle it becomes valid; drop it as soon as one is latched. */
+  /* pop mem_req_rd fifo: assert rd_en while idle AND the fifo reports data
+   * available, so a request is captured the cycle it becomes valid; drop it
+   * as soon as one is latched.
+   *
+   * 2026-08-26 (mem_req_wr_almost_full investigation, root cause): this used
+   * to be `mem_req_rd_en <= (next == S_IDLE)` -- holding RE continuously
+   * high through the entire idle period regardless of whether the fifo had
+   * anything to give, not just for the one cycle a request needs capturing.
+   * The real generated CoreFIFO controller for this dual-clock async
+   * configuration (corefifo_async.v) breaks under that usage: reproduced in
+   * bench/mem_response_corefifo/testbench.v's req_fifo_test2 -- RE held
+   * high from an empty fifo through a 60-word fill only ever delivers 3
+   * words before EMPTY sticks high forever, though the fifo genuinely still
+   * holds the other 57. Every other fifo_dc consumer in this codebase
+   * already gates rd_en on ~empty instead of holding it unconditionally,
+   * and none of them show this failure -- matching that working pattern
+   * here fixes it. mem_req_rd_empty is framestore.v's mem_request_fifo's
+   * own `empty` output (mem_clk domain, same as this module -- no CDC
+   * needed), previously left unconnected. */
   always @(posedge clk)
     if (~rst) mem_req_rd_en <= 1'b0;
-    else mem_req_rd_en <= (next == S_IDLE);
+    else mem_req_rd_en <= (next == S_IDLE) && !mem_req_rd_empty;
 
   /* AXI write address/data channels */
   always @(posedge clk)

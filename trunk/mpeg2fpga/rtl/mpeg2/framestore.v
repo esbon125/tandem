@@ -134,7 +134,7 @@ module framestore(rst, clk, mem_clk, mem_rst,
                   osd_rd_empty, osd_rd_almost_empty, osd_rd_en, osd_rd_valid, osd_rd_addr, osd_rd_dta, osd_wr_almost_full,
                   vbw_rd_empty, vbw_rd_almost_empty, vbw_rd_en, vbw_rd_valid, vbw_rd_dta, vbw_wr_almost_full,
                   vbr_wr_full, vbr_wr_almost_full, vbr_wr_dta, vbr_wr_en, vbr_wr_ack, vb_flush, vbr_rd_almost_empty,
-                  mem_req_rd_cmd, mem_req_rd_addr, mem_req_rd_dta, mem_req_rd_en, mem_req_rd_valid, 
+                  mem_req_rd_cmd, mem_req_rd_addr, mem_req_rd_dta, mem_req_rd_en, mem_req_rd_valid, mem_req_rd_empty,
                   mem_res_wr_dta, mem_res_wr_en, mem_res_wr_almost_full, mem_res_wr_full, mem_res_wr_overflow,
                   mem_req_wr_almost_full, mem_req_wr_full, mem_req_wr_overflow,
 		  tag_wr_almost_full, tag_wr_full, tag_wr_overflow,
@@ -266,6 +266,17 @@ module framestore(rst, clk, mem_clk, mem_rst,
   output       [63:0]mem_req_rd_dta;
   input              mem_req_rd_en;
   output             mem_req_rd_valid;
+  /* 2026-08-26 (mem_req_wr_almost_full investigation, final root cause):
+   * mem_request_fifo's own `empty` was always left unconnected here --
+   * mem2axi_bridge.v held mem_req_rd_en (RE) continuously high in S_IDLE
+   * regardless of it, which reproducibly breaks CoreFIFO's own EMPTY/DVLD
+   * generation for this exact dual-clock async configuration (see
+   * bench/mem_response_corefifo/testbench.v's req_fifo_test2 -- only 3/60
+   * words ever delivered, EMPTY sticks high forever after, though the
+   * fifo genuinely still holds data). Exposed now so mem2axi_bridge can
+   * gate RE on it instead, matching every other fifo_dc consumer in this
+   * codebase (which all already gate rd_en on ~empty and work fine). */
+  output             mem_req_rd_empty;
 
   always @(posedge clk)
     if (~rst) dbg_mem_req_wr_push_cnt <= 8'b0;
@@ -417,12 +428,12 @@ module framestore(rst, clk, mem_clk, mem_rst,
     .wr_ack(), 
     .overflow(mem_req_wr_overflow), 
     .prog_full(mem_req_wr_almost_full), 
-    .rd_clk(mem_clk), 
-    .dout({mem_req_rd_cmd, mem_req_rd_addr, mem_req_rd_dta}), 
-    .rd_en(mem_req_rd_en), 
-    .empty(), 
-    .valid(mem_req_rd_valid), 
-    .underflow(), 
+    .rd_clk(mem_clk),
+    .dout({mem_req_rd_cmd, mem_req_rd_addr, mem_req_rd_dta}),
+    .rd_en(mem_req_rd_en),
+    .empty(mem_req_rd_empty),
+    .valid(mem_req_rd_valid),
+    .underflow(),
     .prog_empty()
     );
 
