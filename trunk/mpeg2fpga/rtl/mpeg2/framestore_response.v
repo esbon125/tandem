@@ -156,9 +156,24 @@ module framestore_response(rst, clk,
    * read from memory response and tag fifos
    */
 
+  /* Fase 7a (2026-08-26): STATE_FLUSH used to hold mem_res_rd_en high
+   * unconditionally for the full 65536-cycle flush window, regardless of
+   * mem_res_rd_empty. mem_response_fifo is guaranteed empty at this point
+   * (reset, nothing pushed yet) -- so on real hardware this asserts RE on
+   * an empty CoreFIFO for tens of thousands of consecutive cycles, right
+   * at boot, before any real read is ever attempted. That is the same
+   * "RE held high while EMPTY" pattern that wedged mem_request_fifo's
+   * empty flag permanently (see mem2axi_bridge.v's mem_req_rd_en fix,
+   * docs/bringup/25_fase7a_cdc_fix_and_corefifo_re_bug.md) -- and this
+   * STATE_FLUSH path is wrapped in `ifdef SIMULATION_ONLY` such that
+   * plain STATE_WAIT is used instead under __IVERILOG__, so it has never
+   * once been exercised by any Icarus testbench. Gate on mem_res_rd_empty
+   * and self-pulse (mirrors mem2axi_bridge.v's mem_req_rd_en fix) so RE
+   * only ever asserts for a single cycle per real item actually present,
+   * naturally stopping once the fifo goes (and stays) empty. */
   always @(posedge clk)
     if (~rst) mem_res_rd_en <= 1'b0;
-    else if (state == STATE_FLUSH) mem_res_rd_en <= 1'b1;
+    else if (state == STATE_FLUSH) mem_res_rd_en <= !mem_res_rd_empty && !mem_res_rd_en;
     else if (state == STATE_READ) mem_res_rd_en <= fifos_ready;
     else mem_res_rd_en <= 1'b0;
 

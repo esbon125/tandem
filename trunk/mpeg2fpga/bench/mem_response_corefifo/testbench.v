@@ -146,6 +146,47 @@ module testbench ();
       .prog_empty()
       );
 
+  /* FLUSH-scenario instance -- 2026-08-26, testing framestore_response.v's
+   * STATE_FLUSH pattern directly: does holding rd_en high, unconditionally,
+   * across a long window while the real mem_response_fifo (fifo_mem_rsp_
+   * dc_64x128, FWFT:false) is EMPTY, then dropping it, permanently wedge
+   * the fifo the way holding mem_req_rd_en high did for mem_request_fifo
+   * (root cause #1, mem2axi_bridge.v)? Same width/depth params as the real
+   * mem_response_fifo instance above, same wr_clk=mem_clk/rd_clk=clk
+   * orientation as framestore.v's real one. */
+  reg  [63:0] flush_din;
+  reg         flush_wr_en;
+  wire        flush_full;
+  wire [63:0] flush_dout;
+  reg         flush_rd_en;
+  wire        flush_empty;
+  wire        flush_valid;
+
+  fifo_dc #(
+      .addr_width(9'd7),
+      .dta_width(9'd64),
+      .prog_thresh(9'd64),
+      .FIFO_XILINX(0)
+      )
+      mem_response_fifo_flush_test (
+      .wr_rst(rst),
+      .rd_rst(rst),
+      .wr_clk(mem_clk),
+      .din(flush_din),
+      .wr_en(flush_wr_en),
+      .full(flush_full),
+      .wr_ack(),
+      .overflow(),
+      .prog_full(),
+      .rd_clk(clk),
+      .dout(flush_dout),
+      .rd_en(flush_rd_en),
+      .empty(flush_empty),
+      .valid(flush_valid),
+      .underflow(),
+      .prog_empty()
+      );
+
   /* SECOND real CoreFIFO instance -- fifo_mem_req_dc_88x64 (framestore.v's
    * mem_request_fifo), completely independent copied source, to test
    * whether the same fifo_dc(.rst(~rst)) wiring bug reproduces here too.
@@ -379,6 +420,9 @@ module testbench ();
     req2_wr_en = 1'b0;
     e2e_din = 88'b0;
     e2e_wr_en = 1'b0;
+    flush_din = 64'b0;
+    flush_wr_en = 1'b0;
+    flush_rd_en = 1'b0;
   end
 
   assign req_rd_en = rst & ~req_empty;
@@ -544,6 +588,57 @@ module testbench ();
         wait_res(rdata);
         expect_val = {32'hf00d_0000 + i, 32'hf00d_0000 + i};
         check_eq64("16-read stress, matching real hw's stuck-at-16 count", rdata, expect_val);
+      end
+    end
+
+    /* FLUSH-scenario test -- reproduces framestore_response.v's OLD
+     * STATE_FLUSH behavior directly against the real mem_response_fifo
+     * shape: hold rd_en high, unconditionally, for a long window while
+     * genuinely empty (scaled down from the real 65536 cycles -- the
+     * mechanism doesn't depend on the exact count, only on "RE held high
+     * across an empty window, then dropped"), then push real writes and
+     * drain with properly-gated RE (matching the STATE_READ/fixed path)
+     * to see whether the fifo ever recovers. */
+    begin : res_flush_test
+      integer i;
+      integer timeout;
+      integer got_count;
+
+      flush_rd_en = 1'b0;
+      @(posedge clk);
+      flush_rd_en = 1'b1;
+      for (i = 0; i < 500; i = i + 1) @(posedge clk);
+      flush_rd_en = 1'b0;
+
+      $display("[%0t] res_flush_test: released RE after 500-cycle empty hold, flush_empty=%b", $time, flush_empty);
+
+      for (i = 0; i < 10; i = i + 1) begin
+        @(posedge mem_clk);
+        #1;
+        flush_din   = 64'hF1F0_0000_0000_0000 + i;
+        flush_wr_en = 1'b1;
+        @(posedge mem_clk);
+        #1;
+        flush_wr_en = 1'b0;
+      end
+
+      got_count = 0;
+      timeout = 0;
+      while (got_count < 10 && timeout < 5000) begin
+        @(posedge clk);
+        #1;
+        flush_rd_en = ~flush_empty & ~flush_rd_en;
+        if (flush_valid === 1'b1) got_count = got_count + 1;
+        timeout = timeout + 1;
+      end
+
+      checks = checks + 1;
+      if (got_count == 10) begin
+        $display("[%0t] RESULT res_flush_test: PASS -- all 10 words delivered after the bounded RE-held-high-while-empty flush window. STATE_FLUSH does NOT wedge the real fifo in sim.", $time);
+      end else begin
+        errors = errors + 1;
+        $display("[%0t] RESULT res_flush_test: FAIL -- only %0d/10 words delivered (flush_empty=%b flush_full=%b). STATE_FLUSH's RE-held-high DOES wedge the real fifo.",
+                  $time, got_count, flush_empty, flush_full);
       end
     end
 
