@@ -262,7 +262,8 @@ endmodule
  */
 
 module fifo_dc (
-	rst,
+	wr_rst,
+	rd_rst,
 	wr_clk,
 	din,
 	wr_en,
@@ -285,8 +286,19 @@ module fifo_dc (
 
   parameter FIFO_XILINX=0;    /* use Xilinx FIFO primitives */
   parameter check_valid=1;    /* assign x's to fifo output when valid is not asserted */
-         
-  input          rst;         /* low active sync master reset */
+
+  /* 2026-08-26, mem_req_wr_almost_full investigation (real-hardware stall,
+   * see docs/bringup and fase7a_size_zero_vld_stall): this module used to
+   * take a single `rst`, fed unchanged into both CoreFIFO's WRESET_N (must
+   * be synchronous to wr_clk) and RRESET_N (must be synchronous to rd_clk) --
+   * see xfifo_dc.v's header comment for the CDC violation this caused when
+   * a caller's single reset is only synchronized to ONE of the two clocks
+   * (every caller in this codebase passes clk-domain sync_rst, correct for
+   * whichever side sits on clk, wrong -- unsynchronized -- for whichever
+   * side sits on mem_clk or dot_clk). Callers must now supply two
+   * independently-domain-correct resets. */
+  input          wr_rst;      /* low active sync master reset, wr_clk domain */
+  input          rd_rst;      /* low active sync master reset, rd_clk domain */
   /* read port */
   input          rd_clk;      /* read clock. positive edge active */
   output [dta_width-1:0]dout; /* data output */
@@ -328,7 +340,8 @@ module fifo_dc (
 		    * inside corefifo_async never deassert after reset release,
 		    * so wptr/rptr never advance and the fifo never delivers any
 		    * data past the first sample -- see bench/mem_response_corefifo. */
-		   .rst(rst),
+		   .wr_rst(wr_rst),
+		   .rd_rst(rd_rst),
 		   .wr_clk(wr_clk),
 		   .din(din), 
 		   .wr_en(wr_en), 
@@ -348,15 +361,18 @@ module fifo_dc (
       end
     else
       begin
-        /* Implementation using "hard" fifo */
+        /* Implementation using "hard" fifo -- unused by this project's actual
+         * build target (FIFO_XILINX is forced 0 everywhere, see CLAUDE.md),
+         * left as-is with a single reset: not exercised, so not worth
+         * threading wr_rst/rd_rst separately through here. */
 	 xilinx_fifo_dc #(
 			  .dta_width(dta_width),
 			  .addr_width(addr_width),
 			  .prog_thresh(prog_thresh)
 			  )
 	 xfifo_dc (
-		   .rst(~rst), 
-		   .wr_clk(wr_clk), 
+		   .rst(~wr_rst),
+		   .wr_clk(wr_clk),
 		   .din(din), 
 		   .wr_en(wr_en), 
 		   .full(full), 

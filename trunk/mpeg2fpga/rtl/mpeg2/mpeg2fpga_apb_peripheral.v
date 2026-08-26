@@ -226,11 +226,30 @@ module mpeg2fpga_apb_peripheral (
   wire         mem_res_wr_almost_full;
 
   wire         mem_clk_internal;
+  /* mem_rst_internal (reset pin OR watchdog expiry, mem_clk domain): no
+   * longer consumed here as of 2026-08-26 -- u_mem_bridge now takes
+   * mem_hard_rst_internal (raw pin only) plus the separate
+   * mem_watchdog_rst_internal pulse below, same reasoning as stream_dma.v's
+   * split (see its header comment). Left connected to mpeg2video's output
+   * in case a future debug consumer wants the combined signal. */
   wire         mem_rst_internal;
   /* Fase 7a debug (2026-08-23): mpeg2video's core_clk-domain equivalent of
    * mem_rst_internal above (reset pin OR watchdog expiry) -- see
-   * mpeg2video.v's core_rst_out comment and stream_dma.v's header. */
+   * mpeg2video.v's core_rst_out comment. No longer consumed here (2026-08-25:
+   * u_stream_dma takes the raw rst_n plus the separate watchdog_rst pulse
+   * instead -- see stream_dma.v's header comment for why routing this
+   * combined signal into it directly reintroduced the AXI4-interconnect
+   * wedge); left connected to mpeg2video's output in case a future debug
+   * consumer wants it. */
   wire         core_rst_internal;
+
+  /* 2026-08-26: same split as core_rst_internal/watchdog_rst above, but in
+   * mem_clk domain -- u_mem_bridge (mem2axi_bridge.v) has the identical
+   * class of bug on its AXI4 write (and read) master, confirmed both by
+   * hardware trace and bench/mem_axi_bridge/testbench_wedge.v. See
+   * mpeg2video.v's mem_hard_rst_out/mem_watchdog_rst_out comments. */
+  wire         mem_hard_rst_internal;
+  wire         mem_watchdog_rst_internal;
 
   wire [33:0]  testpoint;
 
@@ -245,6 +264,13 @@ module mpeg2fpga_apb_peripheral (
   wire [21:0]  dbg_last_write_addr_from_fifo_internal;
   wire [37:0]  dbg_last_write_awaddr_issued_internal;
   wire [21:0]  dbg_last_mem_req_wr_addr_internal;
+  /* 2026-08-26 (mem_req_wr_almost_full investigation): see framestore.v's
+   * header comment on these two -- push_cnt is core_clk domain (matches
+   * this wrapper's own clk_internal), pop_cnt is mem_clk domain and needs
+   * its own 2-FF sync in apb3_mpeg2fpga_bridge.v, same as dbg_last_write_
+   * awaddr_issued already gets. */
+  wire  [7:0]  dbg_mem_req_wr_push_cnt_internal;
+  wire  [7:0]  dbg_mem_req_rd_pop_cnt_internal;
 
   /* mpeg2video's internal "clk" (PF_CCC_C0-derived from ref_clk) is what
    * regfile.v actually samples reg_addr/reg_wr_en/reg_rd_en/reg_dta_in on
@@ -316,11 +342,13 @@ module mpeg2fpga_apb_peripheral (
 
       .dbg_last_write_addr_from_fifo(dbg_last_write_addr_from_fifo_internal),
       .dbg_last_write_awaddr_issued(dbg_last_write_awaddr_issued_internal),
-      .dbg_last_mem_req_wr_addr(dbg_last_mem_req_wr_addr_internal)
+      .dbg_last_mem_req_wr_addr(dbg_last_mem_req_wr_addr_internal),
+      .dbg_mem_req_wr_push_cnt(dbg_mem_req_wr_push_cnt_internal),
+      .dbg_mem_req_rd_pop_cnt(dbg_mem_req_rd_pop_cnt_internal)
   );
 
   stream_dma u_stream_dma (
-      .clk(clk_internal), .rst_n(core_rst_internal),
+      .clk(clk_internal), .rst_n(rst_n), .watchdog_rst(watchdog_rst),
 
       .start(dma_start), .addr(dma_addr), .len(dma_len),
       .busy(dma_busy), .done(dma_done), .bytes_done(dma_bytes_done),
@@ -346,6 +374,8 @@ module mpeg2fpga_apb_peripheral (
       .mem_clk_out(mem_clk_internal),
       .mem_rst_out(mem_rst_internal),
       .core_rst_out(core_rst_internal),
+      .mem_hard_rst_out(mem_hard_rst_internal),
+      .mem_watchdog_rst_out(mem_watchdog_rst_internal),
       .rst(rst_n),
 
       .stream_data(stream_data_mux),
@@ -387,14 +417,17 @@ module mpeg2fpga_apb_peripheral (
       .vbr_starved_cnt(vbr_starved_cnt_internal),
       .arbiter_flags(arbiter_flags_internal),
       .mem_res_valid_cnt(mem_res_valid_cnt_internal),
-      .dbg_last_mem_req_wr_addr(dbg_last_mem_req_wr_addr_internal)
+      .dbg_last_mem_req_wr_addr(dbg_last_mem_req_wr_addr_internal),
+      .dbg_mem_req_wr_push_cnt(dbg_mem_req_wr_push_cnt_internal),
+      .dbg_mem_req_rd_pop_cnt(dbg_mem_req_rd_pop_cnt_internal)
   );
 
   assign mem_clk_out = mem_clk_internal;
 
   mem2axi_bridge #(.DDR_BASE(DDR_BASE)) u_mem_bridge (
       .clk(mem_clk_internal),
-      .rst(mem_rst_internal),
+      .rst(mem_hard_rst_internal),
+      .watchdog_rst(mem_watchdog_rst_internal),
 
       .mem_req_rd_cmd(mem_req_rd_cmd),
       .mem_req_rd_addr(mem_req_rd_addr),

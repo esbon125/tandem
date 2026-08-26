@@ -29,7 +29,8 @@
 `include "timescale.v"
 
 module reset (clk, mem_clk, dot_clk, async_rst, watchdog_rst,
-              clk_rst, mem_rst, dot_rst, hard_rst);
+              clk_rst, mem_rst, dot_rst, hard_rst,
+              mem_hard_rst, mem_watchdog_rst);
 
   input clk;                  /* decoder clock */
   input mem_clk;              /* memory clock */
@@ -40,6 +41,22 @@ module reset (clk, mem_clk, dot_clk, async_rst, watchdog_rst,
   output mem_rst;             /* global reset, synchronized to memory clock. Goes low when "async_rst" or "watchdog_rst" goes low. */
   output dot_rst;             /* global reset, synchronized to pixel clock. Goes low when "async_rst" or "watchdog_rst" goes low. */
   output hard_rst;            /* "hard" reset signal. Goes low when "async_rst" input pin goes low. */
+
+  /* mem_hard_rst/mem_watchdog_rst (2026-08-26, mem2axi_bridge.v write-side
+   * AXI4-interconnect-wedge fix): mem_clk-domain analogues of hard_rst
+   * (async_rst-only) and of the raw watchdog_rst input (watchdog-only),
+   * kept separate the same reason core_rst_out/stream_dma.v's watchdog_rst
+   * port needed a raw-vs-watchdog split in the clk domain -- a module that
+   * resets instantly on the shared, non-resetting fabric's watchdog can
+   * abandon an outstanding AXI4 transaction. mem2axi_bridge.v is the first
+   * consumer: it needs the *unstretched-by-watchdog* mem_rst (i.e. just
+   * async_rst, safe to apply instantly since a real external reset also
+   * resets FIC_1/the DDR controller) plus a separately-visible watchdog
+   * pulse (synchronized here, not usable directly from mpeg2video's clk-
+   * domain watchdog_rst output) so it can defer applying a watchdog-only
+   * reset until any outstanding AW/W/B or AR/R obligation drains. */
+  output mem_hard_rst;
+  output mem_watchdog_rst;
 
   /* synchronize async_rst and watchdog with clk */
 
@@ -126,9 +143,50 @@ module reset (clk, mem_clk, dot_clk, async_rst, watchdog_rst,
     );
 
   sync_reset hard_sreset_2 (
-    .clk(clk), 
+    .clk(clk),
     .asyncrst(hard_rst_1),
     .syncrst(hard_rst)
+    );
+
+  /*
+   * mem_hard_rst: same two-stage pattern as hard_rst above, but synchronized
+   * to mem_clk instead of clk -- feeding clk_rst_0 (already a clk-domain
+   * signal) into a mem_clk sync_reset chain as "asyncrst" is the same idiom
+   * comm_rst already uses to cross into mem_sreset_1 below.
+   */
+
+  wire mem_hard_rst_1;
+
+  sync_reset mem_hard_sreset_1 (
+    .clk(mem_clk),
+    .asyncrst(clk_rst_0),
+    .syncrst(mem_hard_rst_1)
+    );
+
+  sync_reset mem_hard_sreset_2 (
+    .clk(mem_clk),
+    .asyncrst(mem_hard_rst_1),
+    .syncrst(mem_hard_rst)
+    );
+
+  /*
+   * mem_watchdog_rst: same pattern, fed from clk_watchdog_0 (the clk-domain
+   * synchronized, already-stretched watchdog pulse) instead -- a proper
+   * mem_clk-domain version of "watchdog fired", independent of async_rst.
+   */
+
+  wire mem_watchdog_rst_1;
+
+  sync_reset mem_watchdog_sreset_1 (
+    .clk(mem_clk),
+    .asyncrst(clk_watchdog_0),
+    .syncrst(mem_watchdog_rst_1)
+    );
+
+  sync_reset mem_watchdog_sreset_2 (
+    .clk(mem_clk),
+    .asyncrst(mem_watchdog_rst_1),
+    .syncrst(mem_watchdog_rst)
     );
 
 endmodule

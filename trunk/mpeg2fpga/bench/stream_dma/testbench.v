@@ -20,6 +20,7 @@ module testbench ();
 
   reg         clk;
   reg         rst_n;
+  reg         watchdog_rst;   /* active low pulse; held high (inactive) -- see testbench_wedge.v for the abort path */
 
   reg         start;
   reg  [31:0] addr;
@@ -61,7 +62,7 @@ module testbench ();
    * array -- the real hardware default (0x88000000) is only meaningful
    * against real DDR, and would just add a constant offset here. */
   stream_dma #(.STAGING_BASE(38'h0), .BURST_BEATS(5'd16)) dut (
-      .clk(clk), .rst_n(rst_n),
+      .clk(clk), .rst_n(rst_n), .watchdog_rst(watchdog_rst),
       .start(start), .addr(addr), .len(len),
       .busy(busy), .done(done), .bytes_done(bytes_done),
       .mpeg_busy(mpeg_busy),
@@ -91,7 +92,8 @@ module testbench ();
 
   /* reset */
   initial begin
-    rst_n = 1'b0;
+    rst_n        = 1'b0;
+    watchdog_rst = 1'b1;
     #(`CLK_PERIOD * 4);
     rst_n = 1'b1;
   end

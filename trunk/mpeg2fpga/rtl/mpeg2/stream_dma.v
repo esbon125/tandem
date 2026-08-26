@@ -61,16 +61,44 @@
  * holding stale state from before the reset) -- a real, reproducible
  * mechanism for wedging the shared FIC_2/DDR-controller fabric port after
  * a watchdog fires mid-DMA-push, confirmed via mem2axi_bridge completing
- * exactly one AXI4 write post-reset and then freezing. Now takes the same
- * watchdog-inclusive reset mem2axi_bridge already does (see rst_n's
- * connection in mpeg2fpga_apb_peripheral.v -- core_rst_out, not the raw
- * external pin).
- */
+ * exactly one AXI4 write post-reset and then freezing.
+ *
+ * Graceful-abort fix (2026-08-25, same investigation, retest after the
+ * above): simply routing mpeg2video's watchdog-inclusive reset into this
+ * module's own rst_n (as a first attempt did) does NOT solve the wedge --
+ * confirmed on real hardware (identical failure signature after that fix)
+ * and reproduced cheaply in bench/stream_dma/testbench_wedge.v. The reason:
+ * FIC_2 and the DDR controller are *not* in mpeg2video's watchdog reset
+ * domain (only mpeg2video's own core_clk logic is), so an instant reset of
+ * this module's FSM can abandon an AXI4 read burst the slave has already
+ * committed to (ARREADY given, beats still owed) -- once this module drops
+ * m_axi_rready for good, the slave is left holding m_axi_rvalid high
+ * forever waiting for a RREADY that will never come again, wedging FIC_2's
+ * read-data channel (and, since fake_axi_ddr_ro.v/most AXI4 interconnects
+ * are single-burst-in-flight per ID, every subsequent ARVALID too) for the
+ * lifetime of the design -- exactly the "dma_axi_rvalid stuck True forever"
+ * symptom seen on real hardware.
+ *
+ * rst_n therefore goes back to being the module's raw external hard reset
+ * only (safe to reset instantly: a real external reset also resets FIC_2/
+ * the DDR controller, so there is nothing to drain). watchdog_rst is new --
+ * mpeg2video's watchdog-only pulse (see watchdog.v; already exposed as
+ * mpeg2video's own watchdog_rst output, previously unconnected downstream),
+ * wired straight in since both run on the same core_clk, no CDC needed. On
+ * that pulse, if an AXI4 read obligation is outstanding (beats_left_in_burst
+ * != 0 -- true throughout S_AR and S_RDATA, and through S_DRAIN whenever
+ * more beats of the current burst remain), the FSM keeps servicing the AXI4
+ * protocol (ARREADY handshake, RREADY per beat) exactly as normal but
+ * discards the data and ignores mpeg_busy, until the burst's last beat is
+ * consumed -- then goes idle without emitting the aborted bytes or pulsing
+ * done. This bounds the abort to the current burst's AXI4 latency (at most
+ * BURST_BEATS beats), never to mpeg_busy/downstream stalls -- the same
+ * unbounded stall that likely triggered the watchdog in the first place. */
 
 `include "timescale.v"
 
 module stream_dma (
-    clk, rst_n,
+    clk, rst_n, watchdog_rst,
 
     /* control, core_clk domain (from apb3_mpeg2fpga_bridge.v) */
     start, addr, len,
@@ -89,13 +117,13 @@ module stream_dma (
     /* Fase 7a debug (2026-08-23): raw FSM state, packed into
      * apb3_mpeg2fpga_bridge.v's ARBITER_FLAGS readback alongside
      * dma_axi_arvalid/dma_axi_rvalid (already reachable at the
-     * mpeg2fpga_apb_peripheral.v level) -- see that module's header
-     * comment for why this exists: rst_n here is the raw external hard
-     * reset, NOT mpeg2video's watchdog-inclusive sync_rst, so a watchdog-
-     * triggered reset can leave this module's AXI4 read master mid-
-     * transaction while everything else cleanly resets. This lets that be
-     * confirmed directly instead of inferred from mem2axi_bridge's
-     * downstream symptoms. */
+     * mpeg2fpga_apb_peripheral.v level) -- lets software directly confirm
+     * whether this module is mid-transaction (S_AR/S_RDATA/S_DRAIN with
+     * dma_axi_arvalid or dma_axi_rvalid stuck asserted) instead of only
+     * inferring it from mem2axi_bridge's downstream symptoms. Also doubles
+     * as visibility into the graceful-abort path (see header comment): a
+     * watchdog_rst pulse should show dbg_state walking S_RDATA/S_DRAIN back
+     * to S_IDLE within a few cycles, never getting stuck. */
     dbg_state
 );
 
@@ -103,7 +131,8 @@ module stream_dma (
   parameter [4:0]  BURST_BEATS  = 5'd16;   /* 16 beats * 8 bytes = 128 bytes/burst */
 
   input             clk;
-  input             rst_n;      /* active low, matches mpeg2video's "rst" */
+  input             rst_n;        /* active low, raw external hard reset only -- see header comment */
+  input             watchdog_rst; /* active low, 1-cycle pulse, mpeg2video's watchdog.v output */
 
   input             start;      /* 1-cycle pulse; ignored while busy */
   input      [31:0] addr;       /* byte offset inside STAGING_BASE */
@@ -139,7 +168,6 @@ module stream_dma (
   output            m_axi_rready;
 
   output      [2:0] dbg_state;
-  assign dbg_state = state;
 
   /* fixed AXI4 attributes -- id 1 (distinct from mem2axi_bridge's id 0,
    * harmless either way since they sit on independent FIC ports, but keeps
@@ -180,6 +208,7 @@ module stream_dma (
     S_DONE  = 3'd5;   /* pulse done, then back to idle */
 
   reg  [2:0]  state, next;
+  assign dbg_state = state;   /* moved here: iverilog requires state's declaration first */
 
   reg  [37:0] addr_r;             /* next AXI4 read address */
   reg  [31:0] bytes_left;         /* bytes not yet requested from DDR */
@@ -190,6 +219,13 @@ module stream_dma (
   reg  [3:0]  byte_idx;           /* next byte of beat_r to emit, 0-7 */
 
   reg  [4:0]  pad_idx;            /* 0-31 */
+
+  /* set by a watchdog_rst pulse, held until any outstanding AXI4 read
+   * obligation (beats_left_in_burst != 0 -- see header comment) has been
+   * drained; while set, S_DRAIN/S_PAD discard their output instead of
+   * emitting stream_data/stream_valid and route to S_IDLE as soon as no
+   * beats are owed, instead of waiting on mpeg_busy or requesting more. */
+  reg         abort_pending;
 
   assign busy = (state != S_IDLE);
   assign m_axi_rready = (state == S_RDATA);
@@ -215,11 +251,13 @@ module stream_dma (
       S_IDLE:  next = start ? ((len == 32'd0) ? S_PAD : S_AR) : S_IDLE;
       S_AR:    next = m_axi_arready ? S_RDATA : S_AR;
       S_RDATA: next = m_axi_rvalid  ? S_DRAIN : S_RDATA;
-      S_DRAIN: if (mpeg_busy || byte_idx != bytes_in_beat_r) next = S_DRAIN;
+      S_DRAIN: if (abort_pending) next = (beats_left_in_burst != 5'd0) ? S_RDATA : S_IDLE;
+               else if (mpeg_busy || byte_idx != bytes_in_beat_r) next = S_DRAIN;
                else next = (beats_left_in_burst != 5'd0) ? S_RDATA
                           : (bytes_left != 32'd0)         ? S_AR
                           : S_PAD;
-      S_PAD:   next = (mpeg_busy || pad_idx != 5'd31) ? S_PAD : S_DONE;
+      S_PAD:   next = abort_pending ? S_IDLE
+                     : (mpeg_busy || pad_idx != 5'd31) ? S_PAD : S_DONE;
       S_DONE:  next = S_IDLE;
       default: next = S_IDLE;
     endcase
@@ -228,6 +266,18 @@ module stream_dma (
   always @(posedge clk or negedge rst_n)
     if (!rst_n) state <= S_IDLE;
     else state <= next;
+
+  /* S_AR and S_RDATA are deliberately left alone above: an ARVALID already
+   * raised, or a beat the slave has already committed to send, must still
+   * be handled per AXI4 regardless of abort_pending -- that handling is
+   * what actually drains the outstanding obligation. abort_pending only
+   * changes what happens to the *data* (S_DRAIN/S_PAD, below) and where the
+   * FSM goes once beats_left_in_burst reaches 0. */
+  always @(posedge clk or negedge rst_n) begin
+    if (!rst_n) abort_pending <= 1'b0;
+    else if (!watchdog_rst) abort_pending <= 1'b1;
+    else if (next == S_IDLE) abort_pending <= 1'b0;
+  end
 
   /* transfer-scope bookkeeping: latched on start, advanced per beat */
   always @(posedge clk or negedge rst_n) begin
@@ -297,11 +347,11 @@ module stream_dma (
     end else begin
       stream_valid <= 1'b0;
       case (state)
-        S_DRAIN: if (!mpeg_busy && (byte_idx != bytes_in_beat_r)) begin
+        S_DRAIN: if (!abort_pending && !mpeg_busy && (byte_idx != bytes_in_beat_r)) begin
           stream_data  <= beat_r[byte_idx*8 +: 8];
           stream_valid <= 1'b1;
         end
-        S_PAD: if (!mpeg_busy) begin
+        S_PAD: if (!abort_pending && !mpeg_busy) begin
           stream_data  <= pad_byte(pad_idx[1:0]);
           stream_valid <= 1'b1;
         end

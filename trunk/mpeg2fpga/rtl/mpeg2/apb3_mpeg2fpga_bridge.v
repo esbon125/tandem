@@ -106,7 +106,15 @@ module apb3_mpeg2fpga_bridge (
     /* Fase 7a debug (2026-08-23): framestore_request.v's own view of the
      * address it hands to mem_request_fifo's write port -- core_clk
      * domain, same as vbuf_wr_addr, no extra CDC needed. */
-    dbg_last_mem_req_wr_addr
+    dbg_last_mem_req_wr_addr,
+
+    /* 2026-08-26 (mem_req_wr_almost_full investigation): free-running
+     * occupancy counters straddling mem_request_fifo -- see framestore.v's
+     * header comment. dbg_mem_req_wr_push_cnt is core_clk domain, no extra
+     * CDC needed; dbg_mem_req_rd_pop_cnt is genuinely mem_clk domain and
+     * gets the same 2-FF synchronizer treatment as dbg_last_write_
+     * awaddr_issued above. */
+    dbg_mem_req_wr_push_cnt, dbg_mem_req_rd_pop_cnt
 );
 
   input             PCLK;
@@ -177,6 +185,8 @@ module apb3_mpeg2fpga_bridge (
   input       [21:0]dbg_last_write_addr_from_fifo; /* mem_clk domain -- genuine CDC needed */
   input       [37:0]dbg_last_write_awaddr_issued;  /* mem_clk domain -- genuine CDC needed */
   input       [21:0]dbg_last_mem_req_wr_addr;       /* core_clk domain, no CDC needed */
+  input        [7:0]dbg_mem_req_wr_push_cnt;        /* core_clk domain, no CDC needed */
+  input        [7:0]dbg_mem_req_rd_pop_cnt;         /* mem_clk domain -- genuine CDC needed */
 
   /*
    * APB3 domain: latch the transfer on entering the Access phase
@@ -262,6 +272,16 @@ module apb3_mpeg2fpga_bridge (
    * that set it). */
   reg [21:0] dbg_last_write_addr_from_fifo_meta, dbg_last_write_addr_from_fifo_sync;
   reg [37:0] dbg_last_write_awaddr_issued_meta, dbg_last_write_awaddr_issued_sync;
+
+  /* 2026-08-26 (mem_req_wr_almost_full investigation): same treatment for
+   * framestore.v's dbg_mem_req_rd_pop_cnt -- unlike the two above, this one
+   * *does* change frequently while a push is actively draining (once per
+   * accepted request, not just once per whole transaction), so a torn read
+   * mid-count is more plausible than for the other two -- but the only
+   * reading that matters here happens once the system has already stalled
+   * (the whole point of the counter), at which point it's static and any
+   * synchronizer artifact has long since settled. */
+  reg  [7:0] dbg_mem_req_rd_pop_cnt_meta, dbg_mem_req_rd_pop_cnt_sync;
 
   wire       apb_ack_matched  = (apb_state == A_WAIT_ACK) && (ack_toggle_sync == req_toggle);
 
@@ -438,6 +458,8 @@ module apb3_mpeg2fpga_bridge (
       dbg_last_write_addr_from_fifo_sync <= 22'b0;
       dbg_last_write_awaddr_issued_meta  <= 38'b0;
       dbg_last_write_awaddr_issued_sync  <= 38'b0;
+      dbg_mem_req_rd_pop_cnt_meta        <= 8'b0;
+      dbg_mem_req_rd_pop_cnt_sync        <= 8'b0;
     end else begin
       /* 2-FF synchronizer for the APB-domain req_toggle */
       req_toggle_meta <= req_toggle;
@@ -448,6 +470,8 @@ module apb3_mpeg2fpga_bridge (
       dbg_last_write_addr_from_fifo_sync <= dbg_last_write_addr_from_fifo_meta;
       dbg_last_write_awaddr_issued_meta  <= dbg_last_write_awaddr_issued;
       dbg_last_write_awaddr_issued_sync  <= dbg_last_write_awaddr_issued_meta;
+      dbg_mem_req_rd_pop_cnt_meta        <= dbg_mem_req_rd_pop_cnt;
+      dbg_mem_req_rd_pop_cnt_sync        <= dbg_mem_req_rd_pop_cnt_meta;
 
       /* 2-FF synchronizer for pwdata_sticky_r, see declaration comment */
       pwdata_sticky_meta <= pwdata_sticky_r;
@@ -490,12 +514,20 @@ module apb3_mpeg2fpga_bridge (
                 rdata_hold <= pwdata_sticky_sync;
               core_state <= C_DONE;
             end else if (is_vbuf_wr_addr) begin
+              /* 2026-08-26: bits [31:22] were always 10'b0 padding -- borrowed
+               * [29:22] here for dbg_mem_req_wr_push_cnt (core_clk domain, no
+               * CDC needed), same reasoning as arbiter_flags_combined packing
+               * dma_state_dbg/dma_axi_*valid into its own spare bits, since
+               * PADDR[6:2]'s 5-bit decode is already fully allocated (0x00-
+               * 0x1f) with no room for a brand new dedicated register. */
               if (!apb_write_r)
-                rdata_hold <= {10'b0, vbuf_wr_addr};
+                rdata_hold <= {2'b0, dbg_mem_req_wr_push_cnt, vbuf_wr_addr};
               core_state <= C_DONE;
             end else if (is_vbuf_rd_addr) begin
+              /* same packing, dbg_mem_req_rd_pop_cnt_sync (already 2-FF
+               * synchronized above -- mem_clk domain). */
               if (!apb_write_r)
-                rdata_hold <= {10'b0, vbuf_rd_addr};
+                rdata_hold <= {2'b0, dbg_mem_req_rd_pop_cnt_sync, vbuf_rd_addr};
               core_state <= C_DONE;
             end else if (is_disp_service_cnt) begin
               if (!apb_write_r)

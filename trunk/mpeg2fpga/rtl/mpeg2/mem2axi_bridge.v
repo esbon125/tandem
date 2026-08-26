@@ -50,12 +50,38 @@
  * DDR_BASE must be 32 MiB aligned (addr<<3 spans 25 bits) so the address
  * translation never carries into bits the firmware side doesn't expect to
  * move.
+ *
+ * Graceful-abort fix (2026-08-26, same investigation as stream_dma.v's --
+ * see its header comment for the full mechanism and docs/bringup/
+ * 24_fase7a_fwft_fix_and_axi4_interconnect_wedge.md): `rst` used to be
+ * mem_rst_internal (rst pin OR watchdog expiry). This module's own AXI4
+ * master has the identical vulnerability stream_dma.v's had: FIC_1 and the
+ * DDR controller are not in mpeg2video's watchdog reset domain, so
+ * resetting `state` instantly while an AW/W/B or AR/R transaction is
+ * outstanding (S_WRITE, S_BRESP, S_ARADDR, S_RDATA) abandons it -- confirmed
+ * on real hardware (dbg_last_write_awaddr_issued reading back an
+ * arithmetically-impossible 0 mid-stall, only explainable by this module's
+ * `rst` firing again with the AXI4 side never having drained) and
+ * reproduced in bench/mem_axi_bridge/testbench_wedge.v.
+ *
+ * `rst` is now the raw external hard reset only (mem_hard_rst_internal --
+ * safe to apply instantly, since a real external reset also resets FIC_1/
+ * the DDR controller). watchdog_rst is new -- a mem_clk-domain, watchdog-
+ * only pulse (reset.v's mem_watchdog_rst; mpeg2video's own watchdog_rst
+ * output lives in the *clk* domain, so it cannot be used directly here,
+ * unlike stream_dma.v which shares clk with the watchdog). Unlike
+ * stream_dma.v's abort_pending, which had to redirect several always
+ * blocks, this module's AW/W/AR-channel registers and aw_done/w_done are
+ * already driven purely by `case (state)` -- so deferring *only* `state`'s
+ * own reset-application until no AXI4 obligation is outstanding is enough:
+ * every other register just keeps following state's (now-safe)
+ * transitions. See the `abort_pending`/`in_axi_obligation` block below.
  */
 
 `include "timescale.v"
 
 module mem2axi_bridge (
-    clk, rst,
+    clk, rst, watchdog_rst,
 
     /* mpeg2video memory-controller interface (mem_clk domain) */
     mem_req_rd_cmd, mem_req_rd_addr, mem_req_rd_dta, mem_req_rd_en, mem_req_rd_valid,
@@ -80,7 +106,8 @@ module mem2axi_bridge (
   parameter [37:0] DDR_BASE = 38'h0;
 
   input            clk;
-  input            rst;               // active low, synchronous -- matches mpeg2video's "rst" convention
+  input            rst;               // active low, synchronous, raw external hard reset only -- see header comment
+  input            watchdog_rst;      // active low, synchronous, mem_clk-domain watchdog-only pulse (reset.v's mem_watchdog_rst)
 
   /* mpeg2video memory-controller interface */
   input       [1:0]mem_req_rd_cmd;
@@ -218,8 +245,26 @@ module mem2axi_bridge (
     endcase
   end
 
+  /* an AXI4 obligation is outstanding -- AW/W/B issued or accepted-but-
+   * unacked (S_WRITE/S_BRESP), or AR issued/accepted-but-unacked
+   * (S_ARADDR/S_RDATA) -- and state must not be clobbered by a deferred
+   * watchdog reset until it clears. S_RESP has none (the AXI4 side of a
+   * read is already fully done by then; only mpeg2video's own response
+   * fifo is pending) so it's safe to abandon immediately, same as S_IDLE/
+   * S_LATCH. See header comment. */
+  wire in_axi_obligation = (state == S_WRITE) || (state == S_BRESP) ||
+                            (state == S_ARADDR) || (state == S_RDATA);
+
+  reg abort_pending;
+
+  always @(posedge clk)
+    if (~rst) abort_pending <= 1'b0;
+    else if (!watchdog_rst) abort_pending <= 1'b1;
+    else if (abort_pending && !in_axi_obligation) abort_pending <= 1'b0;
+
   always @(posedge clk)
     if (~rst) state <= S_IDLE;
+    else if (abort_pending && !in_axi_obligation) state <= S_IDLE;
     else state <= next;
 
   /* Fase 7a debug (2026-08-23): bisect "mpeg2fpga -> fifo" from "fifo ->

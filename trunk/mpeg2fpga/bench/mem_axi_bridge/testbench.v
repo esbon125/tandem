@@ -19,6 +19,7 @@ module testbench ();
 
   reg         clk;
   reg         rst;
+  reg         watchdog_rst;   /* active low pulse; held high (inactive) -- see testbench_wedge.v for the abort path */
 
   reg  [1:0]  mem_req_rd_cmd;
   reg  [21:0] mem_req_rd_addr;
@@ -67,7 +68,7 @@ module testbench ();
   integer     checks;
 
   mem2axi_bridge #(.DDR_BASE(38'h02000000)) dut (
-      .clk(clk), .rst(rst),
+      .clk(clk), .rst(rst), .watchdog_rst(watchdog_rst),
       .mem_req_rd_cmd(mem_req_rd_cmd), .mem_req_rd_addr(mem_req_rd_addr),
       .mem_req_rd_dta(mem_req_rd_dta), .mem_req_rd_en(mem_req_rd_en), .mem_req_rd_valid(mem_req_rd_valid),
       .mem_res_wr_dta(mem_res_wr_dta), .mem_res_wr_en(mem_res_wr_en), .mem_res_wr_almost_full(mem_res_wr_almost_full),
@@ -101,7 +102,8 @@ module testbench ();
 
   /* reset */
   initial begin
-    rst = 1'b0;
+    rst          = 1'b0;
+    watchdog_rst = 1'b1;
     #(`CLK_PERIOD * 4);
     rst = 1'b1;
   end

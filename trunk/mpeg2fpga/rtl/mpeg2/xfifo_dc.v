@@ -1,7 +1,39 @@
 //Wrapper for generic_fifo_dc and microchip FIFO (COREFIFO)
 
+/*
+ * Reset-domain fix (2026-08-26, mem_req_wr_almost_full real-hardware stall
+ * investigation -- see docs/bringup and fase7a_size_zero_vld_stall):
+ * used to take a single `rst`, fed unchanged into both COREFIFO's WRESET_N
+ * and RRESET_N below. COREFIFO's own async/corefifo_async.v -- read with
+ * this project's actual params (SYNC:0, SYNC_RESET:1) -- reduces
+ * sresetn_wclk/sresetn_rclk to WRESET_N/RRESET_N *directly*, sampled as a
+ * plain synchronous condition by every flop in each clock domain (the
+ * write-pointer register on wclk, the read-pointer register on rclk, their
+ * cross-domain Gray-code synchronizers, etc.) -- there is no internal
+ * re-synchronization stage in this configuration (the resetsync submodule
+ * instances that would do that are dead/commented-out code in the
+ * generated COREFIFO.v for this param set). So RRESET_N must already be
+ * synchronous to RCLOCK, and WRESET_N to WCLOCK, when they arrive here --
+ * every caller in this codebase only ever had ONE reset, synchronized to
+ * clk (mpeg2video's sync_rst), which is only correct for whichever side of
+ * a given instance happens to sit on clk. For fifo_mem_req_dc_88x64
+ * (WCLOCK=clk, RCLOCK=mem_clk), RRESET_N was being driven by a clk-domain
+ * signal sampled synchronously by mem_clk-domain flops -- a textbook CDC
+ * violation: sync_rst's release edge has no defined timing relationship to
+ * mem_clk, so the read-pointer register (and everything downstream of it,
+ * including whatever feeds AFULL/prog_full) can end up in an inconsistent
+ * state after reset, independent of the FIFO's actual occupancy -- matching
+ * the observed symptom (mem_req_wr_almost_full stuck true forever,
+ * unrelated to how many requests are actually in flight -- see the
+ * dbg_mem_req_wr_push_cnt/dbg_mem_req_rd_pop_cnt instrumentation added
+ * alongside this fix). Now takes wr_rst (must be synchronous to wr_clk)
+ * and rd_rst (must be synchronous to rd_clk) separately -- callers must
+ * supply the correctly-domain-matched reset for each (framestore.v now
+ * has a real mem_rst input for exactly this).
+ */
 module xfifo_dc (
-		 rst,
+		 wr_rst,
+		 rd_rst,
 		 wr_clk,
 		 din,
 		 wr_en,
@@ -25,7 +57,8 @@ module xfifo_dc (
    parameter USE_GENERIC = 1'b0; //Use generic_fifo_dc from OpenCores, deprecated
    parameter check_valid=1;    /* assign x's to fifo output when valid is not asserted */
    
-   input          rst;         /* low active sync master reset */
+   input          wr_rst;      /* low active sync master reset, wr_clk domain */
+   input          rd_rst;      /* low active sync master reset, rd_clk domain */
    /* read port */
    input          rd_clk;      /* read clock. positive edge active */
    output [dta_width-1:0] dout; /* data output */
@@ -84,19 +117,19 @@ module xfifo_dc (
       assign overflow = fifo_overflow;
 
       always @(posedge rd_clk)
-	if (~rst) fifo_valid <= 1'b0;
+	if (~rd_rst) fifo_valid <= 1'b0;
 	else fifo_valid <= rd_en && ~fifo_empty;
 
    always @(posedge rd_clk)
-     if (~rst) fifo_underflow <= 1'b0;
+     if (~rd_rst) fifo_underflow <= 1'b0;
      else fifo_underflow <= rd_en && fifo_empty;
 
    always @(posedge wr_clk)
-     if (~rst) fifo_wr_ack <= 1'b0;
+     if (~wr_rst) fifo_wr_ack <= 1'b0;
      else fifo_wr_ack <= wr_en && ~fifo_full;
 
    always @(posedge wr_clk)
-     if (~rst) fifo_overflow <= 1'b0;
+     if (~wr_rst) fifo_overflow <= 1'b0;
      else fifo_overflow <= wr_en && fifo_full;
    end
    endgenerate
@@ -104,14 +137,14 @@ module xfifo_dc (
    generate
       if (USE_GENERIC == 1'b1)
 	begin
-	   generic_fifo_dc 
+	   generic_fifo_dc
 	     #(.aw(addr_width),
 	       .dw(dta_width),
 	       .n(prog_thresh))
 	   gfifo_dc (
-		     .rd_clk(rd_clk), 
-		     .wr_clk(wr_clk), 
-		     .rst(rst), 
+		     .rd_clk(rd_clk),
+		     .wr_clk(wr_clk),
+		     .rst(wr_rst),
 		     .clr(1'b0), 
 		     .din(din), 
 		     .we(wr_en && ~fifo_full), 
@@ -133,10 +166,10 @@ module xfifo_dc (
 			      .DATA(din),
 			      .RCLOCK(rd_clk),
 			      .RE(rd_en),
-			      .RRESET_N(rst),
+			      .RRESET_N(rd_rst),
 			      .WCLOCK(wr_clk),
 			      .WE(wr_en),
-			      .WRESET_N(rst),
+			      .WRESET_N(wr_rst),
 			      // Outputs
 			      .AEMPTY(prog_empty),
 			      .AFULL(prog_full),
@@ -157,10 +190,10 @@ module xfifo_dc (
 				.DATA(din),
 				.RCLOCK(rd_clk),
 				.RE(rd_en),
-				.RRESET_N(rst),
+				.RRESET_N(rd_rst),
 				.WCLOCK(wr_clk),
 				.WE(wr_en),
-				.WRESET_N(rst),
+				.WRESET_N(wr_rst),
 				// Outputs
 				.AEMPTY(prog_empty),
 				.AFULL(prog_full),
@@ -181,10 +214,10 @@ module xfifo_dc (
 				.DATA(din),
 				.RCLOCK(rd_clk),
 				.RE(rd_en),
-				.RRESET_N(rst),
+				.RRESET_N(rd_rst),
 				.WCLOCK(wr_clk),
 				.WE(wr_en),
-				.WRESET_N(rst),
+				.WRESET_N(wr_rst),
 				// Outputs
 				.AEMPTY(prog_empty),
 				.AFULL(prog_full),

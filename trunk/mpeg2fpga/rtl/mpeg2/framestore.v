@@ -126,7 +126,7 @@
 `define CHECK 1
 `endif
 
-module framestore(rst, clk, mem_clk,
+module framestore(rst, clk, mem_clk, mem_rst,
                   fwd_rd_addr_empty, fwd_rd_addr_en, fwd_rd_addr_valid, fwd_rd_addr, fwd_wr_dta_full, fwd_wr_dta_almost_full, fwd_wr_dta_en, fwd_wr_dta_ack, fwd_wr_dta, fwd_rd_dta_almost_empty,
                   bwd_rd_addr_empty, bwd_rd_addr_en, bwd_rd_addr_valid, bwd_rd_addr, bwd_wr_dta_full, bwd_wr_dta_almost_full, bwd_wr_dta_en, bwd_wr_dta_ack, bwd_wr_dta, bwd_rd_dta_almost_empty,
                   recon_rd_empty, recon_rd_almost_empty, recon_rd_en, recon_rd_valid, recon_rd_addr, recon_rd_dta, recon_wr_almost_full,
@@ -140,12 +140,22 @@ module framestore(rst, clk, mem_clk,
 		  tag_wr_almost_full, tag_wr_full, tag_wr_overflow,
                   vbuf_wr_addr, vbuf_rd_addr,
                   disp_service_cnt, vbr_service_cnt, vbr_starved_cnt,
-                  arbiter_flags, mem_res_valid_cnt, dbg_last_mem_req_wr_addr
+                  arbiter_flags, mem_res_valid_cnt, dbg_last_mem_req_wr_addr,
+                  dbg_mem_req_wr_push_cnt, dbg_mem_req_rd_pop_cnt
                   );
 
   input            rst;
   input            clk;
   input            mem_clk;
+  /* 2026-08-26 (mem_req_wr_almost_full investigation): mpeg2video's own
+   * mem_clk-domain equivalent of `rst` (reset pin OR watchdog, synchronized
+   * to mem_clk -- same signal mem2axi_bridge.v used to take before its own
+   * graceful-abort fix split it further). Needed here because the two
+   * dual-clock fifos below (mem_request_fifo, mem_response_fifo) each have
+   * one side on mem_clk -- see their instantiations' wr_rst/rd_rst comments
+   * and wrappers.v/xfifo_dc.v's header comment for why a single clk-domain
+   * `rst` fed to a mem_clk-domain CoreFIFO port is a real CDC violation. */
+  input            mem_rst;
   /* motion compensation: reading forward reference frame */
   input             fwd_rd_addr_empty;
   output            fwd_rd_addr_en;
@@ -224,6 +234,22 @@ module framestore(rst, clk, mem_clk,
   output      [31:0]arbiter_flags;
   output      [31:0]mem_res_valid_cnt;
   output      [21:0]dbg_last_mem_req_wr_addr;
+  /* 2026-08-26 (mem_req_wr_almost_full investigation, requested directly):
+   * two free-running occupancy counters straddling mem_request_fifo,
+   * independent of anything CoreFIFO reports internally -- push_cnt (clk
+   * domain) counts every mem_req_wr_en; pop_cnt (mem_clk domain) counts
+   * every accepted pop (mem_req_rd_en && mem_req_rd_valid). Software reads
+   * both (each just 2-FF-synchronized into apb3_mpeg2fpga_bridge.v's PCLK/
+   * core_clk domain, same lightweight pattern as dbg_last_write_awaddr_
+   * issued -- fine for a debug value that's static by the time anyone
+   * bothers reading it, i.e. exactly when the system has already stalled)
+   * and takes push_cnt - pop_cnt (mod 256, safe since true occupancy is
+   * bounded by MEMREQ fifo depth, well under 128) as ground-truth in-flight
+   * request count, to check directly whether mem_req_wr_almost_full (prog_
+   * full, CoreFIFO's own AFULL) reflects a genuinely near-full fifo or is
+   * stuck asserted independent of real occupancy. */
+  output reg    [7:0]dbg_mem_req_wr_push_cnt;
+  output reg    [7:0]dbg_mem_req_rd_pop_cnt;
 
   /* local fifo registers */
 
@@ -240,6 +266,14 @@ module framestore(rst, clk, mem_clk,
   output       [63:0]mem_req_rd_dta;
   input              mem_req_rd_en;
   output             mem_req_rd_valid;
+
+  always @(posedge clk)
+    if (~rst) dbg_mem_req_wr_push_cnt <= 8'b0;
+    else if (mem_req_wr_en) dbg_mem_req_wr_push_cnt <= dbg_mem_req_wr_push_cnt + 8'd1;
+
+  always @(posedge mem_clk)
+    if (~mem_rst) dbg_mem_req_rd_pop_cnt <= 8'b0;
+    else if (mem_req_rd_en && mem_req_rd_valid) dbg_mem_req_rd_pop_cnt <= dbg_mem_req_rd_pop_cnt + 8'd1;
 
   wire          [2:0]tag_wr_dta;
   wire               tag_wr_en;
@@ -371,8 +405,12 @@ module framestore(rst, clk, mem_clk,
     .prog_thresh(MEMREQ_THRESHOLD),  // threshold to make framestore_request stop writing before mem_request_fifo overflows
     .FIFO_XILINX(0))
     mem_request_fifo (
-    .rst(rst), 
-    .wr_clk(clk), 
+    /* wr_clk=clk -> wr_rst must be clk-domain (rst, i.e. sync_rst); rd_clk=
+     * mem_clk -> rd_rst must be mem_clk-domain (mem_rst), not rst -- see
+     * wrappers.v/xfifo_dc.v header comments. This was the CDC bug. */
+    .wr_rst(rst),
+    .rd_rst(mem_rst),
+    .wr_clk(clk),
     .din({mem_req_wr_cmd, mem_req_wr_addr, mem_req_wr_dta}), 
     .wr_en(mem_req_wr_en), 
     .full(mem_req_wr_full), 
@@ -425,8 +463,12 @@ module framestore(rst, clk, mem_clk,
     .prog_thresh(MEMRESP_THRESHOLD),   // threshold to make mem_ctl stop writing before mem_response_fifo overflows
     .FIFO_XILINX(0))
     mem_response_fifo (
-    .rst(rst), 
-    .wr_clk(mem_clk), 
+    /* reversed vs. mem_request_fifo above: wr_clk=mem_clk here, so wr_rst
+     * must be mem_rst; rd_clk=clk, so rd_rst stays rst. Same CDC bug,
+     * mirrored to the other side of this fifo. */
+    .wr_rst(mem_rst),
+    .rd_rst(rst),
+    .wr_clk(mem_clk),
     .din(mem_res_wr_dta), 
     .wr_en(mem_res_wr_en), 
     .full(mem_res_wr_full), 

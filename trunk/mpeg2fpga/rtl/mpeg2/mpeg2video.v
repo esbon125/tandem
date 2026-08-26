@@ -60,7 +60,8 @@ module mpeg2video(clk, mem_clk, dot_clk,
              testpoint_dip, testpoint_dip_en, testpoint,
              vbuf_wr_addr, vbuf_rd_addr,                                                                                        // clocked with clk; Fase 7a debug
              disp_service_cnt, vbr_service_cnt, vbr_starved_cnt, arbiter_flags,                                                 // clocked with clk; Fase 7a debug
-             mem_res_valid_cnt, dbg_last_mem_req_wr_addr                                                                        // clocked with clk; Fase 7a debug
+             mem_res_valid_cnt, dbg_last_mem_req_wr_addr,                                                                       // clocked with clk; Fase 7a debug
+             dbg_mem_req_wr_push_cnt, dbg_mem_req_rd_pop_cnt                                                                    // push_cnt clocked with clk, pop_cnt with mem_clk
 	     );
 
   input            clk;                     // clock. Typically a multiple of 27 Mhz as MPEG2 timestamps have a 27 Mhz resolution.
@@ -68,6 +69,7 @@ module mpeg2video(clk, mem_clk, dot_clk,
   input            dot_clk;                 // video clock. Typically between 25 and 75 Mhz, depending upon MPEG2 resolution and frame rate.
 `else
 module mpeg2video(ref_clk, clk_out, mem_clk_out, mem_rst_out, core_rst_out,
+             mem_hard_rst_out, mem_watchdog_rst_out,
              rst,                                                                                                                 // clocked with clk
              stream_data, stream_valid,                                                                                           // clocked with clk
 	     reg_addr, reg_wr_en, reg_dta_in, reg_rd_en, reg_dta_out,                                                             // clocked with clk
@@ -78,7 +80,8 @@ module mpeg2video(ref_clk, clk_out, mem_clk_out, mem_rst_out, core_rst_out,
              testpoint_dip, testpoint_dip_en, testpoint,
              vbuf_wr_addr, vbuf_rd_addr,                                                                                        // clocked with clk; Fase 7a debug
              disp_service_cnt, vbr_service_cnt, vbr_starved_cnt, arbiter_flags,                                                 // clocked with clk; Fase 7a debug
-             mem_res_valid_cnt, dbg_last_mem_req_wr_addr                                                                        // clocked with clk; Fase 7a debug
+             mem_res_valid_cnt, dbg_last_mem_req_wr_addr,                                                                       // clocked with clk; Fase 7a debug
+             dbg_mem_req_wr_push_cnt, dbg_mem_req_rd_pop_cnt                                                                    // push_cnt clocked with clk, pop_cnt with mem_clk
 	     );
 
   input            ref_clk;
@@ -112,6 +115,13 @@ module mpeg2video(ref_clk, clk_out, mem_clk_out, mem_rst_out, core_rst_out,
   output           mem_clk_out;
   output           mem_rst_out;
   output           core_rst_out;
+  /* mem_hard_rst_out/mem_watchdog_rst_out (2026-08-26): mem_clk-domain
+   * raw-reset-only and watchdog-only signals, for mem2axi_bridge.v's
+   * graceful-abort fix -- see reset.v's header comment on mem_hard_rst/
+   * mem_watchdog_rst for why mem_rst_out (the combined signal) isn't
+   * enough on its own anymore. */
+  output           mem_hard_rst_out;
+  output           mem_watchdog_rst_out;
   wire            clk;                     // clock. Typically a multiple of 27 Mhz as MPEG2 timestamps have a 27 Mhz resolution.
   wire            mem_clk;                 // memory clock. Typically 133-166 MHz.
   wire            dot_clk;                 // video clock. Typically between 25 and 75 Mhz, depending upon MPEG2 resolution and frame rate.
@@ -119,6 +129,8 @@ module mpeg2video(ref_clk, clk_out, mem_clk_out, mem_rst_out, core_rst_out,
   assign mem_clk_out = mem_clk;
   assign mem_rst_out = mem_rst;
   assign core_rst_out = sync_rst;
+  assign mem_hard_rst_out = mem_hard_rst;
+  assign mem_watchdog_rst_out = mem_watchdog_rst;
 `endif
 
   input            rst;                     // active low reset. Internally synchronized.
@@ -163,6 +175,8 @@ module mpeg2video(ref_clk, clk_out, mem_clk_out, mem_rst_out, core_rst_out,
   output      [31:0]arbiter_flags;
   output      [31:0]mem_res_valid_cnt;
   output      [21:0]dbg_last_mem_req_wr_addr;
+  output       [7:0]dbg_mem_req_wr_push_cnt;   // clk domain
+  output       [7:0]dbg_mem_req_rd_pop_cnt;    // mem_clk domain -- see framestore.v's header comment
 
   /* memory controller interface */
   output      [1:0]mem_req_rd_cmd;
@@ -186,6 +200,8 @@ module mpeg2video(ref_clk, clk_out, mem_clk_out, mem_rst_out, core_rst_out,
   wire             mem_rst;                 // reset, either from rst input pin or watchdog, synchronized to mem_clk
   wire             dot_rst;                 // reset, either from rst input pin or watchdog, synchronized to dot_clk
   wire             hard_rst;                // reset, only from rst input, synchronized to clk
+  wire             mem_hard_rst;            // reset, only from rst input, synchronized to mem_clk
+  wire             mem_watchdog_rst;        // reset, only from watchdog, synchronized to mem_clk
 
   /* watchdog timer */
   output           watchdog_rst;            // low when watchdog timer expires.
@@ -656,7 +672,9 @@ always @(posedge dot_clk)
     .clk_rst(sync_rst), 
     .mem_rst(mem_rst), 
     .dot_rst(dot_rst),
-    .hard_rst(hard_rst)
+    .hard_rst(hard_rst),
+    .mem_hard_rst(mem_hard_rst),
+    .mem_watchdog_rst(mem_watchdog_rst)
     );
 
   /* register synchronizers */
@@ -1341,9 +1359,10 @@ always @(posedge dot_clk)
    */
 
   framestore framestore (
-    .rst(sync_rst), 
-    .clk(clk), 
+    .rst(sync_rst),
+    .clk(clk),
     .mem_clk(mem_clk),
+    .mem_rst(mem_rst),
     /* motion compensation: reading forward reference frame */
     .fwd_rd_addr_empty(fwd_rd_addr_empty), 
     .fwd_rd_addr_en(fwd_rd_addr_en), 
@@ -1434,7 +1453,9 @@ always @(posedge dot_clk)
     .vbr_starved_cnt(vbr_starved_cnt),
     .arbiter_flags(arbiter_flags),
     .mem_res_valid_cnt(mem_res_valid_cnt),
-    .dbg_last_mem_req_wr_addr(dbg_last_mem_req_wr_addr)
+    .dbg_last_mem_req_wr_addr(dbg_last_mem_req_wr_addr),
+    .dbg_mem_req_wr_push_cnt(dbg_mem_req_wr_push_cnt),
+    .dbg_mem_req_rd_pop_cnt(dbg_mem_req_rd_pop_cnt)
     );
 
   /*

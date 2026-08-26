@@ -66,8 +66,16 @@ module pixel_queue(
     .prog_thresh(PIXEL_THRESHOLD),
     .FIFO_XILINX(0))
     pixel_fifo (
-    .rst(rst), 
-    .wr_clk(clk_in), 
+    /* 2026-08-26: fifo_dc now takes wr_rst/rd_rst separately (see
+     * wrappers.v/xfifo_dc.v's header comments -- mem_req_wr_almost_full
+     * investigation). This instance still passes the same rst to both,
+     * unchanged behavior -- it has the identical class of CDC gap on its
+     * own clk_in<->clk_out crossing (only synchronized to one side), but
+     * that's a separate, not-yet-investigated issue on the display path,
+     * out of scope for this fix. */
+    .wr_rst(rst),
+    .rd_rst(rst),
+    .wr_clk(clk_in),
     .din({y_in, u_in, v_in, osd_in, position_in}), 
     .wr_en(pixel_wr_en && clk_in_en), 
     .wr_ack(),

@@ -126,7 +126,8 @@ module testbench ();
       .FIFO_XILINX(0)
       )
       mem_response_fifo (
-      .rst(rst),
+      .wr_rst(rst),
+      .rd_rst(rst),
       .wr_clk(mem_clk),
       .din(mem_res_wr_dta),
       .wr_en(mem_res_wr_en),
@@ -164,7 +165,8 @@ module testbench ();
       .FIFO_XILINX(0)
       )
       mem_request_fifo_test (
-      .rst(rst),
+      .wr_rst(rst),
+      .rd_rst(rst),
       .wr_clk(mem_clk),
       .din(req_din),
       .wr_en(req_wr_en),
@@ -177,6 +179,50 @@ module testbench ();
       .rd_en(req_rd_en),
       .empty(req_empty),
       .valid(req_valid),
+      .underflow(),
+      .prog_empty()
+      );
+
+  /* THIRD real CoreFIFO instance -- 2026-08-26, mem_req_wr_almost_full
+   * investigation continued: mem_request_fifo_test above has wr_clk/rd_clk
+   * swapped relative to framestore.v's real mem_request_fifo (wr_clk=clk,
+   * rd_clk=mem_clk there) AND gates its rd_en on ~empty, unlike mem2axi_
+   * bridge's real S_IDLE behavior (mem_req_rd_en held continuously HIGH
+   * regardless of empty, see mem2axi_bridge.v: `mem_req_rd_en <= (next ==
+   * S_IDLE)`). Real hardware retest (2026-08-26, with wr_rst/rd_rst fix
+   * applied and confirmed via dbg_mem_req_wr_push_cnt/dbg_mem_req_rd_pop_cnt)
+   * showed push_cnt=60/pop_cnt=0 forever -- AFULL correct, but EMPTY/DVLD
+   * on the *read* (mem_clk) side never assert despite genuine 60-deep
+   * occupancy. This instance matches the real orientation and RE-held-high
+   * usage exactly, to see if it reproduces in a controlled, fast sim. */
+  reg  [87:0] req2_din;
+  reg         req2_wr_en;
+  wire        req2_full;
+  wire [87:0] req2_dout;
+  wire        req2_valid;
+  wire        req2_empty;
+
+  fifo_dc #(
+      .addr_width(9'd6),
+      .dta_width(9'd88),
+      .prog_thresh(9'd32),
+      .FIFO_XILINX(0)
+      )
+      mem_request_fifo_test2 (
+      .wr_rst(rst),
+      .rd_rst(rst),
+      .wr_clk(clk),          /* matches framestore.v: mem_request_fifo wr_clk=clk */
+      .din(req2_din),
+      .wr_en(req2_wr_en),
+      .full(req2_full),
+      .wr_ack(),
+      .overflow(),
+      .prog_full(),
+      .rd_clk(mem_clk),      /* matches framestore.v: mem_request_fifo rd_clk=mem_clk */
+      .dout(req2_dout),
+      .rd_en(1'b1),          /* held continuously high, matching mem2axi_bridge's real S_IDLE RE */
+      .empty(req2_empty),
+      .valid(req2_valid),
       .underflow(),
       .prog_empty()
       );
@@ -213,6 +259,8 @@ module testbench ();
     mem_req_rd_valid = 1'b0;
     req_din = 88'b0;
     req_wr_en = 1'b0;
+    req2_din = 88'b0;
+    req2_wr_en = 1'b0;
   end
 
   assign req_rd_en = rst & ~req_empty;
@@ -410,6 +458,53 @@ module testbench ();
         end else begin
           $display("PASS mem_request_fifo (fifo_mem_req_dc_88x64) delivered a word correctly -- bug does NOT reproduce here: 0x%022h", req_dout);
         end
+      end
+    end
+
+    /* THIRD CoreFIFO instance test -- real orientation (wr_clk=clk, rd_clk=
+     * mem_clk) and RE held continuously high (matching mem2axi_bridge's real
+     * S_IDLE behavior), pushing 60 words (matching the real stuck-at-60
+     * occupancy seen on hardware) to see if DVLD/valid ever assert. */
+    begin : req_fifo_test2
+      integer i;
+      integer timeout;
+      reg [87:0] expect_val;
+      integer got_count;
+
+      for (i = 0; i < 60; i = i + 1) begin
+        @(posedge clk);
+        #1;
+        req2_din   = {24'hAAAAAA, 32'hF00D_0000 + i, 32'hF00D_0000 + i};
+        req2_wr_en = 1'b1;
+        @(posedge clk);
+        #1;
+        req2_wr_en = 1'b0;
+      end
+
+      $display("[%0t] req_fifo_test2: pushed 60 words, req2_empty=%b, waiting for req2_valid...", $time, req2_empty);
+
+      got_count = 0;
+      timeout = 0;
+      while (got_count < 60 && timeout < 5000) begin
+        @(posedge mem_clk);
+        timeout = timeout + 1;
+        if (req2_valid === 1'b1) begin
+          expect_val = {24'hAAAAAA, 32'hF00D_0000 + got_count, 32'hF00D_0000 + got_count};
+          if (req2_dout !== expect_val) begin
+            $display("[%0t] req_fifo_test2: word %0d MISMATCH got=0x%022h expected=0x%022h",
+                      $time, got_count, req2_dout, expect_val);
+          end
+          got_count = got_count + 1;
+        end
+      end
+
+      checks = checks + 1;
+      if (got_count == 60) begin
+        $display("[%0t] RESULT req_fifo_test2: PASS -- all 60 words delivered (real orientation + RE held high). Hypothesis NOT reproduced in sim.", $time);
+      end else begin
+        errors = errors + 1;
+        $display("[%0t] RESULT req_fifo_test2: FAIL -- only %0d/60 words delivered before timeout (req2_empty=%b req2_full=%b). Hypothesis REPRODUCED.",
+                  $time, got_count, req2_empty, req2_full);
       end
     end
 

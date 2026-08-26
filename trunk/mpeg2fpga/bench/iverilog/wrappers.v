@@ -229,7 +229,8 @@ endmodule
  */
 
 module fifo_dc (
-	rst,
+	wr_rst,
+	rd_rst,
 	wr_clk,
 	din,
 	wr_en,
@@ -252,8 +253,18 @@ module fifo_dc (
 
   parameter FIFO_XILINX=0;    /* use Xilinx FIFO primitives */
   parameter check_valid=1;    /* assign x's to fifo output when valid is not asserted */
-         
-  input          rst;         /* low active sync master reset */
+
+  /* 2026-08-26: split from a single rst into wr_rst/rd_rst -- see
+   * rtl/mpeg2/wrappers.v's identical change for why (mem_req_wr_almost_full
+   * investigation: CoreFIFO's RRESET_N/WRESET_N must each be synchronous to
+   * their own clock, a single clk-domain rst fed to both is a real CDC
+   * violation on the real hardware path). This simulation-only generic_fifo_dc
+   * model doesn't have that hazard, but the port list must match rtl/mpeg2/
+   * wrappers.v's fifo_dc since framestore.v (shared, compiled against
+   * whichever wrappers.v is on the include path) now calls it with these
+   * names. */
+  input          wr_rst;      /* low active sync master reset, wr_clk domain */
+  input          rd_rst;      /* low active sync master reset, rd_clk domain */
   /* read port */
   input          rd_clk;      /* read clock. positive edge active */
   output [dta_width-1:0]dout; /* data output */
@@ -294,29 +305,29 @@ module fifo_dc (
   assign overflow = fifo_overflow;
 
   always @(posedge rd_clk)
-    if (~rst) fifo_valid <= 1'b0;
+    if (~rd_rst) fifo_valid <= 1'b0;
     else fifo_valid <= rd_en && ~fifo_empty;
 
   always @(posedge rd_clk)
-    if (~rst) fifo_underflow <= 1'b0;
+    if (~rd_rst) fifo_underflow <= 1'b0;
     else fifo_underflow <= rd_en && fifo_empty;
 
   always @(posedge wr_clk)
-    if (~rst) fifo_wr_ack <= 1'b0;
+    if (~wr_rst) fifo_wr_ack <= 1'b0;
     else fifo_wr_ack <= wr_en && ~fifo_full;
 
   always @(posedge wr_clk)
-    if (~rst) fifo_overflow <= 1'b0;
+    if (~wr_rst) fifo_overflow <= 1'b0;
     else fifo_overflow <= wr_en && fifo_full;
 
-  generic_fifo_dc 
+  generic_fifo_dc
     #(.aw(addr_width),
     .dw(dta_width),
     .n(prog_thresh))
     gfifo_dc (
-    .rd_clk(rd_clk), 
-    .wr_clk(wr_clk), 
-    .rst(rst), 
+    .rd_clk(rd_clk),
+    .wr_clk(wr_clk),
+    .rst(wr_rst),
     .clr(1'b0), 
     .din(din), 
     .we(wr_en && ~fifo_full), 
