@@ -667,10 +667,18 @@ module testbench ();
         @(posedge mem_clk);
         timeout = timeout + 1;
 `ifdef DEBUG_E2E
-        if (timeout < 40)
-          $display("[%0t] dbg: state=%0d next=%0d rd_en=%b valid=%b empty=%b cmd_r=%b addr_r=%h awvalid=%b awready=%b writes_done=%0d",
-                    $time, dut2.state, dut2.next, e2e_rd_en, e2e_valid, e2e_empty,
-                    dut2.cmd_r, dut2.addr_r, m2_axi_awvalid, m2_axi_awready, e2e_writes_done);
+        if (e2e_writes_done >= 29 && timeout < 3000)
+          $display("[%0t] dbg: state=%0d rd_en=%b valid=%b empty=%b writes_done=%0d | internal: empty_r=%b wptr=%0d rptr=%0d wptr_gray=%b rptr_gray=%b wptr_gray_sync=%b rdiff_bus=%0d we_i=%b re_i=%b",
+                    $time, dut2.state, e2e_rd_en, e2e_valid, e2e_empty, e2e_writes_done,
+                    mem_request_fifo_e2e.genblk1.xfifo_dc.genblk2.genblk3.mem_req_fifo_dc.fifo_mem_req_dc_88x64_0.sync0_wge_gen.U_corefifo_async.empty_r,
+                    mem_request_fifo_e2e.genblk1.xfifo_dc.genblk2.genblk3.mem_req_fifo_dc.fifo_mem_req_dc_88x64_0.sync0_wge_gen.U_corefifo_async.wptr,
+                    mem_request_fifo_e2e.genblk1.xfifo_dc.genblk2.genblk3.mem_req_fifo_dc.fifo_mem_req_dc_88x64_0.sync0_wge_gen.U_corefifo_async.rptr,
+                    mem_request_fifo_e2e.genblk1.xfifo_dc.genblk2.genblk3.mem_req_fifo_dc.fifo_mem_req_dc_88x64_0.sync0_wge_gen.U_corefifo_async.wptr_gray,
+                    mem_request_fifo_e2e.genblk1.xfifo_dc.genblk2.genblk3.mem_req_fifo_dc.fifo_mem_req_dc_88x64_0.sync0_wge_gen.U_corefifo_async.rptr_gray,
+                    mem_request_fifo_e2e.genblk1.xfifo_dc.genblk2.genblk3.mem_req_fifo_dc.fifo_mem_req_dc_88x64_0.sync0_wge_gen.U_corefifo_async.wptr_gray_sync,
+                    mem_request_fifo_e2e.genblk1.xfifo_dc.genblk2.genblk3.mem_req_fifo_dc.fifo_mem_req_dc_88x64_0.sync0_wge_gen.U_corefifo_async.rdiff_bus,
+                    mem_request_fifo_e2e.genblk1.xfifo_dc.genblk2.genblk3.mem_req_fifo_dc.fifo_mem_req_dc_88x64_0.sync0_wge_gen.U_corefifo_async.we_i,
+                    mem_request_fifo_e2e.genblk1.xfifo_dc.genblk2.genblk3.mem_req_fifo_dc.fifo_mem_req_dc_88x64_0.sync0_wge_gen.U_corefifo_async.re_i);
 `endif
       end
 

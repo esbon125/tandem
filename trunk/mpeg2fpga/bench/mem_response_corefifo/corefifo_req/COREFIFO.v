@@ -742,7 +742,7 @@ always @(posedge pos_rclk)	begin
                                          );
 
       end
-      else if (SYNC == 0 && (WDEPTH >= RDEPTH) ) begin  // for variable aspect ratio
+      else if (SYNC == 0 && (WDEPTH >= RDEPTH) ) begin : sync0_wge_gen  // for variable aspect ratio -- label added locally for testbench hierarchical probing, not in the real Libero-generated file
         // --------------------------------------------------------------------
         // Asynchronous FIFO operation Instance with Controller Only operation
         // --------------------------------------------------------------------

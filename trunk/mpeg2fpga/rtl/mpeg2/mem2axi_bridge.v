@@ -305,28 +305,49 @@ module mem2axi_bridge (
       dta_r  <= mem_req_rd_dta;
     end
 
-  /* pop mem_req_rd fifo: assert rd_en while idle AND the fifo reports data
-   * available, so a request is captured the cycle it becomes valid; drop it
-   * as soon as one is latched.
+  /* pop mem_req_rd fifo: assert rd_en for a single cycle per request, then
+   * wait for that request's data to actually be captured before ever
+   * asserting it again.
    *
-   * 2026-08-26 (mem_req_wr_almost_full investigation, root cause): this used
-   * to be `mem_req_rd_en <= (next == S_IDLE)` -- holding RE continuously
-   * high through the entire idle period regardless of whether the fifo had
-   * anything to give, not just for the one cycle a request needs capturing.
-   * The real generated CoreFIFO controller for this dual-clock async
-   * configuration (corefifo_async.v) breaks under that usage: reproduced in
-   * bench/mem_response_corefifo/testbench.v's req_fifo_test2 -- RE held
-   * high from an empty fifo through a 60-word fill only ever delivers 3
-   * words before EMPTY sticks high forever, though the fifo genuinely still
-   * holds the other 57. Every other fifo_dc consumer in this codebase
-   * already gates rd_en on ~empty instead of holding it unconditionally,
-   * and none of them show this failure -- matching that working pattern
-   * here fixes it. mem_req_rd_empty is framestore.v's mem_request_fifo's
-   * own `empty` output (mem_clk domain, same as this module -- no CDC
-   * needed), previously left unconnected. */
+   * 2026-08-26 (mem_req_wr_almost_full investigation, root cause #1): this
+   * used to be `mem_req_rd_en <= (next == S_IDLE)` -- holding RE
+   * continuously high through the entire idle period regardless of whether
+   * the fifo had anything to give, not just for the one cycle a request
+   * needs capturing. The real generated CoreFIFO controller for this
+   * dual-clock async configuration (corefifo_async.v) breaks under that
+   * usage: reproduced in bench/mem_response_corefifo/testbench.v's
+   * req_fifo_test2 -- RE held high from an empty fifo through a 60-word
+   * fill only ever delivers 3 words before EMPTY sticks high forever,
+   * though the fifo genuinely still holds the other 57. Every other
+   * fifo_dc consumer in this codebase already gates rd_en on ~empty
+   * instead of holding it unconditionally, and none of them show this
+   * failure -- matching that working pattern here fixed *that* failure
+   * mode. mem_req_rd_empty is framestore.v's mem_request_fifo's own
+   * `empty` output (mem_clk domain, same as this module -- no CDC needed),
+   * previously left unconnected.
+   *
+   * Root cause #2, found after #1 stopped reproducing the EMPTY-stuck
+   * failure but a *different* one appeared (bench/mem_response_corefifo's
+   * e2e_fix_test: real CoreFIFO's rptr correctly reaches 60 -- fifo drains
+   * completely, EMPTY behaves -- but only ~31/60 requests actually turn
+   * into AXI4 transactions): gating on `!mem_req_rd_empty` alone still
+   * lets rd_en re-assert on back-to-back cycles, because `next` keeps
+   * reading S_IDLE (mem_req_rd_valid hasn't arrived yet -- CoreFIFO's
+   * PIPE:1/READ_DVALID registers it one cycle after RE) right up until the
+   * cycle valid finally arrives. That extra cycle's rd_en pulse pops a
+   * *second* fifo word while the first one's data is still in flight;
+   * when the first word's valid/dout arrive and get captured into cmd_r/
+   * addr_r/dta_r, the second word's Q/DVLD arrive one cycle later with
+   * state already at S_LATCH -- outside the `state == S_IDLE` capture
+   * window -- and are silently dropped. Adding `&& !mem_req_rd_en` makes
+   * rd_en a strict one-cycle-then-wait pulse: it can never fire two
+   * cycles in a row, so at most one fifo word is ever popped before its
+   * result is captured, matching CoreFIFO's one-cycle read latency
+   * exactly. Verified in e2e_fix_test: rptr reaches 60 and all 60 turn
+   * into completed AXI4 writes (was 31/60 without this). */
   always @(posedge clk)
     if (~rst) mem_req_rd_en <= 1'b0;
-    else mem_req_rd_en <= (next == S_IDLE) && !mem_req_rd_empty;
+    else mem_req_rd_en <= (next == S_IDLE) && !mem_req_rd_empty && !mem_req_rd_en;
 
   /* AXI write address/data channels */
   always @(posedge clk)

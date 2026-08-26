@@ -1,5 +1,5 @@
 //////////////////////////////////////////////////////////////////////
-// Created by SmartDesign Sat Aug 22 16:34:41 2026
+// Created by SmartDesign Wed Aug 26 01:31:31 2026
 // Version: 2025.2 2025.2.0.14
 //////////////////////////////////////////////////////////////////////
 
@@ -23,7 +23,7 @@ create_and_configure_core -core_vlnv {Actel:DirectCore:COREFIFO:3.1.101} -compon
 "ECC:0"  \
 "ESTOP:true"  \
 "FSTOP:true"  \
-"FWFT:true"  \
+"FWFT:false"  \
 "NUM_STAGES:2"  \
 "OVERFLOW_EN:true"  \
 "PIPE:1"  \
@@ -163,7 +163,7 @@ fifo_mem_req_dc_88x64_fifo_mem_req_dc_88x64_0_COREFIFO #(
         .ESTOP        ( 1 ),
         .FAMILY       ( 27 ),
         .FSTOP        ( 1 ),
-        .FWFT         ( 1 ),
+        .FWFT         ( 0 ),
         .NUM_STAGES   ( 2 ),
         .OVERFLOW_EN  ( 1 ),
         .PIPE         ( 1 ),
