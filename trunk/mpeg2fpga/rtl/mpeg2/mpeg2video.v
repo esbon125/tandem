@@ -646,7 +646,44 @@ always @(posedge mem_clk)
 
 always @(posedge dot_clk)
     cnt_dot <= cnt_dot + 1;
-  
+
+  /* 2026-08-27 clock/reset liveness debug: dbg_mem_req_rd_pop_cnt reads 0
+   * on real hardware even with both mem_req_rd_en root causes fixed and
+   * sim-validated (mem_req_rd_empty gating + double-pop self-gate) -- but
+   * mem_request_fifo's own READ-side reset (framestore.v: rd_rst(mem_rst))
+   * comes from reset.v's mem_rst, which only deasserts once global_rst =
+   * clk_rst_1 && mem_rst_1 && dot_rst_1 releases -- i.e. it depends on
+   * dot_clk (the video/DVI clock) synchronizing too, unlike mem2axi_bridge's
+   * own mem_hard_rst/mem_watchdog_rst (synced directly from clk_rst_0/
+   * clk_watchdog_0, dot_clk-independent). If dot_clk isn't toggling (no
+   * display attached, or a CCC output issue like the already-fixed
+   * PLL_POWERDOWN_N_0 bug), mem_rst never releases, holding mem_request_
+   * fifo's read side (and mem_response_fifo's write side, wr_rst(mem_rst))
+   * in permanent reset while mem2axi_bridge itself runs fine -- exactly
+   * matching push_cnt=60/pop_cnt=0 and mem_response_fifo reading all zero.
+   * cnt_dot[0] toggles every dot_clk edge unconditionally (not reset-gated,
+   * like cnt_dot itself) -- a direct heartbeat. 2-FF synchronized into clk
+   * (matching the established dbg_mem_req_rd_pop_cnt CDC pattern in
+   * apb3_mpeg2fpga_bridge.v) since these are single-bit level/toggle
+   * signals, not wide buses -- no toggle-handshake needed. */
+  reg dot_heartbeat_meta, dot_heartbeat_sync;
+  reg mem_rst_dbg_meta, mem_rst_dbg_sync;
+  reg dot_rst_dbg_meta, dot_rst_dbg_sync;
+
+  always @(posedge clk) begin
+    dot_heartbeat_meta <= cnt_dot[0];
+    dot_heartbeat_sync <= dot_heartbeat_meta;
+    mem_rst_dbg_meta   <= mem_rst;
+    mem_rst_dbg_sync   <= mem_rst_dbg_meta;
+    dot_rst_dbg_meta   <= dot_rst;
+    dot_rst_dbg_sync   <= dot_rst_dbg_meta;
+  end
+
+  wire [31:0] arbiter_flags_framestore;
+  assign arbiter_flags = arbiter_flags_framestore |
+                          {dot_heartbeat_sync, mem_rst_dbg_sync, dot_rst_dbg_sync, 29'b0};
+
+
 `include "fifo_size.v"
 
   /* 
@@ -1453,7 +1490,7 @@ always @(posedge dot_clk)
     .disp_service_cnt(disp_service_cnt),
     .vbr_service_cnt(vbr_service_cnt),
     .vbr_starved_cnt(vbr_starved_cnt),
-    .arbiter_flags(arbiter_flags),
+    .arbiter_flags(arbiter_flags_framestore),
     .mem_res_valid_cnt(mem_res_valid_cnt),
     .dbg_last_mem_req_wr_addr(dbg_last_mem_req_wr_addr),
     .dbg_mem_req_wr_push_cnt(dbg_mem_req_wr_push_cnt),
