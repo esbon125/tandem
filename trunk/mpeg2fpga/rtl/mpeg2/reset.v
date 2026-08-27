@@ -101,32 +101,59 @@ module reset (clk, mem_clk, dot_clk, async_rst, watchdog_rst,
     .syncrst(dot_rst_1) 
     );
 
-  /* 
+  /*
    * combine all three resets - this produces a reset which is at least three clock cycles long in any clock domain
    */
 
   wire global_rst = clk_rst_1 && mem_rst_1 && dot_rst_1;
 
+  /* 2026-08-27: clk_rst/mem_rst used to both resync off the full 3-domain
+   * global_rst above. That 3-way AND exists so a reset is guaranteed >=3
+   * cycles long in *every* domain simultaneously -- a requirement inherited
+   * from the original Xilinx hard FIFO18/36 primitives (see this file's own
+   * header comment), which needed exactly that. This port no longer uses
+   * those primitives anywhere (FIFO_XILINX=0, xfifo_dc.v/CoreFIFO instead,
+   * see wrappers.v) -- so the 3-way coupling is vestigial, and actively
+   * harmful: it makes mem_rst (which gates mem_request_fifo's read-side and
+   * mem_response_fifo's write-side reset, see framestore.v) depend on
+   * dot_rst_1, i.e. on dot_clk (the video/DVI output clock) also
+   * synchronizing -- even though decode/memory and video output are
+   * logically independent subsystems. Confirmed on real hardware
+   * (2026-08-27): with no display attached, dot_clk never ticks, dot_rst_1
+   * never releases (a sync_reset's async clear holds it at 0 with no clock
+   * edges to march the release through), so global_rst -- and therefore
+   * mem_rst -- stays asserted forever, while clk_rst (decode-domain,
+   * confirmed alive: dbg_mem_req_wr_push_cnt reaches 60) is unaffected.
+   * mem2axi_bridge.v's mem_hard_rst/mem_watchdog_rst already sidestep this
+   * exact problem the same way, for the same reason (see their comments
+   * below) -- clk_rst/mem_rst get the analogous fix here: drop dot_rst_1
+   * from their own gate, keeping only the two domains that actually matter
+   * to them (clk_rst_1 && mem_rst_1, still >=3 cycles in both). dot_rst
+   * itself is untouched -- it legitimately only matters to dot_clk-domain
+   * (video output) logic, which does need dot_clk running regardless.
+   */
+  wire clkmem_rst = clk_rst_1 && mem_rst_1;
+
   /*
-   * Now synchronize global reset back to the individual clocks
+   * Now synchronize the reset back to the individual clocks
    */
 
   sync_reset clk_sreset_2 (
-    .clk(clk), 
-    .asyncrst(global_rst),
+    .clk(clk),
+    .asyncrst(clkmem_rst),
     .syncrst(clk_rst)
     );
 
   sync_reset mem_sreset_2 (
-    .clk(mem_clk), 
-    .asyncrst(global_rst),
-    .syncrst(mem_rst) 
+    .clk(mem_clk),
+    .asyncrst(clkmem_rst),
+    .syncrst(mem_rst)
     );
 
   sync_reset dot_sreset_2 (
-    .clk(dot_clk), 
+    .clk(dot_clk),
     .asyncrst(global_rst),
-    .syncrst(dot_rst) 
+    .syncrst(dot_rst)
     );
 
   /*
