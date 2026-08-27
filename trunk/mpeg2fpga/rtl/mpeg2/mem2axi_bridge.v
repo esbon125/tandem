@@ -385,7 +385,19 @@ module mem2axi_bridge (
       end
     endcase
 
-  assign m_axi_bready = (state == S_BRESP);
+  /* 2026-08-27: was (state == S_BRESP) -- state only reaches S_BRESP one
+   * cycle after AW/W actually complete (next decides S_BRESP combinationally
+   * off aw_done/w_done/awready/wready, state registers it the following
+   * edge), so BREADY used to trail the AW/W handshake by a cycle. Confirmed
+   * on real hardware (SmartDebug Active Probes): the FSM sits in S_BRESP
+   * forever, AWVALID/WVALID both already low (accepted), BVALID never
+   * arrives. AXI4 requires a slave to hold VALID until READY is seen, so a
+   * spec-compliant slave shouldn't be affected either way -- but this
+   * bridge is single-outstanding and has no other use for the cycle BREADY
+   * would otherwise withhold, so there is no reason to gate it on state at
+   * all. Holding it unconditionally high removes any chance of a real
+   * slave's BVALID window being missed by one cycle, at zero cost. */
+  assign m_axi_bready = 1'b1;
 
   /* AXI read address channel */
   always @(posedge clk)
@@ -401,7 +413,11 @@ module mem2axi_bridge (
       default:  m_axi_arvalid <= 1'b0;
     endcase
 
-  assign m_axi_rready = (state == S_RDATA);
+  /* same reasoning as m_axi_bready above -- data capture below already
+   * gates on (state == S_RDATA) && m_axi_rvalid, so holding RREADY
+   * unconditionally high can't cause a wrong read to be captured; it just
+   * removes the same one-cycle-late-READY risk on the read response. */
+  assign m_axi_rready = 1'b1;
 
   /* capture the read result, then push it once the response fifo has room */
   always @(posedge clk)
