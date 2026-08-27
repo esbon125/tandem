@@ -669,6 +669,7 @@ always @(posedge dot_clk)
   reg dot_heartbeat_meta, dot_heartbeat_sync;
   reg mem_rst_dbg_meta, mem_rst_dbg_sync;
   reg dot_rst_dbg_meta, dot_rst_dbg_sync;
+  reg mem_heartbeat_meta, mem_heartbeat_sync;
 
   always @(posedge clk) begin
     dot_heartbeat_meta <= cnt_dot[0];
@@ -677,11 +678,22 @@ always @(posedge dot_clk)
     mem_rst_dbg_sync   <= mem_rst_dbg_meta;
     dot_rst_dbg_meta   <= dot_rst;
     dot_rst_dbg_sync   <= dot_rst_dbg_meta;
+    mem_heartbeat_meta <= cnt_mem[0];
+    mem_heartbeat_sync <= mem_heartbeat_meta;
   end
 
+  /* 2026-08-27, second round: after decoupling mem_rst/clk_rst from
+   * dot_rst_1 in reset.v, mem_rst STILL reads stuck at 0 on real hardware
+   * even though push_cnt=60 proves sync_rst (=reset.v's clk_rst, now
+   * gated by the SAME clkmem_rst as mem_rst) is currently released -- a
+   * direct contradiction unless mem_clk itself has stopped ticking, or
+   * clk_rst itself isn't what this debug tap thinks it is. clk_rst needs
+   * no synchronizer (already clk domain, same as this tap); cnt_mem[0] is
+   * a direct mem_clk heartbeat, 2-FF synced the same way as cnt_dot[0]. */
   wire [31:0] arbiter_flags_framestore;
   assign arbiter_flags = arbiter_flags_framestore |
-                          {dot_heartbeat_sync, mem_rst_dbg_sync, dot_rst_dbg_sync, 29'b0};
+                          {dot_heartbeat_sync, mem_rst_dbg_sync, dot_rst_dbg_sync,
+                           mem_heartbeat_sync, sync_rst, 27'b0};
 
 
 `include "fifo_size.v"
