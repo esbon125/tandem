@@ -52,6 +52,14 @@
 
 `include "timescale.v"
 
+/* 2026-08-28 TEMPORARY (Fase 7a FIC_1 isolation test): build with a trivial
+ * free-running write generator driving mem2axi_bridge directly, completely
+ * bypassing u_mpeg2/framestore_request/CoreFIFO, to test whether FIC_1
+ * writes reach real DRAM in total isolation from the rest of the decoder.
+ * REMOVE this define (revert to the real decoder) before any non-diagnostic
+ * build -- see the matching `ifdef ISOLATED_MEM2AXI_TEST block below. */
+`define ISOLATED_MEM2AXI_TEST 1
+
 module mpeg2fpga_apb_peripheral (
     /* APB3 slave: FIC_3's PCLK domain */
     PCLK, PRESETn,
@@ -222,6 +230,13 @@ module mpeg2fpga_apb_peripheral (
   wire         mem_req_rd_en;
   wire         mem_req_rd_valid;
   wire         mem_req_rd_empty;   // 2026-08-26: see framestore.v's header comment
+
+  wire  [1:0]  mpeg2_mem_req_rd_cmd;
+  wire [21:0]  mpeg2_mem_req_rd_addr;
+  wire [63:0]  mpeg2_mem_req_rd_dta;
+  wire         mpeg2_mem_req_rd_valid;
+  wire         mpeg2_mem_req_rd_empty;
+
   wire [63:0]  mem_res_wr_dta;
   wire         mem_res_wr_en;
   wire         mem_res_wr_almost_full;
@@ -251,6 +266,50 @@ module mpeg2fpga_apb_peripheral (
    * mpeg2video.v's mem_hard_rst_out/mem_watchdog_rst_out comments. */
   wire         mem_hard_rst_internal;
   wire         mem_watchdog_rst_internal;
+
+  /* 2026-08-28 TEMPORARY diagnostic (Fase 7a FIC_1 isolation test): swap in
+   * a trivial free-running write generator ahead of u_mem_bridge instead of
+   * u_mpeg2's real mpeg2_mem_req_rd_* outputs (declared above), to test
+   * mem2axi_bridge + FIC_1 completely isolated from the rest of the decoder
+   * (framestore_request's arbitration, VLD, watchdog, FIC_2 reads via
+   * stream_dma.v, etc.) -- see docs/bringup for why. REVERT this whole
+   * `ifdef block (restore the plain mpeg2_mem_req_rd_* wiring in the `else
+   * branch, unconditionally) before any real decoder build once this test
+   * is done. Placed after mem_clk_internal/mem_hard_rst_internal's own
+   * declarations above -- iverilog (and possibly Synplify) require
+   * declare-before-use for module-scope nets referenced inside an always
+   * block's sensitivity list / reset condition, unlike a plain continuous
+   * assign. */
+`ifdef ISOLATED_MEM2AXI_TEST
+  reg  [21:0] test_addr;
+  reg [63:0]  test_dta;
+  reg         test_valid;
+
+  always @(posedge mem_clk_internal)
+    if (~mem_hard_rst_internal) begin
+      test_addr  <= 22'h100000;
+      test_dta   <= 64'hCAFE0000_00000000;
+      test_valid <= 1'b0;
+    end else if (mem_req_rd_en && test_valid) begin
+      test_addr  <= test_addr + 22'd1;
+      test_dta   <= test_dta + 64'd1;
+      test_valid <= 1'b0;
+    end else if (!test_valid) begin
+      test_valid <= 1'b1;
+    end
+
+  assign mem_req_rd_cmd   = 2'b11; // CMD_WRITE, see mem_codes.v
+  assign mem_req_rd_addr  = test_addr;
+  assign mem_req_rd_dta   = test_dta;
+  assign mem_req_rd_valid = test_valid;
+  assign mem_req_rd_empty = 1'b0;
+`else
+  assign mem_req_rd_cmd   = mpeg2_mem_req_rd_cmd;
+  assign mem_req_rd_addr  = mpeg2_mem_req_rd_addr;
+  assign mem_req_rd_dta   = mpeg2_mem_req_rd_dta;
+  assign mem_req_rd_valid = mpeg2_mem_req_rd_valid;
+  assign mem_req_rd_empty = mpeg2_mem_req_rd_empty;
+`endif
 
   wire [33:0]  testpoint;
 
@@ -396,12 +455,12 @@ module mpeg2fpga_apb_peripheral (
       .r(r), .g(g), .b(b), .y(y), .u(u), .v(v),
       .pixel_en(pixel_en), .h_sync(h_sync), .v_sync(v_sync), .c_sync(c_sync),
 
-      .mem_req_rd_cmd(mem_req_rd_cmd),
-      .mem_req_rd_addr(mem_req_rd_addr),
-      .mem_req_rd_dta(mem_req_rd_dta),
+      .mem_req_rd_cmd(mpeg2_mem_req_rd_cmd),
+      .mem_req_rd_addr(mpeg2_mem_req_rd_addr),
+      .mem_req_rd_dta(mpeg2_mem_req_rd_dta),
       .mem_req_rd_en(mem_req_rd_en),
-      .mem_req_rd_valid(mem_req_rd_valid),
-      .mem_req_rd_empty(mem_req_rd_empty),
+      .mem_req_rd_valid(mpeg2_mem_req_rd_valid),
+      .mem_req_rd_empty(mpeg2_mem_req_rd_empty),
 
       .mem_res_wr_dta(mem_res_wr_dta),
       .mem_res_wr_en(mem_res_wr_en),
