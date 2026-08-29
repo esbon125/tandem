@@ -52,13 +52,18 @@
 
 `include "timescale.v"
 
-/* 2026-08-28 TEMPORARY (Fase 7a FIC_1 isolation test): build with a trivial
- * free-running write generator driving mem2axi_bridge directly, completely
- * bypassing u_mpeg2/framestore_request/CoreFIFO, to test whether FIC_1
- * writes reach real DRAM in total isolation from the rest of the decoder.
- * REMOVE this define (revert to the real decoder) before any non-diagnostic
- * build -- see the matching `ifdef ISOLATED_MEM2AXI_TEST block below. */
-`define ISOLATED_MEM2AXI_TEST 1
+/* 2026-08-28: the isolation test (`ifdef ISOLATED_MEM2AXI_TEST below) is
+ * done -- confirmed the FIC_1 write-never-lands symptom reproduces in
+ * total isolation from the rest of the decoder, independent of clk/mem_clk/
+ * dot_clk frequency (tested at both the original 125MHz-for-all and the
+ * corrected 108/162/27MHz). Reverted to the real decoder (u_mpeg2's own
+ * mpeg2_mem_req_rd_* outputs feed u_mem_bridge again, matching production)
+ * to test whether the corrected clocks affect the *real* stream-push stall,
+ * which has never been tried with 108/162/27MHz -- only the isolated
+ * generator was tested at those frequencies so far. Leave undefined for
+ * any normal build; only define it again for a deliberate, new isolation
+ * test. */
+`undef ISOLATED_MEM2AXI_TEST
 
 module mpeg2fpga_apb_peripheral (
     /* APB3 slave: FIC_3's PCLK domain */
