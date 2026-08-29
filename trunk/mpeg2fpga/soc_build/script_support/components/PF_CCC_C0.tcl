@@ -39,7 +39,7 @@ create_and_configure_core -core_vlnv {Actel:SgCore:PF_CCC:*} -component_name {PF
 "GL0_0_BYPASS:0"  \
 "GL0_0_BYPASS_EN:false"  \
 "GL0_0_DEDICATED_USED:false"  \
-"GL0_0_DIV:8"  \
+"GL0_0_DIV:6"  \
 "GL0_0_DIVSTART:0"  \
 "GL0_0_DYNAMIC_PH:false"  \
 "GL0_0_EXPOSE_EN:false"  \
@@ -47,7 +47,7 @@ create_and_configure_core -core_vlnv {Actel:SgCore:PF_CCC:*} -component_name {PF
 "GL0_0_FABCLK_USED:true"  \
 "GL0_0_FREQ_SEL:false"  \
 "GL0_0_IS_USED:true"  \
-"GL0_0_OUT_FREQ:156"  \
+"GL0_0_OUT_FREQ:162"  \
 "GL0_0_PHASE_INDEX:0"  \
 "GL0_0_PHASE_SEL:false"  \
 "GL0_0_PLL_PHASE:0"  \
@@ -70,7 +70,7 @@ create_and_configure_core -core_vlnv {Actel:SgCore:PF_CCC:*} -component_name {PF
 "GL1_0_BYPASS:0"  \
 "GL1_0_BYPASS_EN:false"  \
 "GL1_0_DEDICATED_USED:false"  \
-"GL1_0_DIV:10"  \
+"GL1_0_DIV:9"  \
 "GL1_0_DIVSTART:0"  \
 "GL1_0_DYNAMIC_PH:false"  \
 "GL1_0_EXPOSE_EN:false"  \
@@ -78,7 +78,7 @@ create_and_configure_core -core_vlnv {Actel:SgCore:PF_CCC:*} -component_name {PF
 "GL1_0_FABCLK_USED:true"  \
 "GL1_0_FREQ_SEL:false"  \
 "GL1_0_IS_USED:true"  \
-"GL1_0_OUT_FREQ:125"  \
+"GL1_0_OUT_FREQ:108"  \
 "GL1_0_PHASE_INDEX:0"  \
 "GL1_0_PHASE_SEL:false"  \
 "GL1_0_PLL_PHASE:0"  \
@@ -101,7 +101,7 @@ create_and_configure_core -core_vlnv {Actel:SgCore:PF_CCC:*} -component_name {PF
 "GL2_0_BYPASS:0"  \
 "GL2_0_BYPASS_EN:false"  \
 "GL2_0_DEDICATED_USED:false"  \
-"GL2_0_DIV:10"  \
+"GL2_0_DIV:36"  \
 "GL2_0_DIVSTART:0"  \
 "GL2_0_DYNAMIC_PH:false"  \
 "GL2_0_EXPOSE_EN:false"  \
@@ -109,7 +109,7 @@ create_and_configure_core -core_vlnv {Actel:SgCore:PF_CCC:*} -component_name {PF
 "GL2_0_FABCLK_USED:true"  \
 "GL2_0_FREQ_SEL:false"  \
 "GL2_0_IS_USED:true"  \
-"GL2_0_OUT_FREQ:125"  \
+"GL2_0_OUT_FREQ:27"  \
 "GL2_0_PHASE_INDEX:0"  \
 "GL2_0_PHASE_SEL:false"  \
 "GL2_0_PLL_PHASE:0"  \
@@ -227,7 +227,7 @@ create_and_configure_core -core_vlnv {Actel:SgCore:PF_CCC:*} -component_name {PF
 "PLL_POSTDIVIDERADDSOFTLOGIC_0:true"  \
 "PLL_REF_CLK_SEL_0:false"  \
 "PLL_REF_CLK_SEL_1:false"  \
-"PLL_REFDIV_0:4"  \
+"PLL_REFDIV_0:1"  \
 "PLL_REFDIV_1:1"  \
 "PLL_RESET_ON_LOCK_0:true"  \
 "PLL_SPREAD_MODE_0:false"  \
