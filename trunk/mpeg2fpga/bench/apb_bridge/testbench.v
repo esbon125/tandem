@@ -1,0 +1,567 @@
+/*
+ * testbench.v - apb3_mpeg2fpga_bridge unit test
+ *
+ * Exercises the bridge in isolation (fake_regfile.v standing in for
+ * mpeg2video's real regfile.v) over an APB3 master BFM. PCLK and core_clk
+ * deliberately run at an unrelated, non-integer ratio to stress the
+ * toggle-handshake clock-domain crossing -- a bug that only shows up at a
+ * "convenient" clock ratio would be a false negative here.
+ *
+ * Run: make (see Makefile). Prints one line per check and a final
+ * "ALL TESTS PASSED" / "N TEST(S) FAILED" summary.
+ */
+
+`include "timescale.v"
+
+/* PCLK at 50 MHz (typical fabric/APB clock) */
+`define PCLK_PERIOD 20.0
+
+/* core_clk at 108 MHz, matching the project's existing clk convention
+ * (bench/iverilog/testbench.v `CLK_PERIOD, PF_CCC_C0 OUT1_FABCLK_0) --
+ * deliberately not an integer multiple of PCLK_PERIOD.
+ */
+`define CORE_CLK_PERIOD 9.259
+
+module testbench ();
+
+  reg         PCLK;
+  reg         PRESETn;
+  reg         PSEL;
+  reg         PENABLE;
+  reg         PWRITE;
+  reg  [6:0]  PADDR;
+  reg  [31:0] PWDATA;
+  wire [31:0] PRDATA;
+  wire        PREADY;
+  reg  [3:0]  PSTRB;
+
+  reg         core_clk;
+  reg         core_rst_n;
+  wire  [3:0] reg_addr;
+  wire        reg_wr_en;
+  wire [31:0] reg_dta_in;
+  wire        reg_rd_en;
+  wire [31:0] reg_dta_out;
+
+  reg         busy;
+  wire  [7:0] stream_data;
+  wire        stream_valid;
+
+  wire        dma_start;
+  wire [31:0] dma_addr;
+  wire [31:0] dma_len;
+  reg         dma_busy;
+  reg         dma_done;
+  reg  [31:0] dma_bytes_done;
+
+  reg  [21:0] vbuf_wr_addr;
+  reg  [21:0] vbuf_rd_addr;
+
+  reg  [31:0] disp_service_cnt;
+  reg  [31:0] vbr_service_cnt;
+  reg  [31:0] vbr_starved_cnt;
+  reg  [31:0] arbiter_flags;
+  reg  [31:0] mem_res_valid_cnt;
+  reg  [21:0] dbg_last_write_addr_from_fifo;
+  reg  [37:0] dbg_last_write_awaddr_issued;
+  reg  [21:0] dbg_last_mem_req_wr_addr;
+
+  integer     errors;
+  integer     checks;
+
+  apb3_mpeg2fpga_bridge dut (
+      .PCLK(PCLK), .PRESETn(PRESETn),
+      .PSEL(PSEL), .PENABLE(PENABLE), .PWRITE(PWRITE),
+      .PADDR(PADDR), .PWDATA(PWDATA), .PRDATA(PRDATA), .PREADY(PREADY),
+      .PSTRB(PSTRB),
+      .core_clk(core_clk), .core_rst_n(core_rst_n),
+      .reg_addr(reg_addr), .reg_wr_en(reg_wr_en), .reg_dta_in(reg_dta_in),
+      .reg_rd_en(reg_rd_en), .reg_dta_out(reg_dta_out),
+      .busy(busy), .stream_data(stream_data), .stream_valid(stream_valid),
+      .dma_start(dma_start), .dma_addr(dma_addr), .dma_len(dma_len),
+      .dma_busy(dma_busy), .dma_done(dma_done), .dma_bytes_done(dma_bytes_done),
+      .vbuf_wr_addr(vbuf_wr_addr), .vbuf_rd_addr(vbuf_rd_addr),
+      .disp_service_cnt(disp_service_cnt), .vbr_service_cnt(vbr_service_cnt),
+      .vbr_starved_cnt(vbr_starved_cnt), .arbiter_flags(arbiter_flags),
+      .mem_res_valid_cnt(mem_res_valid_cnt),
+      .dbg_last_write_addr_from_fifo(dbg_last_write_addr_from_fifo),
+      .dbg_last_write_awaddr_issued(dbg_last_write_awaddr_issued),
+      .dbg_last_mem_req_wr_addr(dbg_last_mem_req_wr_addr)
+  );
+
+  fake_regfile fake (
+      .core_clk(core_clk), .core_rst_n(core_rst_n),
+      .reg_addr(reg_addr), .reg_wr_en(reg_wr_en), .reg_dta_in(reg_dta_in),
+      .reg_rd_en(reg_rd_en), .reg_dta_out(reg_dta_out)
+  );
+
+  /* clocks */
+  initial begin
+    PCLK = 1'b0;
+    forever #(`PCLK_PERIOD / 2) PCLK = ~PCLK;
+  end
+
+  initial begin
+    core_clk = 1'b0;
+    forever #(`CORE_CLK_PERIOD / 2) core_clk = ~core_clk;
+  end
+
+  /* resets: hold both domains in reset for a few of their own cycles */
+  initial begin
+    PRESETn    = 1'b0;
+    core_rst_n = 1'b0;
+    #(`PCLK_PERIOD * 4);
+    PRESETn    = 1'b1;
+    #(`CORE_CLK_PERIOD * 4);
+    core_rst_n = 1'b1;
+  end
+
+  /* Watchdog: a stuck handshake (e.g. a CDC bug) would otherwise hang the
+   * simulator forever instead of failing loudly.
+   */
+  initial begin
+    #100000;
+    $display("TIMEOUT: simulation did not finish in time (stuck handshake?)");
+    $finish;
+  end
+
+  initial begin
+    PSEL    = 1'b0;
+    PENABLE = 1'b0;
+    PWRITE  = 1'b0;
+    PADDR   = 7'b0;
+    PWDATA  = 32'b0;
+    PSTRB   = 4'hF;
+    busy    = 1'b0;
+    dma_busy = 1'b0;
+    dma_done = 1'b0;
+    dma_bytes_done = 32'b0;
+    vbuf_wr_addr = 22'b0;
+    vbuf_rd_addr = 22'b0;
+    disp_service_cnt = 32'b0;
+    vbr_service_cnt = 32'b0;
+    vbr_starved_cnt = 32'b0;
+    arbiter_flags = 32'b0;
+    mem_res_valid_cnt = 32'b0;
+    dbg_last_write_addr_from_fifo = 22'b0;
+    dbg_last_write_awaddr_issued = 38'b0;
+    dbg_last_mem_req_wr_addr = 22'b0;
+  end
+
+  /* APB3 master BFM: one full write or read transfer, polling PREADY.
+   * The #1 after every @(posedge PCLK) avoids a race against the DUT's own
+   * posedge-PCLK always block -- without it, the DUT and this task could
+   * sample/drive PSEL/PENABLE in the same delta cycle in either order,
+   * depending on simulator scheduling.
+   */
+  task apb_transfer;
+    input         write;
+    input  [4:0]  addr;
+    input  [31:0] wdata;
+    output [31:0] rdata;
+    begin
+      @(posedge PCLK);
+      #1;
+      PSEL    = 1'b1;
+      PENABLE = 1'b0;
+      PWRITE  = write;
+      PADDR   = {addr, 2'b00};
+      PWDATA  = wdata;
+      PSTRB   = 4'hF;   /* every existing test expects a plain full-width write */
+      @(posedge PCLK);
+      #1;
+      PENABLE = 1'b1;
+      @(posedge PCLK);
+      #1;
+      while (PREADY !== 1'b1) begin
+        @(posedge PCLK);
+        #1;
+      end
+      rdata   = PRDATA;
+      PSEL    = 1'b0;
+      PENABLE = 1'b0;
+    end
+  endtask
+
+  /* Same as apb_transfer, but with an explicit PSTRB -- exercises the
+   * byte-lane-selective merge added for the Fase 7c PWDATA investigation
+   * (see apb3_mpeg2fpga_bridge.v's header comment): the MSS presents a
+   * 32-bit store as multiple single-byte beats, each with PSTRB marking
+   * which lane is real, and the bridge must only update that lane instead
+   * of blindly overwriting the whole register. */
+  task apb_transfer_pstrb;
+    input         write;
+    input  [4:0]  addr;
+    input  [31:0] wdata;
+    input  [3:0]  pstrb;
+    output [31:0] rdata;
+    begin
+      @(posedge PCLK);
+      #1;
+      PSEL    = 1'b1;
+      PENABLE = 1'b0;
+      PWRITE  = write;
+      PADDR   = {addr, 2'b00};
+      PWDATA  = wdata;
+      PSTRB   = pstrb;
+      @(posedge PCLK);
+      #1;
+      PENABLE = 1'b1;
+      @(posedge PCLK);
+      #1;
+      while (PREADY !== 1'b1) begin
+        @(posedge PCLK);
+        #1;
+      end
+      rdata   = PRDATA;
+      PSEL    = 1'b0;
+      PENABLE = 1'b0;
+      PSTRB   = 4'hF;
+    end
+  endtask
+
+  task check_eq;
+    input [255:0] name;   /* plain string, no $sformat needed for this Icarus version */
+    input [31:0]  got;
+    input [31:0]  expected;
+    begin
+      checks = checks + 1;
+      if (got !== expected) begin
+        errors = errors + 1;
+        $display("FAIL %0s: got 0x%08h, expected 0x%08h", name, got, expected);
+      end else begin
+        $display("PASS %0s: 0x%08h", name, got);
+      end
+    end
+  endtask
+
+  reg [31:0] rdata;
+
+  /* captures every stream_data byte the DUT pushes (stream_valid pulses
+   * for exactly one core_clk cycle, gone well before apb_transfer's task
+   * call returns) so the test can check it afterward. */
+  reg [7:0] captured_stream [0:15];
+  integer   captured_count;
+
+  always @(posedge core_clk)
+    if (stream_valid) begin
+      captured_stream[captured_count] = stream_data;
+      captured_count = captured_count + 1;
+    end
+
+  /* counts dma_start pulses, to check DMA_CTRL writes do/don't trigger one */
+  integer dma_start_count;
+
+  always @(posedge core_clk)
+    if (dma_start) dma_start_count = dma_start_count + 1;
+
+`ifdef DEBUG_TRACE
+  initial $monitor("t=%0t PSEL=%b PENABLE=%b PREADY=%b apb_state=%b req_toggle=%b ack_toggle_sync=%b core_state=%b req_toggle_sync=%b req_toggle_seen=%b reg_wr_en=%b reg_rd_en=%b",
+    $time, PSEL, PENABLE, PREADY, dut.apb_state, dut.req_toggle, dut.ack_toggle_sync,
+    dut.core_state, dut.req_toggle_sync, dut.req_toggle_seen, reg_wr_en, reg_rd_en);
+`endif
+
+  initial begin
+    errors = 0;
+    checks = 0;
+    rdata  = 32'b0;
+    captured_count = 0;
+
+    /* level wait, not two chained edge waits: PRESETn and core_rst_n
+     * release at different times (see the reset initial block above), so
+     * waiting for one edge and then the other -- in a fixed order -- would
+     * block forever if the one waited for second already went high first.
+     */
+    wait (PRESETn === 1'b1 && core_rst_n === 1'b1);
+    repeat (5) @(posedge PCLK);
+
+    /* Writes land in the write-mode bank (fake.write_mem), independent of
+     * whatever is preloaded in the read-mode bank (fake.read_mem).
+     */
+    apb_transfer(1'b1, 4'h0, 32'h0000_7f04, rdata); /* watchdog_interval=0x7f, all *_intr_en set, like mpeg2fpga_core's default */
+    apb_transfer(1'b1, 4'h5, 32'hdead_beef, rdata);
+    apb_transfer(1'b1, 4'hb, 32'h1234_5678, rdata);
+
+    check_eq("write_mem[0]", fake.write_mem[0], 32'h0000_7f04);
+    check_eq("write_mem[5]", fake.write_mem[5], 32'hdead_beef);
+    check_eq("write_mem[11]", fake.write_mem[11], 32'h1234_5678);
+    check_eq("write_mem[1] untouched", fake.write_mem[1], 32'h0000_0000);
+
+    /* Reads come from the independent read-mode bank */
+    fake.read_mem[0] = 32'h0000_0001;         /* version */
+    fake.read_mem[1] = 32'h0000_0008;         /* status: picture_hdr bit */
+    fake.read_mem[15] = 32'hcafe_babe;        /* testpoint */
+
+    apb_transfer(1'b0, 4'h0, 32'b0, rdata);
+    check_eq("read reg 0 (version)", rdata, 32'h0000_0001);
+
+    apb_transfer(1'b0, 4'h1, 32'b0, rdata);
+    check_eq("read reg 1 (status)", rdata, 32'h0000_0008);
+
+    apb_transfer(1'b0, 4'hf, 32'b0, rdata);
+    check_eq("read reg 15 (testpoint)", rdata, 32'hcafe_babe);
+
+    /* Back-to-back transactions, no idle cycles between them: stresses the
+     * toggle handshake to confirm it neither drops nor duplicates a
+     * transaction when a new one starts as soon as the previous PREADY
+     * fires.
+     */
+    fake.read_mem[2] = 32'h1111_1111;
+    fake.read_mem[3] = 32'h2222_2222;
+    apb_transfer(1'b1, 4'h2, 32'haaaa_aaaa, rdata);
+    apb_transfer(1'b0, 4'h2, 32'b0, rdata);
+    check_eq("back-to-back: read after write, reg 2", rdata, 32'h1111_1111);
+    check_eq("back-to-back: write_mem[2] unaffected by read", fake.write_mem[2], 32'haaaa_aaaa);
+    apb_transfer(1'b0, 4'h3, 32'b0, rdata);
+    check_eq("back-to-back: read reg 3", rdata, 32'h2222_2222);
+
+    /* STREAM_PUSH_ADDR (index 5'h10, Fase 7a): a write pulses stream_valid/
+     * stream_data instead of touching the regfile at all -- fake_regfile's
+     * write_mem[0] (reg_addr reads as 0 during a stream push, see the
+     * "assign reg_addr = apb_addr_r[3:0]" comment in the DUT) must stay
+     * untouched, since reg_wr_en is never asserted for this address.
+     */
+    apb_transfer(1'b1, 5'h10, 32'h0000_00ab, rdata);
+    check_eq("stream push: captured byte", {24'b0, captured_stream[captured_count-1]}, 32'h0000_00ab);
+    /* write_mem[0] was set to 0x7f04 by the very first transfer in this test
+     * (watchdog_interval config write, top of this block) -- a stream push
+     * decodes to reg_addr==0 too (apb_addr_r[3:0] of STREAM_PUSH_ADDR is
+     * 0), so this checks reg_wr_en really never fires for it, not that the
+     * register happens to read back as zero. */
+    check_eq("stream push: regfile untouched", fake.write_mem[0], 32'h0000_7f04);
+
+    /* busy backpressure: the transaction must not complete (PREADY stays
+     * low) until mpeg2video's busy output deasserts -- APB's own wait-state
+     * mechanism is the flow control here, no separate polling register.
+     */
+    busy = 1'b1;
+    fork
+      apb_transfer(1'b1, 5'h10, 32'h0000_00cd, rdata);
+      begin
+        repeat (30) @(posedge core_clk);
+        checks = checks + 1;
+        if (PREADY !== 1'b0) begin
+          errors = errors + 1;
+          $display("FAIL stream push: completed while busy was still asserted");
+        end else begin
+          $display("PASS stream push: held off while busy asserted");
+        end
+        busy = 1'b0;
+      end
+    join
+    check_eq("stream push: delivered once busy clears", {24'b0, captured_stream[captured_count-1]}, 32'h0000_00cd);
+
+    /* a register access right after a stream push must still work normally */
+    apb_transfer(1'b0, 4'h0, 32'b0, rdata);
+    check_eq("register read still works after stream push", rdata, 32'h0000_0001);
+
+    /* DMA_ADDR/DMA_LEN (Fase 7c): plain holding-register writes, no CDC
+     * pulse involved -- checked directly against the bridge's dma_addr/
+     * dma_len outputs, which are just continuous assigns of the holding
+     * registers.
+     */
+    apb_transfer(1'b1, 5'h11, 32'h0000_1000, rdata);
+    apb_transfer(1'b1, 5'h12, 32'h0000_0080, rdata);
+    check_eq("DMA_ADDR latched", dma_addr, 32'h0000_1000);
+    check_eq("DMA_LEN latched", dma_len, 32'h0000_0080);
+
+    /* Fase 7c debug: DMA_ADDR/DMA_LEN readback (added while investigating a
+     * real-hardware bug where DMA_LEN's written value never reached
+     * stream_dma.v -- lets software read back what the bridge actually
+     * latched, to bisect a write-path bug from a stream_dma-side one). */
+    apb_transfer(1'b0, 5'h11, 32'b0, rdata);
+    check_eq("DMA_ADDR readback", rdata, 32'h0000_1000);
+    apb_transfer(1'b0, 5'h12, 32'b0, rdata);
+    check_eq("DMA_LEN readback", rdata, 32'h0000_0080);
+
+    /* Fase 7c PWDATA investigation, root cause reproduction: real hardware
+     * showed the MSS presenting a 32-bit store as four single-byte APB
+     * beats, each with that byte replicated across all 4 PWDATA lanes and
+     * PSTRB marking the one real lane -- mimic that exact pattern here
+     * (last beat's replicated byte is 0x00, matching every small test value
+     * that was ever tried and always read back 0x00000000 on real hardware)
+     * and confirm the byte-lane merge reassembles the correct 32-bit value
+     * instead of only keeping the last beat. */
+    apb_transfer_pstrb(1'b1, 5'h12, 32'h37373737, 4'b0001, rdata);  /* byte0 = 0x37 */
+    apb_transfer_pstrb(1'b1, 5'h12, 32'h31313131, 4'b0010, rdata);  /* byte1 = 0x31 */
+    apb_transfer_pstrb(1'b1, 5'h12, 32'h00000000, 4'b0100, rdata);  /* byte2 = 0x00 */
+    apb_transfer_pstrb(1'b1, 5'h12, 32'h00000000, 4'b1000, rdata);  /* byte3 = 0x00 (the "always reads 0" beat) */
+    check_eq("DMA_LEN reassembled from 4 narrow PSTRB beats", dma_len, 32'h0000_3137);
+
+    /* A byte lane with PSTRB=0 must be left untouched, not zeroed -- confirms
+     * this is a real per-lane merge, not a masked overwrite that happens to
+     * look right when every lane is eventually written. */
+    apb_transfer_pstrb(1'b1, 5'h11, 32'hAABBCCDD, 4'b1111, rdata);
+    apb_transfer_pstrb(1'b1, 5'h11, 32'h000000EE, 4'b0001, rdata);  /* only byte0 */
+    check_eq("DMA_ADDR partial write leaves other lanes untouched", dma_addr, 32'hAABBCCEE);
+
+    /* DMA_CTRL start bit: pulses dma_start for one core_clk cycle when the
+     * DUT sees dma_busy low.
+     */
+    dma_start_count = 0;
+    dma_busy = 1'b0;
+    apb_transfer(1'b1, 5'h13, 32'h0000_0001, rdata);
+    repeat (5) @(posedge core_clk);
+    check_eq("DMA_CTRL start: dma_start pulsed once", dma_start_count, 32'd1);
+
+    /* DMA_STATUS read while busy: bit0=1, bit1 (done) still 0 */
+    dma_busy = 1'b1;
+    dma_bytes_done = 32'd40;
+    apb_transfer(1'b0, 5'h14, 32'b0, rdata);
+    check_eq("DMA_STATUS while busy", rdata, {24'd40, 6'b0, 1'b0, 1'b1});   /* done=0, busy=1 */
+
+    /* a DMA_CTRL start write while already busy must be ignored -- software
+     * is expected to poll DMA_STATUS first, same contract as DMA_ADDR/
+     * DMA_LEN must be written before DMA_CTRL.
+     */
+    dma_start_count = 0;
+    apb_transfer(1'b1, 5'h13, 32'h0000_0001, rdata);
+    repeat (5) @(posedge core_clk);
+    check_eq("DMA_CTRL start ignored while busy", dma_start_count, 32'd0);
+
+    /* dma_done pulse sets a sticky bit DMA_STATUS reports until the next
+     * start clears it.
+     */
+    dma_busy = 1'b0;
+    @(posedge core_clk);
+    dma_done = 1'b1;
+    @(posedge core_clk);
+    dma_done = 1'b0;
+    dma_bytes_done = 32'd112;
+    apb_transfer(1'b0, 5'h14, 32'b0, rdata);
+    check_eq("DMA_STATUS done sticky set", rdata, {24'd112, 6'b0, 1'b1, 1'b0});   /* done=1, busy=0 */
+
+    apb_transfer(1'b1, 5'h13, 32'h0000_0001, rdata);   /* new start clears done_sticky */
+    dma_busy = 1'b1;
+    apb_transfer(1'b0, 5'h14, 32'b0, rdata);
+    check_eq("DMA_STATUS done_sticky cleared by new start", rdata, {24'd112, 6'b0, 1'b0, 1'b1});   /* done=0, busy=1 */
+    dma_busy = 1'b0;
+
+    /* regfile/stream-push paths must still be unaffected by DMA register
+     * traffic -- same non-interference guarantee already checked above for
+     * stream push vs. regular registers.
+     */
+    apb_transfer(1'b0, 4'h0, 32'b0, rdata);
+    check_eq("register read still works after DMA register traffic", rdata, 32'h0000_0001);
+
+    /* Fase 7a debug (2026-08-21): vbuf_wr_addr/vbuf_rd_addr readback -- plain
+     * core_clk-domain inputs, zero-extended into the low 22 bits of PRDATA,
+     * same treatment as dma_addr/dma_len (no extra synchronizer, see
+     * apb3_mpeg2fpga_bridge.v's port comment). */
+    vbuf_wr_addr = 22'h1c0000;   /* VBUF (mem_codes.v, MP_AT_HL map) */
+    vbuf_rd_addr = 22'h000001;
+    apb_transfer(1'b0, 5'h16, 32'b0, rdata);
+    check_eq("VBUF_WR_ADDR readback", rdata, 32'h001c_0000);
+    apb_transfer(1'b0, 5'h17, 32'b0, rdata);
+    check_eq("VBUF_RD_ADDR readback", rdata, 32'h0000_0001);
+
+    /* a write to these addresses must be a harmless no-op (read-only debug
+     * registers) -- rdata_hold only updates on !apb_write_r in the DUT. */
+    apb_transfer(1'b1, 5'h16, 32'hFFFF_FFFF, rdata);
+    vbuf_wr_addr = 22'h1c0000;
+    apb_transfer(1'b0, 5'h16, 32'b0, rdata);
+    check_eq("VBUF_WR_ADDR write is a no-op", rdata, 32'h001c_0000);
+
+    /* Fase 7a debug (2026-08-22): arbiter starvation counters -- plain
+     * 32-bit core_clk-domain readback, same treatment as the two above. */
+    disp_service_cnt = 32'd123456;
+    vbr_service_cnt  = 32'd16;
+    vbr_starved_cnt  = 32'd987654;
+    apb_transfer(1'b0, 5'h18, 32'b0, rdata);
+    check_eq("DISP_SERVICE_CNT readback", rdata, 32'd123456);
+    apb_transfer(1'b0, 5'h19, 32'b0, rdata);
+    check_eq("VBR_SERVICE_CNT readback", rdata, 32'd16);
+    apb_transfer(1'b0, 5'h1a, 32'b0, rdata);
+    check_eq("VBR_STARVED_CNT readback", rdata, 32'd987654);
+
+    arbiter_flags = 32'hDEAD_1234;
+    apb_transfer(1'b0, 5'h1b, 32'b0, rdata);
+    check_eq("ARBITER_FLAGS readback", rdata, 32'hDEAD_1234);
+
+    mem_res_valid_cnt = 32'd424242;
+    apb_transfer(1'b0, 5'h1c, 32'b0, rdata);
+    check_eq("MEM_RES_VALID_CNT readback", rdata, 32'd424242);
+
+    /* Fase 7a debug (2026-08-23): dbg_last_write_addr_from_fifo/
+     * dbg_last_write_awaddr_issued -- genuinely mem_clk-domain in real
+     * hardware, but this testbench drives them combinationally as plain
+     * regs (no independent mem_clk here), so a few core_clk cycles of
+     * settle time are enough to clear the 2-FF synchronizer. */
+    dbg_last_write_addr_from_fifo = 22'h1c0000;
+    dbg_last_write_awaddr_issued  = 38'h00_c8e00000;
+    repeat (4) @(posedge core_clk);
+    apb_transfer(1'b0, 5'h1d, 32'b0, rdata);
+    check_eq("DBG_LAST_WRITE_ADDR_FROM_FIFO readback", rdata, 32'h001c0000);
+    apb_transfer(1'b0, 5'h1e, 32'b0, rdata);
+    check_eq("DBG_LAST_WRITE_AWADDR_ISSUED readback", rdata, 32'hc8e00000);
+
+    dbg_last_mem_req_wr_addr = 22'h1c0000;
+    apb_transfer(1'b0, 5'h1f, 32'b0, rdata);
+    check_eq("DBG_LAST_MEM_REQ_WR_ADDR readback", rdata, 32'h001c0000);
+
+    /* 2026-08-23: the PSTRB fix originally only covered DMA_ADDR/DMA_LEN
+     * (each with its own downstream byte-lane merge) -- every other write
+     * path took whatever the last narrow beat left in apb_wdata_r. Real
+     * hardware reproduction: regfile.v's REG_WR_STREAM (address 0, holds
+     * watchdog_interval among other bits) written via narrow PSTRB beats
+     * landed as 0x00000000 regardless of the intended value, which
+     * watchdog.v's watchdog_expire_immediate logic turns into a spurious
+     * full decoder reset. Fixed upstream, once, at apb_wdata_r's own
+     * capture (see apb3_mpeg2fpga_bridge.v's A_IDLE/A_SETTLE block) --
+     * confirm regfile.v writes reassemble correctly from narrow beats too,
+     * not just DMA_ADDR/DMA_LEN. */
+    apb_transfer_pstrb(1'b1, 4'h0, 32'h04040404, 4'b0001, rdata);  /* byte0 = 0x04 (intr-enable bits) */
+    apb_transfer_pstrb(1'b1, 4'h0, 32'hFFFFFFFF, 4'b0010, rdata);  /* byte1 = 0xFF (watchdog_interval) */
+    apb_transfer_pstrb(1'b1, 4'h0, 32'h00000000, 4'b0100, rdata);  /* byte2 = 0x00 */
+    apb_transfer_pstrb(1'b1, 4'h0, 32'h00000000, 4'b1000, rdata);  /* byte3 = 0x00 -- the "always reads 0" beat */
+    check_eq("regfile write reassembled from 4 narrow PSTRB beats", fake.write_mem[0], 32'h0000_FF04);
+
+    /* The exact real-hardware failure mode: a genuinely single-BYTE access
+     * (nothing to split -- only one beat ever occurs) must still land the
+     * struck byte lane correctly, and must NOT be corrupted by whatever
+     * the settle window samples afterward. This is what the pre-fix code
+     * got wrong: A_SETTLE re-latched PADDR/PWDATA/PWRITE/PSTRB
+     * unconditionally every PCLK cycle for the whole 64-cycle window,
+     * regardless of whether PSEL/PENABLE were still asserted -- so once
+     * the one real beat ended and the shared bus reverted to some other
+     * (idle or unrelated-peripheral) value, the DUT would silently
+     * overwrite the already-captured byte with that stale value before
+     * ever committing. Drive the one real beat by hand (not via the
+     * blocking apb_transfer_pstrb task, which would wait out the whole
+     * settle window itself), deassert PSEL/PENABLE while the DUT is still
+     * mid-settle, drive PWDATA/PSTRB to a wrong value for the remainder of
+     * the window, then let the transaction complete on its own. */
+    /* Establish a known baseline in all 4 lanes first, so the single-byte
+     * write below has a predictable prior value to (not) disturb in the
+     * lanes it doesn't touch. */
+    apb_transfer_pstrb(1'b1, 4'h0, 32'hAABBCCDD, 4'b1111, rdata);
+
+    @(posedge PCLK); #1;
+    PSEL = 1'b1; PENABLE = 1'b0; PWRITE = 1'b1;
+    PADDR = {4'h0, 2'b00}; PWDATA = 32'h0000FF00; PSTRB = 4'b0010;  /* byte1=0xFF only */
+    @(posedge PCLK); #1;
+    PENABLE = 1'b1;
+    @(posedge PCLK); #1;
+    PSEL = 1'b0; PENABLE = 1'b0;
+    PWDATA = 32'h00000000;  /* stale/unrelated bus value -- must be ignored for the rest of settle */
+    PSTRB  = 4'hF;
+    while (PREADY !== 1'b1) @(posedge PCLK);
+    #1;
+    check_eq("single-byte write unaffected by bus noise during settle", fake.write_mem[0], 32'hAABB_FFDD);
+
+    /* STREAM_PUSH_ADDR benefits from the same upstream fix -- a narrow
+     * single-byte beat must deliver the correct byte, immune to the same
+     * class of corruption checked above for regfile writes. */
+    apb_transfer_pstrb(1'b1, 5'h10, 32'h000000EF, 4'b0001, rdata);
+    check_eq("stream push: narrow PSTRB beat delivers correct byte", {24'b0, captured_stream[captured_count-1]}, 32'h0000_00EF);
+
+    if (errors == 0)
+      $display("ALL TESTS PASSED (%0d checks)", checks);
+    else
+      $display("%0d TEST(S) FAILED out of %0d checks", errors, checks);
+
+    $finish;
+  end
+
+endmodule
+/* not truncated */
