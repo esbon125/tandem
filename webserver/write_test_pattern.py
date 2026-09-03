@@ -8,6 +8,12 @@ over mmap and streams it to the browser -- if that pipeline works with
 this synthetic source, the WebSocket/canvas half of Fase 7b is proven
 independently of whether real decode works.
 
+WARNING: /dev/udmabuf-ddr-nc-wcb0 is NOT a spare scratch region. It is the
+same 32 MB of DRAM as -nc0 and -c0, i.e. the decoder's framestore under a
+third name (see ddr_region.py, and check_ddr_alias.py to re-verify). Running
+this while the core is enabled scribbles over live frames, and vice versa.
+Disable the core (CORE_ENABLE=0) before using this synthetic source.
+
 No numpy on this board (no prebuilt riscv64 wheel, no on-device compiler
 to build one, see docs/bringup Fase 7b) -- the animation is a horizontal
 scroll implemented as row-slicing over a precomputed double-wide strip,
