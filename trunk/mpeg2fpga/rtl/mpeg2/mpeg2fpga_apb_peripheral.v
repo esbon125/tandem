@@ -48,6 +48,32 @@
  * decode chain (CoreAPB3 doesn't even have a PSTRB port -- see
  * FIC_3_PERIPHERALS.tcl), so it's a new, separate top-level port here,
  * wired in parallel the same way RECONFIGURATION_INTERFACE_0 already was.
+ *
+ * 2026-09-03, software-controlled core reset gate: rst_n (this module's own
+ * top-level pin) is wired 1:1 to FIC_3_PERIPHERALS_0:PRESETN
+ * (CLOCKS_AND_RESETS_0:RESETN_FIC_3_CLK) at the SmartDesign level -- it
+ * releases automatically and immediately as soon as FIC_3's own MSS-
+ * sequenced reset does, with no software involvement, well before Linux (or
+ * the HSS/bootloader step that configures MPU2/FIC1's PMPCFG permissively)
+ * has necessarily finished. Root-caused this as the explanation for a
+ * stale, boot-time-only MPU violation at FRAME_0_Y -- exactly the address
+ * framestore_request.v's own autonomous STATE_CLEAR sweep writes to FIRST,
+ * the instant rst_n releases (see apb3_mpeg2fpga_bridge.v's header comment
+ * for the full trace). u_bridge now exposes a new APB-writable bit,
+ * core_enable (default 0, address CORE_ENABLE_ADDR=0x20), ANDed here with
+ * the true rst_n to make gated_rst_n, which now feeds u_mpeg2/u_stream_dma
+ * instead of raw rst_n -- so the decoder core (and, transitively via
+ * mpeg2video.v's own reset.v chain, u_mem_bridge) stays held in reset until
+ * software explicitly releases it, once Linux is up and FIC1 is confirmed
+ * live. u_bridge's own core_rst_n stays fed by the UNGATED rst_n
+ * deliberately (see apb3_mpeg2fpga_bridge.v's header comment) so the
+ * register interface itself -- including this very bit -- is never held
+ * hostage by the gate it controls. mpeg2video.v's own `rst` input is
+ * documented "active low reset. Internally synchronized" (reset.v treats it
+ * as a fully asynchronous global reset and does its own proper multi-cycle,
+ * per-clock-domain release synchronization downstream) -- ANDing it with
+ * core_enable at this level introduces no new synchronization risk beyond
+ * what rst_n itself already carries today.
  */
 
 `include "timescale.v"
@@ -131,7 +157,7 @@ module mpeg2fpga_apb_peripheral (
   input        PSEL;
   input        PENABLE;
   input        PWRITE;
-  input  [6:0] PADDR;
+  input  [7:0] PADDR;
   input [31:0] PWDATA;
   output[31:0] PRDATA;
   output       PREADY;
@@ -257,7 +283,8 @@ module mpeg2fpga_apb_peripheral (
   /* Fase 7a debug (2026-08-23): mpeg2video's core_clk-domain equivalent of
    * mem_rst_internal above (reset pin OR watchdog expiry) -- see
    * mpeg2video.v's core_rst_out comment. No longer consumed here (2026-08-25:
-   * u_stream_dma takes the raw rst_n plus the separate watchdog_rst pulse
+   * u_stream_dma takes rst_n (as of 2026-09-03, the gated_rst_n version --
+   * see this file's header comment) plus the separate watchdog_rst pulse
    * instead -- see stream_dma.v's header comment for why routing this
    * combined signal into it directly reintroduced the AXI4-interconnect
    * wedge); left connected to mpeg2video's output in case a future debug
@@ -380,6 +407,10 @@ module mpeg2fpga_apb_peripheral (
   wire [31:0] arbiter_flags_combined =
       {8'b0, dma_axi_rvalid, dma_axi_arvalid, dma_state_dbg, arbiter_flags_internal[18:0]};
 
+  /* 2026-09-03: software-controlled core reset gate, see header comment. */
+  wire core_enable_internal;
+  wire gated_rst_n = rst_n && core_enable_internal;
+
   apb3_mpeg2fpga_bridge u_bridge (
       .PCLK(PCLK), .PRESETn(PRESETn),
       .PSEL(PSEL), .PENABLE(PENABLE), .PWRITE(PWRITE),
@@ -409,11 +440,12 @@ module mpeg2fpga_apb_peripheral (
       .dbg_last_write_awaddr_issued(dbg_last_write_awaddr_issued_internal),
       .dbg_last_mem_req_wr_addr(dbg_last_mem_req_wr_addr_internal),
       .dbg_mem_req_wr_push_cnt(dbg_mem_req_wr_push_cnt_internal),
-      .dbg_mem_req_rd_pop_cnt(dbg_mem_req_rd_pop_cnt_internal)
+      .dbg_mem_req_rd_pop_cnt(dbg_mem_req_rd_pop_cnt_internal),
+      .core_enable(core_enable_internal)
   );
 
   stream_dma u_stream_dma (
-      .clk(clk_internal), .rst_n(rst_n), .watchdog_rst(watchdog_rst),
+      .clk(clk_internal), .rst_n(gated_rst_n), .watchdog_rst(watchdog_rst),
 
       .start(dma_start), .addr(dma_addr), .len(dma_len),
       .busy(dma_busy), .done(dma_done), .bytes_done(dma_bytes_done),
@@ -441,7 +473,7 @@ module mpeg2fpga_apb_peripheral (
       .core_rst_out(core_rst_internal),
       .mem_hard_rst_out(mem_hard_rst_internal),
       .mem_watchdog_rst_out(mem_watchdog_rst_internal),
-      .rst(rst_n),
+      .rst(gated_rst_n),
 
       .stream_data(stream_data_mux),
       .stream_valid(stream_valid_mux),

@@ -29,7 +29,7 @@ module testbench ();
   reg         PSEL;
   reg         PENABLE;
   reg         PWRITE;
-  reg  [6:0]  PADDR;
+  reg  [7:0]  PADDR;
   reg  [31:0] PWDATA;
   wire [31:0] PRDATA;
   wire        PREADY;
@@ -65,6 +65,9 @@ module testbench ();
   reg  [21:0] dbg_last_write_addr_from_fifo;
   reg  [37:0] dbg_last_write_awaddr_issued;
   reg  [21:0] dbg_last_mem_req_wr_addr;
+  reg   [7:0] dbg_mem_req_wr_push_cnt;
+  reg   [7:0] dbg_mem_req_rd_pop_cnt;
+  wire        core_enable;
 
   integer     errors;
   integer     checks;
@@ -86,7 +89,10 @@ module testbench ();
       .mem_res_valid_cnt(mem_res_valid_cnt),
       .dbg_last_write_addr_from_fifo(dbg_last_write_addr_from_fifo),
       .dbg_last_write_awaddr_issued(dbg_last_write_awaddr_issued),
-      .dbg_last_mem_req_wr_addr(dbg_last_mem_req_wr_addr)
+      .dbg_last_mem_req_wr_addr(dbg_last_mem_req_wr_addr),
+      .dbg_mem_req_wr_push_cnt(dbg_mem_req_wr_push_cnt),
+      .dbg_mem_req_rd_pop_cnt(dbg_mem_req_rd_pop_cnt),
+      .core_enable(core_enable)
   );
 
   fake_regfile fake (
@@ -129,7 +135,7 @@ module testbench ();
     PSEL    = 1'b0;
     PENABLE = 1'b0;
     PWRITE  = 1'b0;
-    PADDR   = 7'b0;
+    PADDR   = 8'b0;
     PWDATA  = 32'b0;
     PSTRB   = 4'hF;
     busy    = 1'b0;
@@ -146,6 +152,8 @@ module testbench ();
     dbg_last_write_addr_from_fifo = 22'b0;
     dbg_last_write_awaddr_issued = 38'b0;
     dbg_last_mem_req_wr_addr = 22'b0;
+    dbg_mem_req_wr_push_cnt = 8'b0;
+    dbg_mem_req_rd_pop_cnt = 8'b0;
   end
 
   /* APB3 master BFM: one full write or read transfer, polling PREADY.
@@ -156,7 +164,7 @@ module testbench ();
    */
   task apb_transfer;
     input         write;
-    input  [4:0]  addr;
+    input  [5:0]  addr;
     input  [31:0] wdata;
     output [31:0] rdata;
     begin
@@ -191,7 +199,7 @@ module testbench ();
    * of blindly overwriting the whole register. */
   task apb_transfer_pstrb;
     input         write;
-    input  [4:0]  addr;
+    input  [5:0]  addr;
     input  [31:0] wdata;
     input  [3:0]  pstrb;
     output [31:0] rdata;
@@ -554,6 +562,28 @@ module testbench ();
      * class of corruption checked above for regfile writes. */
     apb_transfer_pstrb(1'b1, 5'h10, 32'h000000EF, 4'b0001, rdata);
     check_eq("stream push: narrow PSTRB beat delivers correct byte", {24'b0, captured_stream[captured_count-1]}, 32'h0000_00EF);
+
+    /* 2026-09-03: CORE_ENABLE_ADDR (0x20) -- the new software-controlled
+     * core reset gate register. Must default to 0 (core held disabled)
+     * after reset, be settable to 1, and the core_enable output wire must
+     * track the register in real time, not just be readable back over APB.
+     * See apb3_mpeg2fpga_bridge.v's header comment for why this address
+     * needed PADDR/apb_addr_r widened by one more bit (0x00-0x1f was
+     * already fully allocated). */
+    apb_transfer(1'b0, 6'h20, 32'b0, rdata);
+    check_eq("CORE_ENABLE default is 0 (core held disabled)", rdata, 32'h0000_0000);
+    check_eq("core_enable output wire is 0 before any write", {31'b0, core_enable}, 32'h0000_0000);
+
+    apb_transfer(1'b1, 6'h20, 32'h0000_0001, rdata);
+    check_eq("core_enable output wire tracks the write immediately", {31'b0, core_enable}, 32'h0000_0001);
+    apb_transfer(1'b0, 6'h20, 32'b0, rdata);
+    check_eq("CORE_ENABLE readback after write is 1", rdata, 32'h0000_0001);
+
+    /* A regular regfile access must still complete normally (no hang) with
+     * this bit set -- exercised throughout the rest of this testbench
+     * already, but re-confirm explicitly right after flipping the bit. */
+    apb_transfer(1'b1, 5'h00, 32'hDEAD0000, rdata);
+    check_eq("regfile write still completes with CORE_ENABLE set", fake.write_mem[0], 32'hDEAD0000);
 
     if (errors == 0)
       $display("ALL TESTS PASSED (%0d checks)", checks);

@@ -67,7 +67,36 @@
  * settled by the time software issues a deliberate read after a write, so
  * the only possible artifact is a bit not-yet-visible for one extra read,
  * never a spurious or corrupted one.
- */
+ *
+ * Fase 7a (2026-09-03), software-controlled core reset gate: found (via the
+ * MSS TRM's MPU2/FIC1 per-master STATUS register, never read before) a
+ * stale, boot-time-only MPU access violation at FRAME_0_Y (mem_codes.v's
+ * lowest address, word 0) with exactly the address mem2axi_bridge.v's
+ * addr_r/mem_clr_addr_0 reset to -- i.e. framestore_request.v's own
+ * autonomous STATE_CLEAR sweep (which starts the instant this peripheral's
+ * rst_n releases, with zero software involvement) issues its very first
+ * write before the HSS/bootloader has necessarily finished configuring
+ * MPU2's PMPCFG permissively, a power-up race. Previously, `rst_n` released
+ * automatically and immediately whenever FIC_3's own MSS-sequenced reset
+ * released (see mpeg2fpga_apb_peripheral.v's FIC_3_PERIPHERALS.tcl wiring),
+ * with no way for software to delay it. A new address, CORE_ENABLE_ADDR
+ * (0x20 -- 0x00-0x1f was already fully allocated, hence PADDR/apb_addr_r
+ * widened by one more index bit here, same move as the 0x10 STREAM_PUSH_ADDR
+ * widening documented above), exposes a new sticky bit, core_enable
+ * (default 0 = held disabled after any reset), that mpeg2fpga_apb_
+ * peripheral.v ANDs with the true rst_n to gate u_mpeg2/u_stream_dma's own
+ * reset input (and, transitively via mpeg2video.v's own reset.v chain,
+ * u_mem_bridge's) -- see that file's header comment for the full
+ * gated_rst_n wiring. This bridge's own core_rst_n stays fed by the TRUE,
+ * ungated rst_n (deliberately NOT gated by core_enable): the APB register
+ * interface -- including this very bit -- must always stay live and
+ * responsive so software can flip it in the first place, and every existing
+ * core_clk-domain access (regfile reads/writes, DMA_*, debug regs) already
+ * completes on a fixed number of core_clk cycles regardless of what the
+ * gated-off core itself is doing, so nothing here can hang waiting on a
+ * disabled core -- confirmed by inspection of the C_IDLE/C_READ_WAIT1/
+ * C_READ_WAIT2/C_DONE sequence below, none of which waits on any signal
+ * that only a running u_mpeg2 could produce. */
 
 `include "timescale.v"
 
@@ -114,7 +143,13 @@ module apb3_mpeg2fpga_bridge (
      * CDC needed; dbg_mem_req_rd_pop_cnt is genuinely mem_clk domain and
      * gets the same 2-FF synchronizer treatment as dbg_last_write_
      * awaddr_issued above. */
-    dbg_mem_req_wr_push_cnt, dbg_mem_req_rd_pop_cnt
+    dbg_mem_req_wr_push_cnt, dbg_mem_req_rd_pop_cnt,
+
+    /* 2026-09-03: software-controlled core reset gate, see header comment
+     * above. Always live (fed by the ungated core_rst_n, not gated by
+     * itself) -- mpeg2fpga_apb_peripheral.v ANDs this into the real rst_n
+     * feeding u_mpeg2/u_stream_dma. */
+    core_enable
 );
 
   input             PCLK;
@@ -122,7 +157,7 @@ module apb3_mpeg2fpga_bridge (
   input             PSEL;
   input             PENABLE;
   input             PWRITE;
-  input       [6:0] PADDR;           /* [6:2] register index (0-15: regfile, 16: stream push), [1:0] byte offset (must be 2'b00) */
+  input       [7:0] PADDR;           /* [7:2] register index (0x00-0x0f: regfile, 0x10-0x1f: bridge-owned debug/DMA regs, 0x20: CORE_ENABLE), [1:0] byte offset (must be 2'b00) */
   input      [31:0] PWDATA;
   output     [31:0] PRDATA;
   output            PREADY;
@@ -188,6 +223,8 @@ module apb3_mpeg2fpga_bridge (
   input        [7:0]dbg_mem_req_wr_push_cnt;        /* core_clk domain, no CDC needed */
   input        [7:0]dbg_mem_req_rd_pop_cnt;         /* mem_clk domain -- genuine CDC needed */
 
+  output            core_enable;      /* default 0 (core held in reset); see header comment */
+
   /*
    * APB3 domain: latch the transfer on entering the Access phase
    * (PSEL && PENABLE, first cycle after Setup), then wait for the
@@ -206,6 +243,7 @@ module apb3_mpeg2fpga_bridge (
   localparam [4:0] DBG_LAST_WRITE_ADDR_FROM_FIFO_ADDR = 5'h1d;
   localparam [4:0] DBG_LAST_WRITE_AWADDR_ISSUED_ADDR = 5'h1e;
   localparam [4:0] DBG_LAST_MEM_REQ_WR_ADDR_ADDR = 5'h1f;
+  localparam [5:0] CORE_ENABLE_ADDR = 6'h20;
 
   /* Fase 7c PWDATA investigation: hold the Access phase open for this many
    * extra PCLK cycles before committing, instead of on the very first
@@ -247,7 +285,7 @@ module apb3_mpeg2fpga_bridge (
 
   reg  [1:0] apb_state;
   reg  [7:0] settle_cnt;
-  reg  [4:0] apb_addr_r;
+  reg  [5:0] apb_addr_r;
   reg [31:0] apb_wdata_r;
   reg        apb_write_r;
   reg        req_toggle;
@@ -258,6 +296,9 @@ module apb3_mpeg2fpga_bridge (
   reg        reg_wr_en_r, reg_rd_en_r;
   reg [31:0] rdata_hold;
   reg        ack_toggle;
+  reg        core_enable_r;   /* default 0 (held disabled); see header comment */
+
+  assign core_enable = core_enable_r;
 
   /* 2-FF synchronizer bringing pwdata_sticky_r (PCLK domain) into core_clk
    * for PWDATA_STICKY_ADDR reads -- see header comment for why this is
@@ -342,7 +383,7 @@ module apb3_mpeg2fpga_bridge (
       apb_state   <= A_IDLE;
       settle_cnt  <= 8'b0;
       req_toggle  <= 1'b0;
-      apb_addr_r  <= 5'b0;
+      apb_addr_r  <= 6'b0;
       apb_wdata_r <= 32'b0;
       apb_write_r <= 1'b0;
     end else begin
@@ -353,7 +394,7 @@ module apb3_mpeg2fpga_bridge (
       case (apb_state)
         A_IDLE: begin
           if (PSEL && PENABLE) begin
-            apb_addr_r  <= PADDR[6:2];
+            apb_addr_r  <= PADDR[7:2];
             apb_write_r <= PWRITE;
             if (PSTRB[0]) apb_wdata_r[7:0]   <= PWDATA[7:0];
             if (PSTRB[1]) apb_wdata_r[15:8]  <= PWDATA[15:8];
@@ -436,6 +477,7 @@ module apb3_mpeg2fpga_bridge (
   wire is_dbg_last_write_addr_from_fifo = (apb_addr_r == DBG_LAST_WRITE_ADDR_FROM_FIFO_ADDR);
   wire is_dbg_last_write_awaddr_issued  = (apb_addr_r == DBG_LAST_WRITE_AWADDR_ISSUED_ADDR);
   wire is_dbg_last_mem_req_wr_addr = (apb_addr_r == DBG_LAST_MEM_REQ_WR_ADDR_ADDR);
+  wire is_core_enable = (apb_addr_r == CORE_ENABLE_ADDR);
 
   always @(posedge core_clk or negedge core_rst_n) begin
     if (!core_rst_n) begin
@@ -460,6 +502,7 @@ module apb3_mpeg2fpga_bridge (
       dbg_last_write_awaddr_issued_sync  <= 38'b0;
       dbg_mem_req_rd_pop_cnt_meta        <= 8'b0;
       dbg_mem_req_rd_pop_cnt_sync        <= 8'b0;
+      core_enable_r   <= 1'b0;   /* core held in reset by default -- see header comment */
     end else begin
       /* 2-FF synchronizer for the APB-domain req_toggle */
       req_toggle_meta <= req_toggle;
@@ -560,6 +603,10 @@ module apb3_mpeg2fpga_bridge (
             end else if (is_dbg_last_mem_req_wr_addr) begin
               if (!apb_write_r)
                 rdata_hold <= {10'b0, dbg_last_mem_req_wr_addr};
+              core_state <= C_DONE;
+            end else if (is_core_enable) begin
+              if (apb_write_r) core_enable_r <= apb_wdata_r[0];
+              else rdata_hold <= {31'b0, core_enable_r};
               core_state <= C_DONE;
             end else if (is_stream_push) begin
               if (apb_write_r) begin
