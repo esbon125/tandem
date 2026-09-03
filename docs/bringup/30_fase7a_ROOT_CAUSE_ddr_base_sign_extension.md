@@ -135,24 +135,65 @@ arrancó toda esta investigación, pero por primera vez **alcanzable**: la capa
 de memoria funciona, así que ahora se puede observar de verdad qué hace el
 VLD en vez de estar tapado por el wedge de FIC1.
 
-### Primera pista concreta a revisar: orden de bytes
+### Orden de bytes: DESCARTADO (era un error de lectura mío)
 
-Las dos zonas de DRAM tienen **los mismos 8 bytes con el empaquetado
-invertido dentro de la palabra de 64 bits**:
+La primera sospecha fue que los bytes volvían del VBUF invertidos dentro de
+la palabra de 64 bits. **Es falso.** `vbuf.v:53` hace
+`vid_out <= {vid_out[55:0], vid_in}`: los bytes entran por el LSB y se
+desplazan, así que el PRIMER byte del stream queda en los bits [63:56]
+(empaquetado big-endian dentro de la palabra). Leído después desde una CPU
+little-endian, eso se ve byte-invertido -- que es exactamente lo que muestra
+el VBUF. Era la endianness de la observación, no un bug.
 
-```
-FRAME_0_Y raw bytes: 00 00 01 b3 2d 01 e0 24
-VBUF      raw bytes: 24 e0 01 2d b3 01 00 00   <- exactamente al revés
-```
+**Verificado con datos, no con teoría**: comparando 4096 bytes de DRAM contra
+el archivo `tcela-17.bits` real, el VBUF coincide **4096/4096** en el
+empaquetado swapped-per-u64 que predice `vbuf.v`. El stream está almacenado
+en memoria perfectamente, y lo que `getbits.v` lee de ahí es correcto.
 
-Si los bytes vuelven del VBUF con ese orden, `getbits.v` nunca vería un
-`00 00 01 xx` -- vería `xx 01 00 00`, y por lo tanto nunca encontraría un
-start code, que es exactamente el síntoma (`picture_hdr` nunca se setea).
+### La anomalía que SÍ queda: dos copias del stream en DRAM
 
-**No confirmado todavía** -- puede ser que una de las dos zonas la haya
-escrito un camino distinto (recordar el viejo apunte de "address aliasing" de
-puntos anteriores de esta investigación, donde `FRAME_0_Y` recibía bytes del
-stream mientras `VBUF` quedaba en cero). Pero es lo primero a mirar.
+Con la ventana de 32MB cereada por software antes del push (para distinguir
+escrituras frescas de basura vieja), y comparando contra el archivo real:
+
+| zona | contenido | empaquetado | veredicto |
+|---|---|---|---|
+| `VBUF` (word 0x1c0000) | stream, 4096/4096 | swapped-per-u64 (`vbuf.v`) | correcto |
+| `FRAME_0_Y` (word 0) | stream, 4096/4096 | plano (orden CPU) | **anomalía** |
+
+`FRAME_0_Y` es luma de frame reconstruido; ahí no debería haber stream nunca.
+Detalles importantes:
+
+- **No es aliasing de direcciones con el staging buffer.** Probado con
+  write/readback en ambos sentidos y en varios offsets: `0x88000000` y
+  `0xc8000000` son memoria física independiente.
+- **Es una copia literal, no data reconstruida.** 4096 bytes verbatim del
+  stream -- no algo que haya pasado por IDCT/motion-comp.
+- **Aparece tarde.** Al segundo del push, `FRAME_0_Y` todavía leía el patrón
+  de relleno de `STATE_CLEAR` (`8080...`). Unos segundos después ya tenía el
+  stream. Algo lo escribe DESPUÉS de que el push termina, con el decoder
+  corriendo.
+- El empaquetado es el OPUESTO al de `vbuf.v`, o sea la palabra contiene los
+  bytes en orden inverso al que usa el camino de escritura del VBUF.
+
+Encaja con el viejo apunte de "address aliasing" de las etapas tempranas de
+esta investigación (donde `FRAME_0_Y` recibía bytes del stream mientras
+`VBUF` quedaba en cero). Ahora ambas tienen data, y el VBUF es correcto.
+
+Ésta es la pista viva para el problema de decode (`SIZE=0`,
+`picture_hdr=False`), no el orden de bytes.
+
+### Scripts de diagnóstico dejados en el board
+
+- `diag_fresh_write_map.py` -- cerea los 32MB, pushea, y mapea exactamente
+  qué regiones escribió el decoder (evita confundir escrituras frescas con
+  restos viejos en DRAM).
+- `diag_compare_stream.py` -- compara DRAM contra el archivo real en ambos
+  empaquetados.
+- `diag_alias_check.py` -- write/readback entre las dos ventanas de DDR.
+  **Ojo**: contamina la memoria, correrlo solo aislado (contaminó una medición
+  y produjo un resultado sin sentido hasta que se rehizo limpio).
+- `diag_mpu_deny_probe.py` / `diag_mpu_fic2_control.py` -- deniegan TODAS las
+  regiones del MPU y capturan la violación resultante.
 
 ## El otro cambio de esta sesión: gate de reset por software
 
