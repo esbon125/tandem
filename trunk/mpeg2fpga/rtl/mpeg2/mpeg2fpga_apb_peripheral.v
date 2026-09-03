@@ -149,8 +149,33 @@ module mpeg2fpga_apb_peripheral (
    * cache at all). Reusing it also means Fase 7c doesn't need a new
    * reserved-memory device-tree entry of its own, same reasoning as
    * reusing already-proven MSS config in Fase 5b/6b.
+   *
+   * ROOT CAUSE of the whole Fase 7a stall, found 2026-09-03 -- this MUST
+   * stay a `localparam`, never a `parameter`. As a module-boundary
+   * `parameter` it became the sole introspected hwParameter of this Libero
+   * HDL+ core, and Libero recorded it in the generated component XML
+   * (component/User/Private/mpeg2fpga_apb_peripheral/1.0/*.xml) as
+   * spirit:dataType="int" with value -939524096 -- i.e. 0xc8000000
+   * reinterpreted as a SIGNED 32-bit int. Synthesis then sign-extended that
+   * negative value back out to 38 bits, and the netlist really was built
+   * with DDR_BASE = 38'b11111111001000000000000000000000000000 =
+   * 0x3f_c8000000 (confirmed in synthesis/MPFS_DISCOVERY_KIT.srr), not
+   * 0x00_c8000000. Every mem2axi_bridge write therefore targeted
+   * 0x3f_c8000000+offset, which lands in FIC1's OWN 64GB window
+   * (0x30_00000000-0x3F_FFFFFFFF, MSS TRM Table 6-2) instead of DDR --
+   * so writes never reached DDR, and BVALID never came back, wedging the
+   * bridge in S_BRESP. Confirmed on real hardware by deliberately denying
+   * all 16 of MPU2/FIC1's PMPCFG regions and catching the resulting
+   * violation: MPU2 STATUS reported the failing write address as exactly
+   * 0x3fc8000000. The RTL was always correct; only the tool-side parameter
+   * introspection was wrong. `localparam` is not overridable by definition,
+   * so Libero cannot introspect or re-type it -- verified by rebuilding and
+   * confirming both that the regenerated component XML carries no DDR_BASE
+   * hwParameter and that the .srr now reports the correct 38-bit value.
+   * u_mem_bridge below keeps its own `parameter` (it is an inner submodule,
+   * not the HDL-core boundary Libero introspects).
    */
-  parameter [37:0] DDR_BASE = 38'hc8000000;
+  localparam [37:0] DDR_BASE = 38'hc8000000;
 
   input        PCLK;
   input        PRESETn;
