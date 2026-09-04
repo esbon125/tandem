@@ -23,8 +23,8 @@
 `include "timescale.v"
 
 module pixel_queue(
-  clk_in, clk_in_en, 
-  rst, 
+  clk_in, clk_in_en,
+  rst, rst_out,
   y_in, u_in, v_in, osd_in, position_in, pixel_wr_en, pixel_wr_almost_full, pixel_wr_full, pixel_wr_overflow,
   clk_out, clk_out_en,
   y_out, u_out, v_out, osd_out, position_out, pixel_rd_en, pixel_rd_empty, pixel_rd_valid, pixel_rd_underflow
@@ -33,7 +33,8 @@ module pixel_queue(
   input              clk_in;                   // write clock
   input              clk_in_en;                // write clock enable
 
-  input              rst;                      // synchronous active low reset
+  input              rst;                      // synchronous active low reset, clk_in domain
+  input              rst_out;                  // synchronous active low reset, clk_out domain
 
   input         [7:0]y_in;
   input         [7:0]u_in;
@@ -66,15 +67,24 @@ module pixel_queue(
     .prog_thresh(PIXEL_THRESHOLD),
     .FIFO_XILINX(0))
     pixel_fifo (
-    /* 2026-08-26: fifo_dc now takes wr_rst/rd_rst separately (see
-     * wrappers.v/xfifo_dc.v's header comments -- mem_req_wr_almost_full
-     * investigation). This instance still passes the same rst to both,
-     * unchanged behavior -- it has the identical class of CDC gap on its
-     * own clk_in<->clk_out crossing (only synchronized to one side), but
-     * that's a separate, not-yet-investigated issue on the display path,
-     * out of scope for this fix. */
+    /* 2026-09-04: was passing the same clk_in-domain `rst` to BOTH sides,
+     * the last remaining instance of the CDC class fixed in framestore.v on
+     * 2026-08-26. With this project's COREFIFO params (SYNC:0, SYNC_RESET:1)
+     * WRESET_N/RRESET_N reduce straight to sresetn_wclk/sresetn_rclk and are
+     * sampled as a plain synchronous condition by each domain's own flops,
+     * with no internal re-synchronization stage -- so rd_rst MUST already be
+     * synchronous to rd_clk on arrival (see xfifo_dc.v's header comment for
+     * the full writeup and the real bug it caused on the memory path). Here
+     * rd_clk is dot_clk, so rd_rst is dot_rst, not rst. osd.v's dpram_dc
+     * already did exactly this on the same clk->dot_clk crossing, which is
+     * what makes this one look like an oversight.
+     *
+     * Fixed on its own merits -- it is a genuine CDC violation -- NOT as a
+     * diagnosed cause of anything: no evidence ties it to the Fase 7a
+     * intermittent SIZE (disp_service_cnt delta is 0 in both the passing and
+     * the failing trials). See docs/bringup 32. */
     .wr_rst(rst),
-    .rd_rst(rst),
+    .rd_rst(rst_out),
     .wr_clk(clk_in),
     .din({y_in, u_in, v_in, osd_in, position_in}), 
     .wr_en(pixel_wr_en && clk_in_en), 

@@ -1188,9 +1188,10 @@ always @(posedge dot_clk)
 
   /* Pixel Queue */
   pixel_queue pixel_queue (
-    .clk_in(clk), 
-    .clk_in_en(1'b1), 
-    .rst(sync_rst), 
+    .clk_in(clk),
+    .clk_in_en(1'b1),
+    .rst(sync_rst),
+    .rst_out(dot_rst),                                       // clk_out is dot_clk; see pixel_queue.v
     /* from resampling */
     .y_in(y_resample),                                       // from resample
     .u_in(u_resample),                                       // from resample
