@@ -381,6 +381,7 @@ module mpeg2fpga_apb_peripheral (
   wire [21:0]  dbg_last_write_addr_from_fifo_internal;
   wire [37:0]  dbg_last_write_awaddr_issued_internal;
   wire [21:0]  dbg_last_mem_req_wr_addr_internal;
+  wire [127:0] vld_dbg_internal;   /* clk domain, no CDC needed -- same as the line above */
   /* 2026-08-26 (mem_req_wr_almost_full investigation): see framestore.v's
    * header comment on these two -- push_cnt is core_clk domain (matches
    * this wrapper's own clk_internal), pop_cnt is mem_clk domain and needs
@@ -464,6 +465,7 @@ module mpeg2fpga_apb_peripheral (
       .dbg_last_write_addr_from_fifo(dbg_last_write_addr_from_fifo_internal),
       .dbg_last_write_awaddr_issued(dbg_last_write_awaddr_issued_internal),
       .dbg_last_mem_req_wr_addr(dbg_last_mem_req_wr_addr_internal),
+      .vld_dbg(vld_dbg_internal),
       .dbg_mem_req_wr_push_cnt(dbg_mem_req_wr_push_cnt_internal),
       .dbg_mem_req_rd_pop_cnt(dbg_mem_req_rd_pop_cnt_internal),
       .core_enable(core_enable_internal)
@@ -541,6 +543,7 @@ module mpeg2fpga_apb_peripheral (
       .arbiter_flags(arbiter_flags_internal),
       .mem_res_valid_cnt(mem_res_valid_cnt_internal),
       .dbg_last_mem_req_wr_addr(dbg_last_mem_req_wr_addr_internal),
+      .vld_dbg(vld_dbg_internal),
       .dbg_mem_req_wr_push_cnt(dbg_mem_req_wr_push_cnt_internal),
       .dbg_mem_req_rd_pop_cnt(dbg_mem_req_rd_pop_cnt_internal)
   );

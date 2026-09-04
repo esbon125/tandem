@@ -60,7 +60,7 @@ module mpeg2video(clk, mem_clk, dot_clk,
              testpoint_dip, testpoint_dip_en, testpoint,
              vbuf_wr_addr, vbuf_rd_addr,                                                                                        // clocked with clk; Fase 7a debug
              disp_service_cnt, vbr_service_cnt, vbr_starved_cnt, arbiter_flags,                                                 // clocked with clk; Fase 7a debug
-             mem_res_valid_cnt, dbg_last_mem_req_wr_addr,                                                                       // clocked with clk; Fase 7a debug
+             mem_res_valid_cnt, dbg_last_mem_req_wr_addr, vld_dbg,                                                              // clocked with clk; Fase 7a debug
              dbg_mem_req_wr_push_cnt, dbg_mem_req_rd_pop_cnt                                                                    // push_cnt clocked with clk, pop_cnt with mem_clk
 	     );
 
@@ -80,7 +80,7 @@ module mpeg2video(ref_clk, clk_out, mem_clk_out, mem_rst_out, core_rst_out,
              testpoint_dip, testpoint_dip_en, testpoint,
              vbuf_wr_addr, vbuf_rd_addr,                                                                                        // clocked with clk; Fase 7a debug
              disp_service_cnt, vbr_service_cnt, vbr_starved_cnt, arbiter_flags,                                                 // clocked with clk; Fase 7a debug
-             mem_res_valid_cnt, dbg_last_mem_req_wr_addr,                                                                       // clocked with clk; Fase 7a debug
+             mem_res_valid_cnt, dbg_last_mem_req_wr_addr, vld_dbg,                                                              // clocked with clk; Fase 7a debug
              dbg_mem_req_wr_push_cnt, dbg_mem_req_rd_pop_cnt                                                                    // push_cnt clocked with clk, pop_cnt with mem_clk
 	     );
 
@@ -175,6 +175,7 @@ module mpeg2video(ref_clk, clk_out, mem_clk_out, mem_rst_out, core_rst_out,
   output      [31:0]arbiter_flags;
   output      [31:0]mem_res_valid_cnt;
   output      [21:0]dbg_last_mem_req_wr_addr;
+  output     [127:0]vld_dbg;                   // clk domain; vld.v internal parse state, see its header
   output       [7:0]dbg_mem_req_wr_push_cnt;   // clk domain
   output       [7:0]dbg_mem_req_rd_pop_cnt;    // mem_clk domain -- see framestore.v's header comment
 
@@ -902,7 +903,8 @@ always @(posedge dot_clk)
     .progressive_frame(progressive_frame),                   // to resample
     .top_field_first(top_field_first),                       // to resample
     .repeat_first_field(repeat_first_field),                 // to resample
-    .vld_err(vld_err)
+    .vld_err(vld_err),
+    .vld_dbg(vld_dbg)
     );
 
   rld_fifo rld_fifo (

@@ -136,6 +136,7 @@ module apb3_mpeg2fpga_bridge (
      * address it hands to mem_request_fifo's write port -- core_clk
      * domain, same as vbuf_wr_addr, no extra CDC needed. */
     dbg_last_mem_req_wr_addr,
+    vld_dbg,
 
     /* 2026-08-26 (mem_req_wr_almost_full investigation): free-running
      * occupancy counters straddling mem_request_fifo -- see framestore.v's
@@ -157,7 +158,7 @@ module apb3_mpeg2fpga_bridge (
   input             PSEL;
   input             PENABLE;
   input             PWRITE;
-  input       [7:0] PADDR;           /* [7:2] register index (0x00-0x0f: regfile, 0x10-0x1f: bridge-owned debug/DMA regs, 0x20: CORE_ENABLE), [1:0] byte offset (must be 2'b00) */
+  input       [7:0] PADDR;           /* [7:2] register index (0x00-0x0f: regfile, 0x10-0x1f: bridge-owned debug/DMA regs, 0x20: CORE_ENABLE, 0x21-0x24: vld debug), [1:0] byte offset (must be 2'b00) */
   input      [31:0] PWDATA;
   output     [31:0] PRDATA;
   output            PREADY;
@@ -220,6 +221,7 @@ module apb3_mpeg2fpga_bridge (
   input       [21:0]dbg_last_write_addr_from_fifo; /* mem_clk domain -- genuine CDC needed */
   input       [37:0]dbg_last_write_awaddr_issued;  /* mem_clk domain -- genuine CDC needed */
   input       [21:0]dbg_last_mem_req_wr_addr;       /* core_clk domain, no CDC needed */
+  input      [127:0]vld_dbg;                        /* core_clk domain, no CDC needed -- vld.v parse state */
   input        [7:0]dbg_mem_req_wr_push_cnt;        /* core_clk domain, no CDC needed */
   input        [7:0]dbg_mem_req_rd_pop_cnt;         /* mem_clk domain -- genuine CDC needed */
 
@@ -244,6 +246,10 @@ module apb3_mpeg2fpga_bridge (
   localparam [4:0] DBG_LAST_WRITE_AWADDR_ISSUED_ADDR = 5'h1e;
   localparam [4:0] DBG_LAST_MEM_REQ_WR_ADDR_ADDR = 5'h1f;
   localparam [5:0] CORE_ENABLE_ADDR = 6'h20;
+  /* 2026-09-04: vld.v's internal parse state, four words. See vld.v's debug
+   * block for the bit layout and why vld_err could not answer this. */
+  localparam [5:0] VLD_DBG0_ADDR = 6'h21, VLD_DBG1_ADDR = 6'h22,
+                   VLD_DBG2_ADDR = 6'h23, VLD_DBG3_ADDR = 6'h24;
 
   /* Fase 7c PWDATA investigation: hold the Access phase open for this many
    * extra PCLK cycles before committing, instead of on the very first
@@ -477,6 +483,10 @@ module apb3_mpeg2fpga_bridge (
   wire is_dbg_last_write_addr_from_fifo = (apb_addr_r == DBG_LAST_WRITE_ADDR_FROM_FIFO_ADDR);
   wire is_dbg_last_write_awaddr_issued  = (apb_addr_r == DBG_LAST_WRITE_AWADDR_ISSUED_ADDR);
   wire is_dbg_last_mem_req_wr_addr = (apb_addr_r == DBG_LAST_MEM_REQ_WR_ADDR_ADDR);
+  wire is_vld_dbg0 = (apb_addr_r == VLD_DBG0_ADDR);
+  wire is_vld_dbg1 = (apb_addr_r == VLD_DBG1_ADDR);
+  wire is_vld_dbg2 = (apb_addr_r == VLD_DBG2_ADDR);
+  wire is_vld_dbg3 = (apb_addr_r == VLD_DBG3_ADDR);
   wire is_core_enable = (apb_addr_r == CORE_ENABLE_ADDR);
 
   always @(posedge core_clk or negedge core_rst_n) begin
@@ -603,6 +613,18 @@ module apb3_mpeg2fpga_bridge (
             end else if (is_dbg_last_mem_req_wr_addr) begin
               if (!apb_write_r)
                 rdata_hold <= {10'b0, dbg_last_mem_req_wr_addr};
+              core_state <= C_DONE;
+            end else if (is_vld_dbg0) begin
+              if (!apb_write_r) rdata_hold <= vld_dbg[31:0];
+              core_state <= C_DONE;
+            end else if (is_vld_dbg1) begin
+              if (!apb_write_r) rdata_hold <= vld_dbg[63:32];
+              core_state <= C_DONE;
+            end else if (is_vld_dbg2) begin
+              if (!apb_write_r) rdata_hold <= vld_dbg[95:64];
+              core_state <= C_DONE;
+            end else if (is_vld_dbg3) begin
+              if (!apb_write_r) rdata_hold <= vld_dbg[127:96];
               core_state <= C_DONE;
             end else if (is_core_enable) begin
               if (apb_write_r) core_enable_r <= apb_wdata_r[0];

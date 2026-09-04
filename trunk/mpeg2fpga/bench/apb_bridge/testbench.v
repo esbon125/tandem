@@ -66,6 +66,7 @@ module testbench ();
   reg  [37:0] dbg_last_write_awaddr_issued;
   reg  [21:0] dbg_last_mem_req_wr_addr;
   reg   [7:0] dbg_mem_req_wr_push_cnt;
+  reg [127:0] vld_dbg;
   reg   [7:0] dbg_mem_req_rd_pop_cnt;
   wire        core_enable;
 
@@ -91,6 +92,7 @@ module testbench ();
       .dbg_last_write_awaddr_issued(dbg_last_write_awaddr_issued),
       .dbg_last_mem_req_wr_addr(dbg_last_mem_req_wr_addr),
       .dbg_mem_req_wr_push_cnt(dbg_mem_req_wr_push_cnt),
+      .vld_dbg(vld_dbg),
       .dbg_mem_req_rd_pop_cnt(dbg_mem_req_rd_pop_cnt),
       .core_enable(core_enable)
   );
@@ -153,6 +155,7 @@ module testbench ();
     dbg_last_write_awaddr_issued = 38'b0;
     dbg_last_mem_req_wr_addr = 22'b0;
     dbg_mem_req_wr_push_cnt = 8'b0;
+    vld_dbg = {32'hdddd3333, 32'hcccc2222, 32'hbbbb1111, 32'haaaa0000};
     dbg_mem_req_rd_pop_cnt = 8'b0;
   end
 
@@ -584,6 +587,28 @@ module testbench ();
      * already, but re-confirm explicitly right after flipping the bit. */
     apb_transfer(1'b1, 5'h00, 32'hDEAD0000, rdata);
     check_eq("regfile write still completes with CORE_ENABLE set", fake.write_mem[0], 32'hDEAD0000);
+
+    /* 2026-09-04: VLD_DBG0..3 (0x21-0x24), vld.v's internal parse state.
+     * Each must return its own 32-bit slice of the 128-bit bundle, in the
+     * right order -- an off-by-one slice here would be indistinguishable
+     * from real decoder behaviour on hardware, which is exactly the sort of
+     * thing this whole investigation has been burned by. Also confirms
+     * these addresses are decoded by the bridge and no longer fall through
+     * to the regfile (0x22 used to alias to reg_addr 2 = REG_RD_SIZE). */
+    apb_transfer(1'b0, 6'h21, 32'b0, rdata);
+    check_eq("VLD_DBG0 returns vld_dbg[31:0]", rdata, 32'haaaa0000);
+    apb_transfer(1'b0, 6'h22, 32'b0, rdata);
+    check_eq("VLD_DBG1 returns vld_dbg[63:32]", rdata, 32'hbbbb1111);
+    apb_transfer(1'b0, 6'h23, 32'b0, rdata);
+    check_eq("VLD_DBG2 returns vld_dbg[95:64]", rdata, 32'hcccc2222);
+    apb_transfer(1'b0, 6'h24, 32'b0, rdata);
+    check_eq("VLD_DBG3 returns vld_dbg[127:96]", rdata, 32'hdddd3333);
+
+    /* 0x22 must NOT reach the regfile any more. If it fell through, this
+     * read would return the fake regfile's REG_RD_SIZE instead. */
+    apb_transfer(1'b0, 6'h22, 32'b0, rdata);
+    check_eq("0x22 is decoded by the bridge, not aliased to regfile addr 2",
+             rdata, 32'hbbbb1111);
 
     if (errors == 0)
       $display("ALL TESTS PASSED (%0d checks)", checks);

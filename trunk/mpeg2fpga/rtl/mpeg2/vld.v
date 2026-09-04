@@ -49,7 +49,8 @@ module vld(clk, clk_en, rst,
   frame_rate_code, frame_rate_extension_n, frame_rate_extension_d,                          // interface with regfile
   aspect_ratio_information,
   progressive_sequence, progressive_frame, repeat_first_field, top_field_first,             // interface with resample
-  vld_err                                                                                   // asserted when vld code parse error
+  vld_err,                                                                                  // asserted when vld code parse error
+  vld_dbg                                                                                   // debug only, see the block at the end of this module
   );
 
   input            clk;                           // clock
@@ -70,6 +71,8 @@ module vld(clk, clk_en, rst,
   output reg       wr_chroma_non_intra_quant;     // write enable for chroma non intra quantiser matrix
 
   output reg       vld_err;                       // vld_err is asserted when a slice parsing error has occurred. self-repairing.
+
+  output    [127:0]vld_dbg;                       // debug only; four APB-readable words, see the block at the end of this module
 
   parameter [7:0]
     STATE_NEXT_START_CODE             = 8'h00,
@@ -2555,6 +2558,107 @@ module vld(clk, clk_en, rst,
          $strobe("%m\talign: %d advance %d", align, advance);
        end
 `endif
+
+  /*
+   * Debug instrumentation (2026-09-04, Fase 7a intermittent SIZE).
+   *
+   * Everything observable outside this module has been shown identical between
+   * a push that parses the sequence header and one that does not: the VBUF is
+   * byte-perfect either way, the same 1578 words are consumed, the arbiter,
+   * the memory counters and the DMA all match, and the APB read path returns
+   * SIZE correctly (2000/2000 reads, independent of predecessor). The only
+   * observables that differ are the ones this module produces. So the split is
+   * clean -- everything upstream of the parse is identical, everything
+   * downstream varies -- and what was missing was a window into the parse
+   * itself. See docs/bringup 32.
+   *
+   * Note in particular that `vld_err` cannot answer this: it is only ever set
+   * in STATE_ERROR/STATE_DCT_ERROR (slice/DCT parse errors, self-repairing)
+   * and is CLEARED on every pass through STATE_NEXT_START_CODE. There is no
+   * error state for "never found a sequence header" -- the FSM simply keeps
+   * searching -- so error=0 is fully consistent with SIZE=0 and proves
+   * nothing.
+   *
+   * All of this is read-only, reset by `rst` so it describes the current core
+   * session, and gated on clk_en exactly like the state register it tracks.
+   */
+
+  reg    [15:0]dbg_visited;      /* sticky: which states the FSM has ever entered */
+  reg    [31:0]dbg_start_codes;  /* the first four start-code bytes seen, oldest in [31:24] */
+  reg     [2:0]dbg_sc_seen;      /* how many of those four slots are filled */
+  reg    [15:0]dbg_sc_count;     /* saturating count of start codes */
+  reg    [23:0]dbg_first_seq_hdr_getbits; /* getbits on first entry to STATE_SEQUENCE_HEADER */
+  reg          dbg_seq_hdr_captured;
+  reg          dbg_getbits_valid_seen;
+
+  always @(posedge clk)
+    if (~rst) dbg_visited <= 16'b0;
+    else if (clk_en)
+      begin
+        if (state == STATE_START_CODE)              dbg_visited[0]  <= 1'b1;
+        if (state == STATE_SEQUENCE_HEADER)         dbg_visited[1]  <= 1'b1;
+        if (state == STATE_SEQUENCE_HEADER3)        dbg_visited[2]  <= 1'b1;
+        if (state == STATE_EXTENSION_START_CODE)    dbg_visited[3]  <= 1'b1;
+        if (state == STATE_SEQUENCE_EXT)            dbg_visited[4]  <= 1'b1;
+        if (state == STATE_SEQUENCE_EXT1)           dbg_visited[5]  <= 1'b1;
+        if (state == STATE_SEQUENCE_DISPLAY_EXT)    dbg_visited[6]  <= 1'b1;
+        if (state == STATE_GROUP_HEADER)            dbg_visited[7]  <= 1'b1;
+        if (state == STATE_PICTURE_HEADER)          dbg_visited[8]  <= 1'b1;
+        if (state == STATE_PICTURE_CODING_EXT)      dbg_visited[9]  <= 1'b1;
+        if (state == STATE_SLICE)                   dbg_visited[10] <= 1'b1;
+        if (state == STATE_NEXT_MACROBLOCK)         dbg_visited[11] <= 1'b1;
+        if (state == STATE_BLOCK)                   dbg_visited[12] <= 1'b1;
+        if (state == STATE_ERROR)                   dbg_visited[13] <= 1'b1;
+        if (state == STATE_DCT_ERROR)               dbg_visited[14] <= 1'b1;
+        if (state == STATE_SEQUENCE_END)            dbg_visited[15] <= 1'b1;
+      end
+
+  /* STATE_START_CODE lasts one clk_en cycle per start code and dispatches on
+   * getbits[7:0], so sampling there records exactly what the FSM dispatched
+   * on -- b3 = sequence header, b8 = extension, 00 = picture, 01-af = slice. */
+  always @(posedge clk)
+    if (~rst)
+      begin
+        dbg_start_codes <= 32'b0;
+        dbg_sc_seen     <= 3'b0;
+        dbg_sc_count    <= 16'b0;
+      end
+    else if (clk_en && (state == STATE_START_CODE))
+      begin
+        if (dbg_sc_seen < 3'd4)
+          begin
+            dbg_start_codes <= {dbg_start_codes[23:0], getbits[7:0]};
+            dbg_sc_seen     <= dbg_sc_seen + 3'd1;
+          end
+        if (~&dbg_sc_count) dbg_sc_count <= dbg_sc_count + 16'd1;
+      end
+
+  /* The raw bit window the FSM used to load horizontal_size[11:0]. For a
+   * correctly aligned tcela-17 this must read 2d01e0 (720 x 480). Anything
+   * else says the window was misaligned rather than the header missing. */
+  always @(posedge clk)
+    if (~rst)
+      begin
+        dbg_first_seq_hdr_getbits <= 24'b0;
+        dbg_seq_hdr_captured      <= 1'b0;
+      end
+    else if (clk_en && (state == STATE_SEQUENCE_HEADER) && ~dbg_seq_hdr_captured)
+      begin
+        dbg_first_seq_hdr_getbits <= getbits;
+        dbg_seq_hdr_captured      <= 1'b1;
+      end
+
+  always @(posedge clk)
+    if (~rst) dbg_getbits_valid_seen <= 1'b0;
+    else if (clk_en) dbg_getbits_valid_seen <= 1'b1;   /* clk_en IS getbits_valid-gated vld_en */
+
+  assign vld_dbg = {
+      /* word 3 */ dbg_sc_count, 8'b0, 2'b0, dbg_getbits_valid_seen, dbg_seq_hdr_captured,
+                   picture_header_seen, sequence_extension_seen, sequence_header_seen, vld_err,
+      /* word 2 */ 8'b0, dbg_first_seq_hdr_getbits,
+      /* word 1 */ dbg_start_codes,
+      /* word 0 */ state, 5'b0, dbg_sc_seen, dbg_visited
+      };
 
 endmodule
 
