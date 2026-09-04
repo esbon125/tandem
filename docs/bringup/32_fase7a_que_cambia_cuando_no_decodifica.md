@@ -199,6 +199,49 @@ al aire**, no que pase a andar. "Siempre falla" confirma la hipótesis igual que
 mal: 4:1 es entero, o sea q = 1 y un solo slot. El número de slots es el
 denominador de `f_mem/f_clk` reducido, no el numerador.)
 
+## Hipótesis 6, probada y descartada: los registros read-to-clear
+
+Los registros de `STATUS` del regfile propio de mpeg2fpga son read-to-clear
+(`regfile.v`: `picture_hdr`, `frame_end`, `video_ch`, `error`, `osd_*` e
+`interrupt`, todos borrados con `reg_rd_en && reg_addr == REG_RD_STATUS`), y
+nuestro polling los venía martillando. Valía preguntarse si la propia
+instrumentación era parte del problema. **No lo es**, por dos vías
+independientes.
+
+**Por RTL**: `SIZE` no es read-to-clear. `regfile.v:184` es un mux puro:
+
+```verilog
+REG_RD_SIZE: reg_dta_out <= {2'b0, horizontal_size, 2'b0, vertical_size};
+```
+
+y esos valores vienen de instancias de `loadreg` en `vld.v`, que solo cargan
+cuando el FSM está en su estado (`horizontal_size[11:0]` en
+`STATE_SEQUENCE_HEADER`, `[13:12]` en `STATE_SEQUENCE_EXT` -- lo que explica
+que la basura de `sony-ct1` esté justo en el bit 13) y **solo se borran con
+`rst`**. Ninguna lectura las toca.
+
+Vale la pena anotar además qué direcciones llegan siquiera al regfile:
+`apb3_mpeg2fpga_bridge.v` hace `assign reg_addr = apb_addr_r[3:0]` pero solo
+pulsa `reg_rd_en` en la rama de fallback, o sea para 0x00-0x0f. Todo lo de
+0x10-0x20 (`DMA_STATUS`, `ARBITER_FLAGS`, `VBUF_*`, ...) lo decodifica el
+bridge y nunca toca el regfile. Así que pollear `DMA_STATUS` es inocuo; leer
+`STATUS`/`SIZE`/`FRAME_RATE` no.
+
+**Por experimento**, comparando dos patrones de acceso extremos, n=60 cada uno:
+
+```
+QUIET (0 lecturas al regfile): 30/60 pass
+NOISY (STATUS martillado)    : 30/60 pass   (~19.400 lecturas/corrida)
+```
+
+Idéntico. (Una primera tanda con n=20 dio 14/20 vs 10/20 y parecía un efecto
+real; z≈1.3, p≈0.2 -- era ruido, igual que el 7/8 del settle. Tercera vez en
+esta investigación que n=8..20 fabrica una pista falsa: **para cualquier cosa
+medida contra este 50/50 hace falta n>=60**.)
+
+Corolario útil: todas las mediciones anteriores de esta investigación siguen
+siendo válidas, porque la instrumentación no perturba el resultado.
+
 ## Auditoría del reset de CoreFIFO: la hipótesis anterior NO sobrevive
 
 Antes de gastar el rebuild del CCC se leyó el RTL de CoreFIFO para ver si ya
@@ -268,11 +311,21 @@ mismo cruce y lo haga bien, lo que sugiere olvido más que decisión.
 Honestamente: **no hay evidencia que lo ligue al `SIZE=0`.** `disp_service_cnt`
 tiene delta 0 tanto en PASS como en FAIL, o sea el arbiter nunca sirvió al
 display durante el push, y no hay registro de debug que exponga el estado de
-`pixel_fifo`. Es un bug real que conviene arreglar por mérito propio (cambio de
-dos líneas más un puerto `dot_rst`, mismo patrón que el `mem_rst` que
-`framestore.v` ya recibió), y arreglarlo eliminaría la última incógnita de CDC
-del diseño -- lo que dejaría más limpio cualquier experimento futuro. Pero no
-es "la causa encontrada".
+`pixel_fifo`. Es un bug real que conviene arreglar por mérito propio, y arreglarlo elimina
+la última incógnita de CDC del diseño. **Hecho** (`hardware_development`,
+commit `90e1a9a`): `pixel_queue.v` gana un puerto `rst_out`, cableado a
+`dot_rst` en `mpeg2video.v`, con la misma forma que el `mem_rst` que
+`framestore.v` ya recibió. Verificado en `bench/iverilog`: compila y el
+decoder sigue reconstruyendo frames, incluido `tv_out_0000.ppm`, que sale
+justamente por este fifo.
+
+No es "la causa encontrada". Pero deja **una predicción falsable** que conviene
+chequear con el próximo bitstream: hoy `disp_service_cnt` da delta 0 en TODAS
+las corridas, o sea el arbiter nunca sirve al display -- que es exactamente
+como se vería un `pixel_fifo` trabado (si su lado de lectura no resetea bien y
+`full` queda pegado, `resample` no puede escribir, no genera direcciones, y
+`do_disp` -- que exige `~disp_rd_addr_empty` -- nunca se asserta). Si el fix
+hace algo real, ese contador debería dejar de ser 0.
 
 ## Dónde NO buscar
 
