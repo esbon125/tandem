@@ -133,22 +133,71 @@ Vale la pena dejarlas anotadas para no volver a recorrerlas:
 
 ## Hipótesis viva (NO demostrada)
 
-Una carrera de fase en la liberación del reset. `core_enable_r` es un registro
-del dominio `clk` (108 MHz) que se ANDea con `rst_n` para formar `gated_rst_n`,
-el `async_rst` de `reset.v`. `reset.v` sincroniza correctamente (por dominio,
-con `sync_reset`, y `clk_rst`/`mem_rst` esperan a que ambos dominios liberen),
-pero el instante de deassert cae en una posición arbitraria del patrón de
-batido entre `clk` (108 MHz) y `mem_clk` (162 MHz), que están en relación
-**2:3** — o sea **dos** posiciones posibles.
+Una carrera de fase en la liberación del reset.
 
-Dos posiciones equiprobables predicen exactamente el ~50/50 que se mide, y una
-carrera de reset explica por qué queda pegada a la sesión y por qué no depende
-ni del stream ni del timing del push. Pero es una coincidencia cuantitativa, no
-una demostración: no se observó ningún skew real.
+Los tres relojes salen del **mismo PLL** de `PF_CCC_C0` (`PLL_0`, ref 50 MHz):
+`GL0_0`=162 MHz (`mem_clk`), `GL1_0`=108 MHz (`clk`), `GL2_0`=27 MHz
+(`dot_clk`). Misma VCO, así que la relación de fase entre ellos es fija y
+determinista.
 
-Predicción falsable, si se quiere seguir por acá: cambiar la relación de
-frecuencias en el CCC (por ejemplo a 4:1) debería mover la tasa de acierto a
-~25%/~75% en vez de ~50%. Cuesta un rebuild.
+Pero 162/108 = **3/2** no es entero, así que los flancos de `clk` no caen
+siempre en el mismo lugar respecto de la grilla de `mem_clk`: alternan entre
+dos posiciones, y el patrón se repite cada 18.52 ns (2 ciclos de `clk` = 3 de
+`mem_clk`):
+
+```
+t (ns)      0      6.17   9.26   12.35  18.52
+mem_clk     ^      ^             ^      ^        (T = 6.17 ns)
+clk         ^             ^             ^        (T = 9.26 ns)
+            |             |             |
+         offset 0    offset +3.09    offset 0
+          (slot A)     (slot B)      (slot A)
+```
+
+En general, si `f_mem/f_clk = p/q` irreducible, hay **q** posiciones posibles.
+Acá q = 2.
+
+`core_enable_r` es un registro del dominio `clk`, y la escritura APB que lo
+setea aterriza en un flanco de `clk` cuyo slot depende del timing del CPU y
+del bus -- asíncronos respecto del fabric. O sea: slot A o slot B, ~50/50, sin
+control. Ese registro forma `gated_rst_n`, el `async_rst` de `reset.v`, cuyo
+`mem_sreset_1` lo muestrea con `mem_clk`: según el slot, el dominio `mem_clk`
+sale del reset un ciclo antes o un ciclo después respecto del dominio `clk`.
+
+Dos slots equiprobables predicen el ~50/50 medido, y una carrera de reset
+explica que quede pegada a la sesión y que no dependa ni del stream ni del
+timing del push.
+
+Detalle que refuerza la sospecha: `dot_clk` es 27 MHz, y 108/27 = 4 y
+162/27 = 6, **enteros**. El único par con relación fraccionaria en todo el
+diseño es `clk`<->`mem_clk`, que es exactamente el cruce que atraviesan los
+FIFOs del vbuf.
+
+### Dónde la hipótesis se pone floja
+
+1. `reset.v` está diseñado precisamente para tolerar esto: sincroniza por
+   dominio y `clk_rst`/`mem_rst` esperan a que ambos liberen. Para que se
+   sostenga, algo tiene que ser sensible a un skew de un ciclo *a pesar* de
+   eso. Candidatos: los CoreFIFO dual-clock, capa donde este diseño ya tuvo
+   dos bugs reales ([24](24_fase7a_fwft_fix_and_axi4_interconnect_wedge.md),
+   [25](25_fase7a_cdc_fix_and_corefifo_re_bug.md)).
+2. La pegajosidad no es perfecta: una carrera de fase pura debería dar 4/4
+   iguales siempre, y `run1` se dio vuelta al tercer push.
+3. Nunca se observó el skew. Es una coincidencia cuantitativa, no una medición.
+
+### Predicción falsable
+
+Hacer `mem_clk` **múltiplo entero** de `clk` (por ejemplo 108/216, u 81/162).
+Con ratio entero q = 1: una sola posición de fase, y la ambigüedad desaparece.
+Si la hipótesis es cierta, el 50/50 debería colapsar a determinista.
+
+Ojo con cómo se lee el resultado: lo informativo es que **desaparezca la moneda
+al aire**, no que pase a andar. "Siempre falla" confirma la hipótesis igual que
+"siempre anda". Cuesta un rebuild del CCC.
+
+(Una versión anterior de este doc proponía pasar a 4:1 esperando ~25%/75%. Está
+mal: 4:1 es entero, o sea q = 1 y un solo slot. El número de slots es el
+denominador de `f_mem/f_clk` reducido, no el numerador.)
 
 ## Dónde NO buscar
 
