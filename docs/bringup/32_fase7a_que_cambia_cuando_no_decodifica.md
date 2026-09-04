@@ -327,10 +327,104 @@ como se vería un `pixel_fifo` trabado (si su lado de lectura no resetea bien y
 `do_disp` -- que exige `~disp_rd_addr_empty` -- nunca se asserta). Si el fix
 hace algo real, ese contador debería dejar de ser 0.
 
+## Hipótesis 7, probada y descartada: el camino de LECTURA del registro
+
+"Todo idéntico menos ese registro" es una forma sospechosa, y `regfile.v` tiene
+`default: reg_dta_out <= 32'b0` en su mux de lectura -- una `reg_addr` errada
+devuelve exactamente 0, indistinguible de un `SIZE` real de 0. Además el FSM
+del bridge tiene un modo de falla documentado: capturar `reg_dta_out` un ciclo
+antes de tiempo devuelve **los datos de la transacción anterior**.
+
+Interrogatorio dentro de una misma sesión, sin resetear el core:
+
+| prueba | FAIL | PASS |
+|---|---|---|
+| `VERSION` x1000 (control, mismo camino) | 12 ×1000 | 12 ×1000 |
+| `SIZE` x2000 | `0x0` ×2000 | `720x480` ×2000 |
+| `SIZE` tras 7 predecesores distintos ×300 c/u | idéntico siempre | idéntico siempre |
+| `SIZE` vía alias `0x22` → `reg_addr 2` | `0x0` | `720x480` |
+| dirección no mapeada 5 | `0` ×300 | `0` ×300 |
+| `TESTPOINT` (datos vivos, mismo camino) | varía | varía |
+
+Cero flakiness en 2000 lecturas, y el valor **no depende de qué registro se
+leyó justo antes** -- que es exactamente la firma que dejaría la captura
+desfasada. El alias por otra dirección da lo mismo, y la dirección no mapeada
+da 0, confirmando que estamos direccionando lo que creemos. **El camino de
+lectura es correcto: `SIZE` vale 0 de verdad.**
+
+### La reformulación que sí resuelve la incomodidad
+
+No es "todo idéntico menos un registro". Separando los observables por su
+origen, la frontera cae exactamente en el parseo:
+
+- **Capa de transporte** (memoria, DMA, arbiter, punteros, contadores de FIFO):
+  todo perfectamente estable e idéntico entre PASS y FAIL.
+- **Todo lo que sale de `vld`** (`SIZE`, `FRAME_RATE`, `DISP_SIZE`,
+  `matrix_coefficients`): inestable. Dos discriminan limpio (`SIZE`
+  720x480 vs 0, `FRAME_RATE` `0x2004` vs `0x0`/`0x800`) y dos son basura en
+  ambos casos.
+
+O sea: **todo lo anterior al parseo es idéntico, todo lo posterior varía.** Eso
+es coherente, no anómalo. Lo que faltaba no era una explicación sino
+observabilidad: `SIZE` era casi la única ventana al interior del VLD.
+
+## Canal de observación nuevo: los testpoints de `probe.v`
+
+`probe.v` expone diez vectores de 33 bits, seleccionables por software vía
+`REG_WR_TESTPOINT` (dirección de escritura 15, bits [31:28]);
+`testpoint_dip_en` está atado a 0 en `mpeg2fpga_apb_peripheral.v`, así que
+gana la selección por software. Escribir esa dirección es **seguro**:
+`watchdog_interval_wr` solo se activa con `reg_addr == REG_WR_STREAM`
+(dirección 0), que es el registro que fuerza el reset del decoder.
+
+El más interesante es `testpoint_3 = {advance, align, getbits, signbit,
+getbits_valid, sync_rst}` -- la ventana de bits del VLD. También hay
+`testpoint_1`/`testpoint_2` con `vbr_rd_dta` completo, y `testpoint_0` con
+`busy`/`vbr_rd_valid`/`stream_valid`.
+
+El obstáculo conocido es que `probe.v` emite una **rotación de 1 bit por
+ciclo**, así que una lectura APB aislada cae en una fase arbitraria y los bits
+individuales no son confiables. Idea para sortearlo: **la rotación conserva el
+popcount** (vemos 32 de 33 bits rotados, así que el popcount observado queda a
+±1 del real sea cual sea la fase).
+
+**Funciona como canal**: en reposo el testpoint da 2 valores distintos; durante
+un push da 22. El VLD está demostrablemente activo en ambos casos.
+
+**Pero el popcount NO discrimina PASS de FAIL.** Un primer agrupado sugería que
+sí (popcount 2: 23.6% vs 13.6% con ~51.000 muestras por clase, aparentemente
+enorme), pero el desglose por sesión lo desarma:
+
+```
+FAIL  pc2= 20.51%  pc16=  0.83%      PASS  pc2= 50.00%  pc16=  0.15%
+FAIL  pc2= 40.15%  pc16= 42.09%      PASS  pc2= 12.73%  pc16=  0.11%
+FAIL  pc2=  0.42%  pc16= 42.50%      PASS  pc2= 25.39%  pc16=  0.09%
+FAIL  pc2= 41.60%  pc16= 41.85%      PASS  pc2=  7.65%  pc16= 40.06%
+```
+
+`pc2` va de 0.42% a 50% dentro de FAIL y de 7.65% a 50% dentro de PASS. La
+varianza entre sesiones se traga la diferencia de clase, y dos corridas del
+mismo experimento dieron agrupados distintos entre sí. **Era un artefacto de
+agrupación.** Cuarta vez en esta investigación que un estadístico mal
+controlado fabrica una pista falsa -- y la primera en que el problema no fue el
+tamaño de muestra sino agrupar sesiones heterogéneas.
+
+Anotado igual porque el canal queda abierto y no cuesta rebuild. Curiosidad sin
+explicar: `pc16` es bimodal por sesión (~0% o ~42%) y `pc11` también (~0.5% o
+~12%), en ambas clases, sin correlacionar con el resultado.
+
 ## Dónde NO buscar
 
-El camino de memoria está probado bueno y determinista: DRAM, `mem2axi_bridge`,
-direccionamiento, el DMA y el contenido del VBUF son bit a bit idénticos entre
-acierto y fallo. Cualquier próxima instrumentación debería ir dentro de
-`getbits.v`/`vld.v` (o en el arranque del dominio de reset), no en la capa de
-memoria.
+El camino de memoria está probado bueno y determinista. El reset de CoreFIFO
+está protegido. El regfile no es read-to-clear en `SIZE`, nuestra
+instrumentación no perturba, y el camino de lectura entrega el valor correcto.
+Nada de eso merece más tiempo.
+
+Lo que falta es observabilidad real dentro de `vld.v`/`getbits.v`. Los
+testpoints existentes sirven como canal pero su formato rotante los vuelve
+demasiado groseros. El próximo paso con relación costo/beneficio razonable es
+un registro de debug dedicado que exponga el `state` de `vld.v` de forma
+sticky -- por ejemplo un bit por estado visitado, o simplemente "¿se alcanzó
+alguna vez `STATE_SEQUENCE_HEADER`?" -- siguiendo el patrón ya probado de
+`pwdata_sticky_r`. Eso responde de una la pregunta que quedó: si el FSM nunca
+llega al sequence header, o si llega y carga mal.
