@@ -199,6 +199,81 @@ al aire**, no que pase a andar. "Siempre falla" confirma la hipótesis igual que
 mal: 4:1 es entero, o sea q = 1 y un solo slot. El número de slots es el
 denominador de `f_mem/f_clk` reducido, no el numerador.)
 
+## Auditoría del reset de CoreFIFO: la hipótesis anterior NO sobrevive
+
+Antes de gastar el rebuild del CCC se leyó el RTL de CoreFIFO para ver si ya
+estaba protegido contra esto. **Lo está**, y el mecanismo que la hipótesis
+proponía queda descartado.
+
+### Cómo se resetea CoreFIFO
+
+Los FIFOs se generan con `SYNC_RESET:1`, y en `COREFIFO.v` eso reduce a:
+
+```verilog
+assign aresetn_wclk = (SYNC_RESET == 1) ? 1'b1 : neg_wreset;  // async: sin usar
+assign sresetn_wclk = (SYNC_RESET == 0) ? 1'b1 : neg_wreset;  // <- WRESET_N
+assign aresetn_rclk = (SYNC_RESET == 1) ? 1'b1 : neg_rreset;
+assign sresetn_rclk = (SYNC_RESET == 0) ? 1'b1 : neg_rreset;  // <- RRESET_N
+```
+
+O sea **dos resets síncronos independientes, uno por dominio**, muestreados
+directamente por los flops de cada lado (punteros, sincronizadores Gray). La
+protección existe, pero es condicional: exige que `WRESET_N` ya sea síncrono a
+`WCLOCK` y `RRESET_N` a `RCLOCK` cuando llegan. Ese contrato es justo el que se
+violaba antes del fix de 2026-08-26 (ver el comentario de cabecera de
+`xfifo_dc.v`).
+
+### El contrato se cumple
+
+`reset.v` genera cada reset con `sync_reset`, que es async-assert /
+sync-deassert de libro (shift de 5 flops registrado con el reloj destino):
+
+```verilog
+sync_reset clk_sreset_2 (.clk(clk),     .asyncrst(clkmem_rst), .syncrst(clk_rst));
+sync_reset mem_sreset_2 (.clk(mem_clk), .asyncrst(clkmem_rst), .syncrst(mem_rst));
+```
+
+Así que `clk_rst` deasserta síncrono a `clk` y `mem_rst` síncrono a `mem_clk`,
+por construcción. Y `clkmem_rst = clk_rst_1 && mem_rst_1` acota además el skew,
+porque ninguno de los dos libera hasta que ambos dominios sincronizaron.
+
+### Inventario completo de elementos dual-clock
+
+| instancia | cruce | `wr_rst` / `rd_rst` | veredicto |
+|---|---|---|---|
+| `mem_request_fifo` (`framestore.v`) | clk→mem_clk | `rst` / `mem_rst` | correcto |
+| `mem_response_fifo` (`framestore.v`) | mem_clk→clk | `mem_rst` / `rst` | correcto |
+| `osd` `dpram_dc` (`osd.v`) | clk→dot_clk | `rst` / `dot_rst` | correcto |
+| `pixel_fifo` (`pixel_queue.v`) | clk→dot_clk | `rst` / **`rst`** | **violación** |
+
+Y los FIFOs del vbuf (`vbuf_write_fifo`/`vbuf_read_fifo` en `mpeg2video.v`) son
+**`fifo_sc`**, mono-reloj en el dominio `clk`: no hay CDC ahí en absoluto.
+
+### Conclusión
+
+El camino de decode (clk↔mem_clk) está correctamente protegido, y el camino del
+vbuf que alimenta a `getbits` ni siquiera cruza dominios. **La hipótesis de la
+carrera de fase, tal como estaba formulada -- un CoreFIFO saliendo del reset
+inconsistente en el borde clk↔mem_clk -- no tiene mecanismo. Queda descartada,
+y NO justifica el rebuild del CCC.**
+
+### Lo único que queda sin proteger
+
+`pixel_fifo` es la última instancia de la clase de bug que se arregló en
+agosto: pasa `rst` (dominio `clk`) a ambos lados, pero su `rd_clk` es
+`dot_clk`. Está admitido en su propio comentario ("identical class of CDC gap
+... out of scope for this fix"). Es notable que `osd.v` haga exactamente el
+mismo cruce y lo haga bien, lo que sugiere olvido más que decisión.
+
+Honestamente: **no hay evidencia que lo ligue al `SIZE=0`.** `disp_service_cnt`
+tiene delta 0 tanto en PASS como en FAIL, o sea el arbiter nunca sirvió al
+display durante el push, y no hay registro de debug que exponga el estado de
+`pixel_fifo`. Es un bug real que conviene arreglar por mérito propio (cambio de
+dos líneas más un puerto `dot_rst`, mismo patrón que el `mem_rst` que
+`framestore.v` ya recibió), y arreglarlo eliminaría la última incógnita de CDC
+del diseño -- lo que dejaría más limpio cualquier experimento futuro. Pero no
+es "la causa encontrada".
+
 ## Dónde NO buscar
 
 El camino de memoria está probado bueno y determinista: DRAM, `mem2axi_bridge`,
