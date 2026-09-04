@@ -65,36 +65,84 @@ nunca se carga y `SIZE` queda en su valor de reset. Y todo lo demás sigue
 idéntico: `vbuf_rd` consume las mismas 1578 palabras, el VBUF en DRAM está
 byte-perfecto, sin watchdog, sin `vld_err`.
 
-## Corrige el modelo de la hipótesis 3
+## Corrige el modelo de la hipótesis 3, y luego se corrige a sí mismo
 
 El doc 32 descartó "se come el arranque del stream" porque anteponer stuffing
-de ceros (8 a 1024 bytes) no cambiaba la tasa. El descarte era correcto pero el
-modelo estaba mal: **no se saltea una cantidad fija de bytes, se saltea el
-primer start code, esté donde esté.** Con 1024 ceros adelante el VLD igual cae
-en el `b5`, porque el `b3` sigue siendo el primer start code y sigue siendo el
-que se pierde. Por eso el padding no podía ayudar.
+de ceros no cambiaba la tasa. Primera lectura de este hallazgo: el descarte era
+correcto pero el modelo estaba mal -- no se saltea una cantidad fija de bytes
+sino *el primer start code, esté donde esté*, así que el padding nunca podía
+ayudar.
 
-Es una carrera de arranque: el FSM no está en condiciones de procesar el primer
-start code cuando llega.
+**Esa segunda explicación tampoco sobrevive.** Repitiendo el experimento de
+padding ahora que hay instrumentación (mismo bitstream, sin rebuild):
+
+```
+--- 1024 bytes de padding ---
+  PASS  start codes = 10 10 b3 b5    b3 presente=si
+  PASS  start codes = 10 10 10 b3    b3 presente=si
+  FAIL  start codes = 10 b5 a3 a3    b3 presente=NO
+  FAIL  start codes = 10 10 10 b2    b3 presente=NO
+  FAIL  start codes = 10 10 b5 b5    b3 presente=NO
+```
+
+Con padding, el **primer** despacho es `10` tanto en PASS como en FAIL (9 de 10
+corridas), así que el primer start code ya no discrimina nada. La divergencia
+ocurre más adelante, e incluso el número de despachos previos difiere
+(`10 10 10 b3` contra `10 10 b5`).
+
+Lo que sí es exacto en las 10 corridas con padding y en las 20 sin padding:
+
+> **PASS ⟺ el VLD despacha sobre `b3`. FAIL ⟺ nunca lo hace, y en su lugar
+> aparece `b5`.**
+
+Sin padding esa ley se ve como "se saltea el primer start code" simplemente
+porque ahí `b3` *es* el primero.
+
+### Medido contra la secuencia real del archivo
+
+`tcela-17.bits` tiene 74 start codes; los primeros son
+`b3`(0), `b5`(140), `b2`(150), `b5`(225), `b8`(237), `00`(245).
+
+- Un PASS despachó `b3 b5 b2 b5` = start codes **#1 #2 #3 #4**.
+- Un FAIL despachó `b5 b2 b5 b8` = start codes **#2 #3 #4 #5**.
+
+O sea, en el caso limpio el FAIL sigue la secuencia real del stream
+correctamente, salvo que **omite exactamente el #1**.
+
+### Lo que queda sin explicar del caso con padding
+
+De dónde sale `10` como primer código despachado. El padding es todo ceros y el
+primer bit en 1 del stream es el del `0x01` del prefijo, así que la búsqueda de
+23 ceros + 1 debería aterrizar en `b3`. Que aparezca `10` (y `a3`, `28`, `f5`,
+`68`, `70` más adelante, que no son start codes válidos en esas posiciones)
+indica que el VLD atraviesa tramos desalineados. No está explicado y conviene
+no construir sobre eso todavía.
 
 ## Qué queda por determinar
 
-Por qué se pierde ese primer despacho. Candidatos, en orden de lo que sugiere
-la evidencia:
+Por qué el despacho sobre `b3` se pierde.
 
-1. `getbits_fifo` necesita **dos** palabras antes de pasar de `STATE_INIT` a
-   `STATE_READY` (`cursor` arranca en 128 y baja de a 64 por palabra). El
-   primer start code está en la palabra 0. Si `vld` empieza a buscar antes de
-   que la ventana esté válida, o si `getbits_valid` llega tarde respecto del
-   arranque del FSM de `vld`, el primer 00 00 01 pasa sin ser despachado.
-2. Algo en el arranque de `vbr_rd_valid` desde el `vbuf_read_fifo` (`fifo_sc`,
-   mono-reloj, así que **no** es CDC).
+La hipótesis del arranque de `getbits` (necesita **dos** palabras antes de
+pasar de `STATE_INIT` a `STATE_READY`, `cursor` arranca en 128 y baja de a 64)
+explicaría el caso sin padding, donde `b3` está en la palabra 0. **Pero no
+explica el caso con padding**, donde `b3` cae 1024 bytes adentro, muchísimo
+después de cualquier ventana de arranque, y aun así se pierde la mitad de las
+veces. Así que hay algo que desalinea al VLD de forma recurrente, no solo al
+arrancar -- consistente con los códigos espurios (`10`, `a3`, `f5`, `68`) que
+aparecen en ambas clases.
 
-La instrumentación para el paso siguiente es barata y del mismo tipo: capturar
-de forma sticky el primer valor de `getbits` **al salir de `STATE_INIT`**, y el
-`state` de `vld` en el ciclo en que `getbits_valid` sube por primera vez. Eso
-distingue "la ventana arrancó desalineada" de "la ventana estaba bien pero el
-FSM llegó tarde".
+La instrumentación siguiente, entonces, ya no debería mirar solo el arranque.
+Lo que hace falta, todo del mismo estilo sticky y barato:
+
+1. El primer `getbits` **al salir de `STATE_INIT`** (se captura en PASS y en
+   FAIL, a diferencia del actual `VLD_DBG2` que solo se llena si se llega al
+   sequence header): dice si la ventana arranca alineada.
+2. El `state` de `vld` en el ciclo en que `getbits_valid` sube por primera vez:
+   separa "ventana desalineada" de "el FSM llegó tarde".
+3. Un contador de cuántas veces el FSM entra en `STATE_NEXT_START_CODE`
+   comparado con cuántas llega a `STATE_START_CODE`: si difieren, la búsqueda
+   está encontrando patrones que después descarta, que es lo que sugieren los
+   códigos espurios.
 
 ## Cambios
 
