@@ -6,7 +6,7 @@ IEEE 1180-1990 IDCT accuracy test, against rtl/mpeg2/idct.v.
 This is the project's only numeric, unambiguous correctness test: pass/fail
 against published limits, with no dependence on frame layout, field
 interleaving or buffer rotation -- all of which made full-frame comparison
-against a reference decoder unreliable (see docs/bringup 39/40).
+against a reference decoder unreliable (see docs/bringup 39).
 
 Result 2026-09-05 on the PolarFire port: PASSES all six conditions, matching
 the original author's numbers to the fourth decimal.
