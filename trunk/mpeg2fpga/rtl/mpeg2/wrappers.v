@@ -135,7 +135,7 @@ endmodule
  fifo with common clock for read and write port.
  */
 
-module fifo_sc (
+module fifo_sc (dbg,
 	clk,
 	rst,
 	din,
@@ -157,6 +157,11 @@ module fifo_sc (
   parameter [8:0]prog_thresh=9'd1;    /* Programmable threshold constant for prog_empty and prog_full */
 
   parameter FIFO_XILINX=1'b0;    /* use Xilinx FIFO primitives */
+
+  /* 2026-09-05: debug bundle from xfifo_sc's internals (see its header).
+   * Only vbuf_read_fifo connects it; the other instances leave it open and
+   * synthesis strips the logic. Tied off on the Xilinx path. */
+  output    [255:0]dbg;
   parameter check_valid=1;    /* assign x's to fifo output when valid is not asserted */
   
   input          clk;
@@ -188,6 +193,7 @@ module fifo_sc (
           .prog_thresh(prog_thresh)
           )
         xfifo_sc (
+          .dbg(dbg),
           .clk(clk), 
           .rst(rst), 
           .din(din), 
@@ -207,6 +213,7 @@ module fifo_sc (
     else
       begin
         /* Implementation using "hard" fifo */
+        assign dbg = 256'b0;
         xilinx_fifo_sc #(
           .dta_width(dta_width),
           .addr_width(addr_width),

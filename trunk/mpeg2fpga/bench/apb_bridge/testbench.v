@@ -71,6 +71,7 @@ module testbench ();
   reg  [63:0] dbg_first_rdata;
   reg  [63:0] dbg_first_mem_res;
   reg  [63:0] dbg_first_vbr_wr;
+  reg [255:0] vbuf_read_fifo_dbg;
   reg   [7:0] dbg_mem_req_rd_pop_cnt;
   wire        core_enable;
 
@@ -101,6 +102,7 @@ module testbench ();
       .dbg_first_rdata(dbg_first_rdata),
       .dbg_first_mem_res(dbg_first_mem_res),
       .dbg_first_vbr_wr(dbg_first_vbr_wr),
+      .vbuf_read_fifo_dbg(vbuf_read_fifo_dbg),
       .dbg_mem_req_rd_pop_cnt(dbg_mem_req_rd_pop_cnt),
       .core_enable(core_enable)
   );
@@ -136,7 +138,10 @@ module testbench ();
    * simulator forever instead of failing loudly.
    */
   initial begin
-    #100000;
+    /* 2026-09-05: raised from 100000 -- the debug-register checks added over
+     * Fase 7a grew the transfer count past the old budget and the watchdog
+     * fired on a perfectly healthy run. */
+    #400000;
     $display("TIMEOUT: simulation did not finish in time (stuck handshake?)");
     $finish;
   end
@@ -164,6 +169,8 @@ module testbench ();
     dbg_last_mem_req_wr_addr = 22'b0;
     dbg_mem_req_wr_push_cnt = 8'b0;
     vld_dbg = {32'hdddd3333, 32'hcccc2222, 32'hbbbb1111, 32'haaaa0000};
+    vbuf_read_fifo_dbg = {32'h77770007, 32'h66660006, 32'h55550005, 32'h44440004,
+                          32'h33330003, 32'h22220002, 32'h11110001, 32'h00000000};
     dbg_first_rdata   = 64'hAAAA1111_BBBB2222;
     dbg_first_mem_res = 64'hCCCC3333_DDDD4444;
     dbg_first_vbr_wr  = 64'hEEEE5555_FFFF6666;
@@ -650,6 +657,26 @@ module testbench ();
     check_eq("first vbuf_read_fifo word low", rdata, 32'hFFFF6666);
     apb_transfer(1'b0, 6'h30, 32'b0, rdata);
     check_eq("first vbuf_read_fifo word high", rdata, 32'hEEEE5555);
+
+    /* 2026-09-05: xfifo_sc's internals for vbuf_read_fifo (0x31-0x38), eight
+     * words behind an indexed part-select whose index relies on 3-bit
+     * wraparound at 0x38 -- check all eight, not just the ends. */
+    apb_transfer(1'b0, 6'h31, 32'b0, rdata);
+    check_eq("SCFIFO_DBG word 0", rdata, 32'h00000000);
+    apb_transfer(1'b0, 6'h32, 32'b0, rdata);
+    check_eq("SCFIFO_DBG word 1", rdata, 32'h11110001);
+    apb_transfer(1'b0, 6'h33, 32'b0, rdata);
+    check_eq("SCFIFO_DBG word 2", rdata, 32'h22220002);
+    apb_transfer(1'b0, 6'h34, 32'b0, rdata);
+    check_eq("SCFIFO_DBG word 3", rdata, 32'h33330003);
+    apb_transfer(1'b0, 6'h35, 32'b0, rdata);
+    check_eq("SCFIFO_DBG word 4", rdata, 32'h44440004);
+    apb_transfer(1'b0, 6'h36, 32'b0, rdata);
+    check_eq("SCFIFO_DBG word 5", rdata, 32'h55550005);
+    apb_transfer(1'b0, 6'h37, 32'b0, rdata);
+    check_eq("SCFIFO_DBG word 6", rdata, 32'h66660006);
+    apb_transfer(1'b0, 6'h38, 32'b0, rdata);
+    check_eq("SCFIFO_DBG word 7 (index wraps)", rdata, 32'h77770007);
 
     /* 0x22 must NOT reach the regfile any more. If it fell through, this
      * read would return the fake regfile's REG_RD_SIZE instead. */

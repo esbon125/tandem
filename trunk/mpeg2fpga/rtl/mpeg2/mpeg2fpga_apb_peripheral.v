@@ -386,6 +386,7 @@ module mpeg2fpga_apb_peripheral (
   wire  [63:0] dbg_first_rdata_internal;      /* mem_clk domain -- bridge synchronises */
   wire  [63:0] dbg_first_mem_res_internal;    /* clk domain */
   wire  [63:0] dbg_first_vbr_wr_internal;     /* clk domain */
+  wire [255:0] vbuf_read_fifo_dbg_internal;   /* clk domain */
   /* 2026-08-26 (mem_req_wr_almost_full investigation): see framestore.v's
    * header comment on these two -- push_cnt is core_clk domain (matches
    * this wrapper's own clk_internal), pop_cnt is mem_clk domain and needs
@@ -474,6 +475,7 @@ module mpeg2fpga_apb_peripheral (
       .getbits_dbg(getbits_dbg_internal),
       .dbg_first_mem_res(dbg_first_mem_res_internal),
       .dbg_first_vbr_wr(dbg_first_vbr_wr_internal),
+      .vbuf_read_fifo_dbg(vbuf_read_fifo_dbg_internal),
       .dbg_mem_req_wr_push_cnt(dbg_mem_req_wr_push_cnt_internal),
       .dbg_mem_req_rd_pop_cnt(dbg_mem_req_rd_pop_cnt_internal),
       .core_enable(core_enable_internal)
@@ -555,6 +557,7 @@ module mpeg2fpga_apb_peripheral (
       .getbits_dbg(getbits_dbg_internal),
       .dbg_first_mem_res(dbg_first_mem_res_internal),
       .dbg_first_vbr_wr(dbg_first_vbr_wr_internal),
+      .vbuf_read_fifo_dbg(vbuf_read_fifo_dbg_internal),
       .dbg_mem_req_wr_push_cnt(dbg_mem_req_wr_push_cnt_internal),
       .dbg_mem_req_rd_pop_cnt(dbg_mem_req_rd_pop_cnt_internal)
   );

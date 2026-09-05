@@ -127,7 +127,7 @@ endmodule
  fifo with common clock for read and write port.
  */
 
-module fifo_sc (
+module fifo_sc (dbg,
 	clk,
 	rst,
 	din,
@@ -152,6 +152,9 @@ module fifo_sc (
   parameter check_valid=1;    /* assign x's to fifo output when valid is not asserted */
   
   input          clk;
+  output    [255:0]dbg;
+  assign dbg = 256'b0;   /* bench copy: real instrumentation lives in rtl/mpeg2/xfifo_sc.v */
+
   input          rst;         /* low active sync master reset */
   /* read port */
   output [dta_width-1:0]dout; /* data output */

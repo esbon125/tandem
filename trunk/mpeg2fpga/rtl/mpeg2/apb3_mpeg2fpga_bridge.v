@@ -141,6 +141,7 @@ module apb3_mpeg2fpga_bridge (
     dbg_first_rdata,
     dbg_first_mem_res,
     dbg_first_vbr_wr,
+    vbuf_read_fifo_dbg,
 
     /* 2026-08-26 (mem_req_wr_almost_full investigation): free-running
      * occupancy counters straddling mem_request_fifo -- see framestore.v's
@@ -230,6 +231,7 @@ module apb3_mpeg2fpga_bridge (
   input       [63:0]dbg_first_rdata;                /* mem_clk domain -- synchronised below */
   input       [63:0]dbg_first_mem_res;              /* core_clk domain */
   input       [63:0]dbg_first_vbr_wr;               /* core_clk domain */
+  input      [255:0]vbuf_read_fifo_dbg;             /* core_clk domain -- xfifo_sc internals */
   input        [7:0]dbg_mem_req_wr_push_cnt;        /* core_clk domain, no CDC needed */
   input        [7:0]dbg_mem_req_rd_pop_cnt;         /* mem_clk domain -- genuine CDC needed */
 
@@ -270,6 +272,8 @@ module apb3_mpeg2fpga_bridge (
   localparam [5:0] RDATA_LO_ADDR   = 6'h2b, RDATA_HI_ADDR   = 6'h2c,
                    MEMRES_LO_ADDR  = 6'h2d, MEMRES_HI_ADDR  = 6'h2e,
                    VBRWR_LO_ADDR   = 6'h2f, VBRWR_HI_ADDR   = 6'h30;
+  /* 2026-09-05: xfifo_sc's own internals for vbuf_read_fifo, eight words. */
+  localparam [5:0] SCFIFO_DBG0_ADDR = 6'h31, SCFIFO_DBG7_ADDR = 6'h38;
 
   /* Fase 7c PWDATA investigation: hold the Access phase open for this many
    * extra PCLK cycles before committing, instead of on the very first
@@ -516,6 +520,8 @@ module apb3_mpeg2fpga_bridge (
   wire is_memres_hi = (apb_addr_r == MEMRES_HI_ADDR);
   wire is_vbrwr_lo  = (apb_addr_r == VBRWR_LO_ADDR);
   wire is_vbrwr_hi  = (apb_addr_r == VBRWR_HI_ADDR);
+  wire is_scfifo_dbg = (apb_addr_r >= SCFIFO_DBG0_ADDR) && (apb_addr_r <= SCFIFO_DBG7_ADDR);
+  wire [2:0] scfifo_dbg_idx = apb_addr_r[2:0] - SCFIFO_DBG0_ADDR[2:0];   /* 0..7 */
   wire is_core_enable = (apb_addr_r == CORE_ENABLE_ADDR);
 
   always @(posedge core_clk or negedge core_rst_n) begin
@@ -680,6 +686,10 @@ module apb3_mpeg2fpga_bridge (
               core_state <= C_DONE;
             end else if (is_vbrwr_hi) begin
               if (!apb_write_r) rdata_hold <= dbg_first_vbr_wr[63:32];
+              core_state <= C_DONE;
+            end else if (is_scfifo_dbg) begin
+              if (!apb_write_r)
+                rdata_hold <= vbuf_read_fifo_dbg[{scfifo_dbg_idx, 5'b0} +: 32];
               core_state <= C_DONE;
             end else if (is_core_enable) begin
               if (apb_write_r) core_enable_r <= apb_wdata_r[0];
