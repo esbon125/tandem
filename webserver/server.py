@@ -35,6 +35,7 @@ import struct
 import time
 import urllib.parse
 
+import decode_stream
 import framestore
 from ddr_region import DDRRegion, FRAMESTORE_DEVICE
 from decoder_push import PAGE_OFFSET, OverlayNotApplied
@@ -154,6 +155,27 @@ def frame_payload(frame):
     return b"".join((header, luma, cb, cr))
 
 
+RECORD_HEADER = b"M2HD"     # json metadata
+RECORD_FRAME = b"M2FR"      # one captured picture
+
+
+def _frame_record(capture):
+    geometry = capture.geometry
+    luma, cb, cr = capture.planes
+    body = struct.pack(
+        "<8I", capture.display_index, capture.decode_index,
+        capture.picture_type, geometry.width, geometry.height,
+        geometry.luma_stride, geometry.luma_rows, geometry.chroma_stride)
+    body += struct.pack("<I", geometry.chroma_rows)
+    payload = b"".join((body, luma, cb, cr))
+    return RECORD_FRAME + struct.pack("<I", len(payload)) + payload
+
+
+def _json_record(payload):
+    body = json.dumps(payload).encode()
+    return RECORD_HEADER + struct.pack("<I", len(body)) + body
+
+
 class Handler(http.server.BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
 
@@ -185,7 +207,11 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self.send_error(404)
 
     def do_POST(self):
-        if urllib.parse.urlparse(self.path).path != "/upload":
+        path = urllib.parse.urlparse(self.path).path
+        if path == "/decode":
+            self._do_decode()
+            return
+        if path != "/upload":
             self.send_error(404)
             return
         length = int(self.headers.get("Content-Length", 0))
@@ -211,6 +237,59 @@ class Handler(http.server.BaseHTTPRequestHandler):
               % (report["width"], report["height"], report["frames"],
                  report["sticky"]))
         self._send_json(200, report)
+
+    def _do_decode(self):
+        """Decode a whole stream, streaming every captured frame back as it lands.
+
+        Chunked rather than one big response because a 150 picture clip is ~75
+        MiB of planes and takes ten-odd seconds to capture: the browser gets to
+        show progress and build its playback buffer as frames arrive, and the
+        board only ever holds one frame at a time.
+        """
+        length = int(self.headers.get("Content-Length", 0))
+        if length <= 0:
+            self.send_error(400, "empty body")
+            return
+        data = self.rfile.read(length)
+        print("[http] decode: %d bytes" % length)
+
+        self.send_response(200)
+        self.send_header("Content-Type", "application/octet-stream")
+        self.send_header("Transfer-Encoding", "chunked")
+        self.send_header("Cache-Control", "no-store")
+        self.end_headers()
+
+        def chunk(payload):
+            self.wfile.write(b"%x\r\n" % len(payload) + payload + b"\r\n")
+
+        try:
+            sequence = decode_stream.elementary_stream.parse(data)
+            chunk(_json_record({
+                "kind": "start",
+                "width": sequence.width,
+                "height": sequence.height,
+                "frame_rate": round(sequence.frame_rate, 3),
+                "pictures": len(sequence.pictures),
+            }))
+            report = decode_stream.decode(
+                data,
+                lambda cap: chunk(_frame_record(cap)),
+                on_capture_progress=lambda done, total: chunk(_json_record(
+                    {"kind": "capturing", "captured": done, "total": total})))
+            report["kind"] = "done"
+            chunk(_json_record(report))
+            print("[http] decode done: %s" % report)
+        except Exception as exc:                # noqa: BLE001 - tell the client
+            print("[http] decode failed: %r" % (exc,))
+            try:
+                chunk(_json_record({"kind": "error", "error": repr(exc)}))
+            except OSError:
+                pass
+        finally:
+            try:
+                self.wfile.write(b"0\r\n\r\n")
+            except OSError:
+                pass
 
     def _send_file(self, path, content_type):
         try:

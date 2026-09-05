@@ -5,163 +5,141 @@
 <title>mpeg2fpga on PolarFire SoC</title>
 <style>
   :root { color-scheme: light dark; }
-  body { font: 14px/1.5 system-ui, sans-serif; margin: 0; padding: 24px;
-         max-width: 1100px; }
-  h1 { font-size: 18px; margin: 0 0 4px; }
-  .sub { opacity: .65; margin: 0 0 20px; }
+  body { font: 14px/1.55 system-ui, sans-serif; margin: 0; padding: 24px 24px 48px;
+         max-width: 960px; }
+  h1 { font-size: 19px; margin: 0 0 2px; }
+  .sub { opacity: .6; margin: 0 0 22px; }
   .bar { display: flex; gap: 10px; align-items: center; flex-wrap: wrap;
-         margin-bottom: 16px; }
-  button { font: inherit; padding: 5px 14px; }
-  button:disabled { opacity: .5; }
+         margin-bottom: 14px; }
+  button { font: inherit; padding: 5px 15px; border-radius: 5px; }
+  button:disabled { opacity: .45; }
   #status { opacity: .8; }
-  #status.bad { color: #c02020; }
-  canvas { border: 1px solid #8886; image-rendering: pixelated;
-           max-width: 100%; background: #0002; }
-  .strip { display: flex; gap: 8px; margin: 14px 0; flex-wrap: wrap; }
-  .strip button { padding: 4px 12px; }
-  .strip button[aria-pressed="true"] { outline: 2px solid currentColor; }
-  table { border-collapse: collapse; margin-top: 18px; font-size: 13px; }
-  th, td { text-align: left; padding: 2px 16px 2px 0; }
-  th { font-weight: 600; opacity: .7; }
-  code { font-family: ui-monospace, monospace; }
+  #status.bad { color: #d33; }
+  .screen { position: relative; display: inline-block; }
+  canvas { border: 1px solid #8886; image-rendering: pixelated; max-width: 100%;
+           background: #111; display: block; }
+  progress { width: 100%; height: 4px; display: block; margin-top: -4px;
+             position: relative; }
+  .transport { display: flex; gap: 12px; align-items: center; margin-top: 12px;
+               flex-wrap: wrap; }
+  .transport input[type=range] { flex: 1; min-width: 220px; }
+  .muted { opacity: .6; font-variant-numeric: tabular-nums; }
+  table { border-collapse: collapse; margin-top: 20px; font-size: 13px; }
+  th, td { text-align: left; padding: 2px 18px 2px 0; vertical-align: top; }
+  th { font-weight: 600; opacity: .65; font-weight: 500; }
+  code { font-family: ui-monospace, SFMono-Regular, monospace; }
 </style>
 </head>
 <body>
 
 <h1>mpeg2fpga on PolarFire SoC</h1>
-<p class="sub">Push an MPEG-2 elementary stream at the decoder and look at what
-it reconstructed.</p>
+<p class="sub">An MPEG-2 elementary stream goes in over DMA, the FPGA decodes it,
+and every reconstructed picture comes back here.</p>
 
 <div class="bar">
   <input type="file" id="file" accept=".m2v,.mpg,.mpeg,.bits,.bit">
-  <button id="push" disabled>Decode</button>
+  <button id="go" disabled>Decode</button>
   <span id="status">pick a stream</span>
 </div>
 
-<div class="strip" id="strip"></div>
-<canvas id="screen" width="320" height="240"></canvas>
+<div class="screen">
+  <canvas id="screen" width="640" height="360"></canvas>
+  <progress id="progress" value="0" max="1" hidden></progress>
+</div>
+
+<div class="transport" hidden id="transport">
+  <button id="play">Pause</button>
+  <input type="range" id="seek" min="0" max="0" value="0">
+  <span class="muted" id="counter"></span>
+</div>
+
 <table id="report"></table>
 
 <script>
 const $ = (id) => document.getElementById(id);
 const ctx = $("screen").getContext("2d");
-let selected = null;
 
-$("file").onchange = () => { $("push").disabled = !$("file").files[0]; };
+const frames = [];          // ImageBitmap by display order
+let meta = null;
+let playing = false;
+let position = 0;
+let timer = null;
+
+$("file").onchange = () => { $("go").disabled = !$("file").files[0]; };
 
 function setStatus(text, bad) {
   $("status").textContent = text;
   $("status").className = bad ? "bad" : "";
 }
 
-$("push").onclick = async () => {
-  const file = $("file").files[0];
-  if (!file) return;
-  $("push").disabled = true;
-  setStatus(`pushing ${file.size} bytes...`);
-  $("strip").textContent = "";
-  $("report").textContent = "";
-  try {
-    const resp = await fetch("/upload", { method: "POST", body: await file.arrayBuffer() });
-    const report = await resp.json();
-    if (!resp.ok || report.status !== "ok") {
-      setStatus(report.error || `server said ${resp.status}`, true);
-      return;
+// ---------------------------------------------------------------------------
+// the wire format: [4-byte magic][uint32 length][payload], repeated
+// ---------------------------------------------------------------------------
+
+class RecordReader {
+  constructor() { this.buffer = new Uint8Array(0); }
+
+  push(bytes) {
+    const merged = new Uint8Array(this.buffer.length + bytes.length);
+    merged.set(this.buffer);
+    merged.set(bytes, this.buffer.length);
+    this.buffer = merged;
+  }
+
+  *records() {
+    while (this.buffer.length >= 8) {
+      const view = new DataView(this.buffer.buffer, this.buffer.byteOffset);
+      const length = view.getUint32(4, true);
+      if (this.buffer.length < 8 + length) return;
+      const magic = String.fromCharCode(...this.buffer.subarray(0, 4));
+      const payload = this.buffer.slice(8, 8 + length);
+      this.buffer = this.buffer.subarray(8 + length);
+      yield { magic, payload };
     }
-    showReport(report);
-    if (!report.frames.length) {
-      setStatus("decoded nothing - no frame buffer was written", true);
-      return;
-    }
-    setStatus(`${report.width}x${report.height}, ` +
-              `${report.frames.length} frame buffer(s) in ` +
-              `${report.decode_seconds.toFixed(1)} s`);
-    buildStrip(report.frames);
-    await show(report.frames[0]);
-  } catch (err) {
-    setStatus(String(err), true);
-  } finally {
-    $("push").disabled = false;
-  }
-};
-
-function showReport(r) {
-  const rows = [
-    ["size", `${r.width} x ${r.height}`],
-    ["display size", r.display_size.join(" x ")],
-    ["frame rate code", r.frame_rate],
-    ["stream", `${r.bytes} bytes, DMA in ${r.dma_seconds.toFixed(3)} s`],
-    ["status", `${r.sticky} ` +
-      Object.entries(r.flags).filter(([, v]) => v).map(([k]) => k).join(" ")],
-    ["settled", r.settled ? "yes" : "no - framestore still changing"],
-    ["frame buffers written", r.frames.join(", ") || "none"],
-  ];
-  $("report").innerHTML = rows
-    .map(([k, v]) => `<tr><th>${k}</th><td><code>${v}</code></td></tr>`).join("");
-}
-
-function buildStrip(frames) {
-  $("strip").innerHTML = frames
-    .map((f) => `<button data-frame="${f}">buffer ${f}</button>`).join("");
-  for (const button of $("strip").children) {
-    button.onclick = () => show(Number(button.dataset.frame));
   }
 }
 
-async function show(frame) {
-  selected = frame;
-  for (const button of $("strip").children) {
-    button.setAttribute("aria-pressed", Number(button.dataset.frame) === frame);
-  }
-  const resp = await fetch(`/frame/${frame}`);
-  if (!resp.ok) { setStatus(`frame ${frame}: ${resp.status}`, true); return; }
-  draw(await resp.arrayBuffer());
-}
-
-// The board hands over the frame store's bytes untouched, so the two things
-// its storage format does to a pixel get undone here:
+// ---------------------------------------------------------------------------
+// The board hands over the frame store's bytes untouched, so the two things its
+// storage format does to a pixel get undone here rather than on the MSS, which
+// has neither numpy nor the cycles:
 //   * the eight pixels of a 64-bit word are reversed, because the leftmost
 //     pixel is bits [63:56] and DRAM is little-endian;
-//   * values are signed and offset by -128, which `^ 0x80` undoes.
-// Doing it in the browser rather than in Python on the MSS is the whole reason
-// the wire format is raw.
+//   * values are signed, offset by -128, which `^ 0x80` undoes.
+// ---------------------------------------------------------------------------
+
 function plane(src, at, stride, rows, width, height) {
   const out = new Uint8Array(width * height);
   for (let y = 0; y < height; y++) {
-    const from = at + y * stride;
-    const to = y * width;
+    const from = at + y * stride, to = y * width;
     for (let x = 0; x < width; x++) {
-      // byte holding pixel x, with the eight-pixel group reversed
       out[to + x] = src[from + (x & ~7) + (7 - (x & 7))] ^ 0x80;
     }
   }
   return out;
 }
 
-function draw(buffer) {
-  const bytes = new Uint8Array(buffer);
-  const magic = String.fromCharCode(...bytes.subarray(0, 4));
-  if (magic !== "M2FS") { setStatus("bad frame header", true); return; }
-  const head = new DataView(buffer, 4);
-  const [, , width, height, lumaStride, lumaRows, chromaStride, chromaRows] =
-    Array.from({ length: 9 }, (_, i) => head.getUint32(i * 4, true));
+function toImageData(payload) {
+  const view = new DataView(payload.buffer, payload.byteOffset);
+  const displayIndex = view.getUint32(0, true);
+  const width = view.getUint32(12, true);
+  const height = view.getUint32(16, true);
+  const lumaStride = view.getUint32(20, true);
+  const lumaRows = view.getUint32(24, true);
+  const chromaStride = view.getUint32(28, true);
+  const chromaRows = view.getUint32(32, true);
 
-  let at = 4 + 9 * 4;
+  let at = 36;
   const cw = width >> 1, ch = height >> 1;
-  const Y = plane(bytes, at, lumaStride, lumaRows, width, height);
+  const Y = plane(payload, at, lumaStride, lumaRows, width, height);
   at += lumaStride * lumaRows;
-  const Cb = plane(bytes, at, chromaStride, chromaRows, cw, ch);
+  const Cb = plane(payload, at, chromaStride, chromaRows, cw, ch);
   at += chromaStride * chromaRows;
-  const Cr = plane(bytes, at, chromaStride, chromaRows, cw, ch);
+  const Cr = plane(payload, at, chromaStride, chromaRows, cw, ch);
 
-  const canvas = $("screen");
-  canvas.width = width;
-  canvas.height = height;
-  const image = ctx.createImageData(width, height);
+  const image = new ImageData(width, height);
   const px = image.data;
-
-  // BT.601, 4:2:0 chroma repeated over each 2x2 luma block.
-  for (let y = 0; y < height; y++) {
+  for (let y = 0; y < height; y++) {                  // BT.601, 4:2:0
     const crow = (y >> 1) * cw;
     for (let x = 0; x < width; x++) {
       const c = 1.164 * (Y[y * width + x] - 16);
@@ -174,16 +152,147 @@ function draw(buffer) {
       px[o + 3] = 255;
     }
   }
-  ctx.putImageData(image, 0, 0);
+  return { displayIndex, image, width, height };
 }
 
-fetch("/state").then((r) => r.json()).then((s) => {
-  if (s.frames && s.frames.length) {
-    setStatus(`last decode: ${s.width}x${s.height}`);
-    buildStrip(s.frames);
-    show(s.frames[0]);
+// ---------------------------------------------------------------------------
+// playback
+// ---------------------------------------------------------------------------
+
+function present(index) {
+  const bitmap = frames[index];
+  if (!bitmap) return;
+  const canvas = $("screen");
+  if (canvas.width !== bitmap.width || canvas.height !== bitmap.height) {
+    canvas.width = bitmap.width;
+    canvas.height = bitmap.height;
   }
-}).catch(() => {});
+  ctx.drawImage(bitmap, 0, 0);
+  $("seek").value = index;
+  $("counter").textContent =
+    `${index + 1} / ${frames.length}  ·  ${meta.frame_rate.toFixed(2)} fps`;
+}
+
+function tick() {
+  if (!playing) return;
+  // skip over any frame that has not arrived yet rather than stalling
+  let next = position;
+  for (let i = 0; i < frames.length; i++) {
+    next = (next + 1) % frames.length;
+    if (frames[next]) break;
+  }
+  position = next;
+  present(position);
+}
+
+function startPlayback() {
+  if (timer) clearInterval(timer);
+  playing = true;
+  $("play").textContent = "Pause";
+  $("transport").hidden = false;
+  timer = setInterval(tick, 1000 / (meta.frame_rate || 25));
+}
+
+$("play").onclick = () => {
+  playing = !playing;
+  $("play").textContent = playing ? "Pause" : "Play";
+};
+
+$("seek").oninput = (e) => {
+  playing = false;
+  $("play").textContent = "Play";
+  position = Number(e.target.value);
+  present(position);
+};
+
+// ---------------------------------------------------------------------------
+
+$("go").onclick = async () => {
+  const file = $("file").files[0];
+  if (!file) return;
+  $("go").disabled = true;
+  frames.length = 0;
+  meta = null;
+  $("report").textContent = "";
+  $("transport").hidden = true;
+  if (timer) { clearInterval(timer); timer = null; }
+  playing = false;
+  setStatus(`pushing ${file.size.toLocaleString()} bytes...`);
+
+  try {
+    const resp = await fetch("/decode", { method: "POST", body: await file.arrayBuffer() });
+    if (!resp.ok) { setStatus(`server said ${resp.status}`, true); return; }
+
+    const reader = resp.body.getReader();
+    const records = new RecordReader();
+    let done = null;
+
+    for (;;) {
+      const { value, done: finished } = await reader.read();
+      if (finished) break;
+      records.push(value);
+      for (const record of records.records()) {
+        if (record.magic === "M2HD") {
+          const json = JSON.parse(new TextDecoder().decode(record.payload));
+          if (json.kind === "start") {
+            meta = json;
+            frames.length = json.pictures;
+            $("seek").max = Math.max(0, json.pictures - 1);
+            $("progress").max = json.pictures;
+            $("progress").hidden = false;
+            setStatus(`${json.width}x${json.height}, ${json.pictures} pictures at ` +
+                      `${json.frame_rate.toFixed(2)} fps - decoding on the FPGA...`);
+          } else if (json.kind === "capturing") {
+            // The board holds every frame in RAM while it decodes and only
+            // sends them afterwards: the decoder does not wait, so a socket
+            // write inside the capture loop costs pictures.
+            $("progress").value = json.captured;
+            setStatus(`decoding on the FPGA: ${json.captured} / ${json.total} pictures`);
+          } else if (json.kind === "error") {
+            setStatus(json.error, true);
+          } else {
+            done = json;
+          }
+        } else if (record.magic === "M2FR") {
+          const { displayIndex, image } = toImageData(record.payload);
+          frames[displayIndex] = await createImageBitmap(image);
+          const have = frames.filter(Boolean).length;
+          $("progress").value = have;
+          setStatus(`receiving frames: ${have} / ${frames.length}`);
+          if (!playing) { position = displayIndex; present(displayIndex); }
+          if (have === 8) startPlayback();
+        }
+      }
+    }
+
+    $("progress").hidden = true;
+    if (done) {
+      showReport(done);
+      const got = frames.filter(Boolean).length;
+      setStatus(`decoded ${got} frames in ${done.seconds} s` +
+                (done.error ? " - decoder reported an error" : ""), done.error);
+      if (got) { position = 0; startPlayback(); }
+    }
+  } catch (err) {
+    setStatus(String(err), true);
+  } finally {
+    $("go").disabled = false;
+  }
+};
+
+function showReport(r) {
+  const rows = [
+    ["size", `${r.width} x ${r.height}`],
+    ["decoder SIZE register", r.decoder_size.join(" x ")],
+    ["frame rate", `${r.frame_rate} fps`],
+    ["pictures / captured", `${r.pictures} / ${r.captured}`],
+    ["capture time", `${r.seconds} s`],
+    ["status register", `${r.sticky}` +
+      (r.error ? " error" : "") + (r.watchdog ? " watchdog" : "")],
+  ];
+  $("report").innerHTML = rows
+    .map(([k, v]) => `<tr><th>${k}</th><td><code>${v}</code></td></tr>`).join("");
+}
 </script>
 </body>
 </html>
