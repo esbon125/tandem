@@ -25,7 +25,7 @@
 `undef DEBUG
 //`define DEBUG 1
 
-module getbits_fifo (clk, clk_en, rst, 
+module getbits_fifo (getbits_dbg, clk, clk_en, rst,
    vid_in, vid_in_rd_en, vid_in_rd_valid,
    advance, align,
    getbits, signbit, getbits_valid,
@@ -34,6 +34,8 @@ module getbits_fifo (clk, clk_en, rst,
   input            clk;                      // clock
   input            clk_en;                   // clock enable
   input            rst;                      // synchronous active low reset
+
+  output    [191:0]getbits_dbg;              // debug only, see the block at the end of this module
 
   input      [63:0]vid_in;
   output reg       vid_in_rd_en;
@@ -139,6 +141,80 @@ module getbits_fifo (clk, clk_en, rst,
     if (~rst) vid_in_rd_en <= 1'b0;
     else if (clk_en) vid_in_rd_en <= (next == STATE_INIT) && ~vid_in_rd_en && ~vid_in_rd_valid;
     else vid_in_rd_en <= vid_in_rd_en;
+
+  /*
+   * Debug instrumentation (2026-09-04, Fase 7a intermittent SIZE).
+   *
+   * vld.v's own debug registers established the law: a push decodes iff vld
+   * ever dispatches on start code b3, and on a failing push it dispatches on
+   * b5 instead -- the sequence extension, i.e. the NEXT real start code in the
+   * file. Measured against tcela-17's actual start-code sequence
+   * (b3@0, b5@140, b2@150, b5@225, b8@237), a failing run walks #2 #3 #4 #5
+   * while a passing one walks #1 #2 #3 #4: it omits exactly the first.
+   *
+   * The cheapest explanation is right here: lose ONE 64-bit word at startup
+   * and you skip exactly the first 8 bytes, which is exactly where b3 lives.
+   * That does NOT explain the padded case though (losing 8 bytes of zero
+   * stuffing is harmless, yet it still fails half the time), so this captures
+   * the raw evidence rather than assuming either story:
+   *
+   *   - the first two words this module is actually handed, so we can compare
+   *     them against the head of the file byte for byte
+   *   - the getbits window and cursor at the very first STATE_READY, which is
+   *     where any startup misalignment becomes visible
+   *   - the total word count, to see whether a word went missing at all
+   */
+
+  reg    [63:0]dbg_word0;
+  reg    [63:0]dbg_word1;
+  reg     [1:0]dbg_words_captured;
+  reg    [31:0]dbg_word_count;
+  reg    [23:0]dbg_getbits_at_ready;
+  reg     [7:0]dbg_cursor_at_ready;
+  reg          dbg_ready_captured;
+
+  always @(posedge clk)
+    if (~rst)
+      begin
+        dbg_word0          <= 64'b0;
+        dbg_word1          <= 64'b0;
+        dbg_words_captured <= 2'b0;
+        dbg_word_count     <= 32'b0;
+      end
+    else if (clk_en && (state == STATE_INIT) && vid_in_rd_valid)
+      begin
+        if (~&dbg_word_count) dbg_word_count <= dbg_word_count + 32'd1;
+        case (dbg_words_captured)
+          2'd0: begin dbg_word0 <= vid_in; dbg_words_captured <= 2'd1; end
+          2'd1: begin dbg_word1 <= vid_in; dbg_words_captured <= 2'd2; end
+          default: ;
+        endcase
+      end
+
+  /* First cycle the window ever goes valid: if the stream is correctly
+   * aligned this must read 000001 (the start-code prefix) with cursor 0. */
+  always @(posedge clk)
+    if (~rst)
+      begin
+        dbg_getbits_at_ready <= 24'b0;
+        dbg_cursor_at_ready  <= 8'b0;
+        dbg_ready_captured   <= 1'b0;
+      end
+    else if (clk_en && (next == STATE_READY) && ~dbg_ready_captured)
+      begin
+        dbg_getbits_at_ready <= next_getbits;
+        dbg_cursor_at_ready  <= next_cursor;
+        dbg_ready_captured   <= 1'b1;
+      end
+
+  assign getbits_dbg = {
+      /* word 5 */ dbg_words_captured, dbg_ready_captured, 13'b0, dbg_word_count[15:0],
+      /* word 4 */ dbg_cursor_at_ready, dbg_getbits_at_ready,
+      /* word 3 */ dbg_word1[63:32],
+      /* word 2 */ dbg_word1[31:0],
+      /* word 1 */ dbg_word0[63:32],
+      /* word 0 */ dbg_word0[31:0]
+      };
 
   /* vld clock enable */
 

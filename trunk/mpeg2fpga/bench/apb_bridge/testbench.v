@@ -67,6 +67,7 @@ module testbench ();
   reg  [21:0] dbg_last_mem_req_wr_addr;
   reg   [7:0] dbg_mem_req_wr_push_cnt;
   reg [127:0] vld_dbg;
+  reg [191:0] getbits_dbg;
   reg   [7:0] dbg_mem_req_rd_pop_cnt;
   wire        core_enable;
 
@@ -93,6 +94,7 @@ module testbench ();
       .dbg_last_mem_req_wr_addr(dbg_last_mem_req_wr_addr),
       .dbg_mem_req_wr_push_cnt(dbg_mem_req_wr_push_cnt),
       .vld_dbg(vld_dbg),
+      .getbits_dbg(getbits_dbg),
       .dbg_mem_req_rd_pop_cnt(dbg_mem_req_rd_pop_cnt),
       .core_enable(core_enable)
   );
@@ -156,6 +158,7 @@ module testbench ();
     dbg_last_mem_req_wr_addr = 22'b0;
     dbg_mem_req_wr_push_cnt = 8'b0;
     vld_dbg = {32'hdddd3333, 32'hcccc2222, 32'hbbbb1111, 32'haaaa0000};
+    getbits_dbg = {32'h55550005, 32'h44440004, 32'h33330003, 32'h22220002, 32'h11110001, 32'h00000000};
     dbg_mem_req_rd_pop_cnt = 8'b0;
   end
 
@@ -603,6 +606,23 @@ module testbench ();
     check_eq("VLD_DBG2 returns vld_dbg[95:64]", rdata, 32'hcccc2222);
     apb_transfer(1'b0, 6'h24, 32'b0, rdata);
     check_eq("VLD_DBG3 returns vld_dbg[127:96]", rdata, 32'hdddd3333);
+
+    /* 2026-09-04: GB_DBG0..5 (0x25-0x2a), getbits.v's window startup. These
+     * are selected by an indexed part-select rather than six explicit
+     * branches, so an off-by-one in the index arithmetic is the obvious
+     * failure mode -- check every one of the six, not just the ends. */
+    apb_transfer(1'b0, 6'h25, 32'b0, rdata);
+    check_eq("GB_DBG0 returns getbits_dbg word 0", rdata, 32'h00000000);
+    apb_transfer(1'b0, 6'h26, 32'b0, rdata);
+    check_eq("GB_DBG1 returns getbits_dbg word 1", rdata, 32'h11110001);
+    apb_transfer(1'b0, 6'h27, 32'b0, rdata);
+    check_eq("GB_DBG2 returns getbits_dbg word 2", rdata, 32'h22220002);
+    apb_transfer(1'b0, 6'h28, 32'b0, rdata);
+    check_eq("GB_DBG3 returns getbits_dbg word 3", rdata, 32'h33330003);
+    apb_transfer(1'b0, 6'h29, 32'b0, rdata);
+    check_eq("GB_DBG4 returns getbits_dbg word 4", rdata, 32'h44440004);
+    apb_transfer(1'b0, 6'h2a, 32'b0, rdata);
+    check_eq("GB_DBG5 returns getbits_dbg word 5", rdata, 32'h55550005);
 
     /* 0x22 must NOT reach the regfile any more. If it fell through, this
      * read would return the fake regfile's REG_RD_SIZE instead. */

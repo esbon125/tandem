@@ -137,6 +137,7 @@ module apb3_mpeg2fpga_bridge (
      * domain, same as vbuf_wr_addr, no extra CDC needed. */
     dbg_last_mem_req_wr_addr,
     vld_dbg,
+    getbits_dbg,
 
     /* 2026-08-26 (mem_req_wr_almost_full investigation): free-running
      * occupancy counters straddling mem_request_fifo -- see framestore.v's
@@ -222,6 +223,7 @@ module apb3_mpeg2fpga_bridge (
   input       [37:0]dbg_last_write_awaddr_issued;  /* mem_clk domain -- genuine CDC needed */
   input       [21:0]dbg_last_mem_req_wr_addr;       /* core_clk domain, no CDC needed */
   input      [127:0]vld_dbg;                        /* core_clk domain, no CDC needed -- vld.v parse state */
+  input      [191:0]getbits_dbg;                    /* core_clk domain, no CDC needed -- getbits.v window startup */
   input        [7:0]dbg_mem_req_wr_push_cnt;        /* core_clk domain, no CDC needed */
   input        [7:0]dbg_mem_req_rd_pop_cnt;         /* mem_clk domain -- genuine CDC needed */
 
@@ -250,6 +252,12 @@ module apb3_mpeg2fpga_bridge (
    * block for the bit layout and why vld_err could not answer this. */
   localparam [5:0] VLD_DBG0_ADDR = 6'h21, VLD_DBG1_ADDR = 6'h22,
                    VLD_DBG2_ADDR = 6'h23, VLD_DBG3_ADDR = 6'h24;
+  /* 2026-09-04: getbits.v's window startup, six words. Word 0/1 are the first
+   * 64-bit word the module was handed, 2/3 the second, 4 the getbits window
+   * and cursor at the very first STATE_READY, 5 the word count and flags. */
+  localparam [5:0] GB_DBG0_ADDR = 6'h25, GB_DBG1_ADDR = 6'h26,
+                   GB_DBG2_ADDR = 6'h27, GB_DBG3_ADDR = 6'h28,
+                   GB_DBG4_ADDR = 6'h29, GB_DBG5_ADDR = 6'h2a;
 
   /* Fase 7c PWDATA investigation: hold the Access phase open for this many
    * extra PCLK cycles before committing, instead of on the very first
@@ -487,6 +495,8 @@ module apb3_mpeg2fpga_bridge (
   wire is_vld_dbg1 = (apb_addr_r == VLD_DBG1_ADDR);
   wire is_vld_dbg2 = (apb_addr_r == VLD_DBG2_ADDR);
   wire is_vld_dbg3 = (apb_addr_r == VLD_DBG3_ADDR);
+  wire is_gb_dbg = (apb_addr_r >= GB_DBG0_ADDR) && (apb_addr_r <= GB_DBG5_ADDR);
+  wire [2:0] gb_dbg_idx = apb_addr_r[2:0] - GB_DBG0_ADDR[2:0];   /* 0..5 within the bundle */
   wire is_core_enable = (apb_addr_r == CORE_ENABLE_ADDR);
 
   always @(posedge core_clk or negedge core_rst_n) begin
@@ -625,6 +635,10 @@ module apb3_mpeg2fpga_bridge (
               core_state <= C_DONE;
             end else if (is_vld_dbg3) begin
               if (!apb_write_r) rdata_hold <= vld_dbg[127:96];
+              core_state <= C_DONE;
+            end else if (is_gb_dbg) begin
+              if (!apb_write_r)
+                rdata_hold <= getbits_dbg[{gb_dbg_idx, 5'b0} +: 32];
               core_state <= C_DONE;
             end else if (is_core_enable) begin
               if (apb_write_r) core_enable_r <= apb_wdata_r[0];

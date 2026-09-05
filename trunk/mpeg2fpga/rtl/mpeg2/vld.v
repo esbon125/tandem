@@ -2590,6 +2590,7 @@ module vld(clk, clk_en, rst,
   reg    [23:0]dbg_first_seq_hdr_getbits; /* getbits on first entry to STATE_SEQUENCE_HEADER */
   reg          dbg_seq_hdr_captured;
   reg          dbg_getbits_valid_seen;
+  reg     [7:0]dbg_nsc_count;    /* saturating: entries to STATE_NEXT_START_CODE */
 
   always @(posedge clk)
     if (~rst) dbg_visited <= 16'b0;
@@ -2648,12 +2649,21 @@ module vld(clk, clk_en, rst,
         dbg_seq_hdr_captured      <= 1'b1;
       end
 
+  /* How often the FSM re-enters the search state, versus how often it actually
+   * dispatches (dbg_sc_count). A gap between the two means the search keeps
+   * finding patterns it then throws away -- which is what the spurious codes
+   * (10, a3, f5, 68) in the padded runs hint at. */
+  always @(posedge clk)
+    if (~rst) dbg_nsc_count <= 8'b0;
+    else if (clk_en && (state == STATE_NEXT_START_CODE) && ~&dbg_nsc_count)
+      dbg_nsc_count <= dbg_nsc_count + 8'd1;
+
   always @(posedge clk)
     if (~rst) dbg_getbits_valid_seen <= 1'b0;
     else if (clk_en) dbg_getbits_valid_seen <= 1'b1;   /* clk_en IS getbits_valid-gated vld_en */
 
   assign vld_dbg = {
-      /* word 3 */ dbg_sc_count, 8'b0, 2'b0, dbg_getbits_valid_seen, dbg_seq_hdr_captured,
+      /* word 3 */ dbg_sc_count, dbg_nsc_count, 2'b0, dbg_getbits_valid_seen, dbg_seq_hdr_captured,
                    picture_header_seen, sequence_extension_seen, sequence_header_seen, vld_err,
       /* word 2 */ 8'b0, dbg_first_seq_hdr_getbits,
       /* word 1 */ dbg_start_codes,
