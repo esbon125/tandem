@@ -14,6 +14,12 @@ MODELINE = MODELINE_SVGA
 #DEBUG =
 #DEBUG = -DDEBUG
 
+# Which framestore dump mem_ctl.v writes; see the comment at the top of mem_ctl.v.
+# Default (empty) is the raw binary dump tools/framecmp reads.
+#DUMPFLAGS = -DDUMP_FRAMESTORE_PPM
+#DUMPFLAGS = -DDUMP_FRAMESTORE_OFTEN
+DUMPFLAGS =
+
 SRCS = \
   testbench.v \
   mem_ctl.v \
@@ -73,13 +79,13 @@ IVERILOG_DUMPER=lxt
 all: mpeg2 stream.dat
 
 mpeg2: $(SRCS) $(INCS)
-	iverilog -D__IVERILOG__ -D$(MODELINE) $(DEBUG) -I ../../rtl/mpeg2 -o mpeg2 $(SRCS)
+	iverilog -D__IVERILOG__ -D$(MODELINE) $(DEBUG) $(DUMPFLAGS) -I ../../rtl/mpeg2 -o mpeg2 $(SRCS)
 
 test: mpeg2 stream.dat
-	IVERILOG_DUMPER=vcd ./mpeg2 
+	IVERILOG_DUMPER=vcd ./mpeg2
 
-clean: 
-	rm -f mpeg2 stream.dat testbench.lxt trace framestore_*.ppm tv_out_*.ppm
+clean:
+	rm -f mpeg2 stream.dat testbench.lxt trace framestore_*.ppm tv_out_*.ppm fs_*.bin fs_*.txt
 
 # convert mpeg2 stream to .dat file for testbench
 stream.dat: $(STREAM)

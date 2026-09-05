@@ -30,13 +30,39 @@
 `undef MEMORY_INIT
 //`define MAGIC_NUMBER 1
 
-// write framestore to file 'framestore_000.ppm' every time current_frame changes
+/*
+ * Framestore dumping.
+ *
+ * `DUMP_FRAMESTORE` provides the hierarchical taps (width, mb_width, ...) and the
+ * dump tasks; it does not by itself write anything. Which dump is written, and
+ * when, is selected by the three switches below. Define them from the Makefile
+ * (`make DUMPFLAGS=-DDUMP_FRAMESTORE_PPM ...`) rather than editing this file.
+ *
+ * DUMP_FRAMESTORE_RAW    write the framestore to 'fs_NNNN.bin' (raw little-endian
+ *                        64-bit words, byte-identical to what a DDR dump of the
+ *                        same region looks like on hardware) plus a metadata
+ *                        sidecar 'fs_NNNN.txt', every time the picture buffers
+ *                        are updated. This is the dump tools/framecmp reads; it
+ *                        deliberately uses the same on-disk format for sim and
+ *                        for hardware so a single extractor serves both.
+ * DUMP_FRAMESTORE_PPM    write the human-readable 'framestore_NNNN.ppm' stack of
+ *                        all four frames + OSD every time a frame's Y base is
+ *                        written. ~45 mbyte of ascii per dump; debugging only.
+ * DUMP_FRAMESTORE_OFTEN  as DUMP_FRAMESTORE_PPM, but every 200 macroblocks.
+ */
 `undef DUMP_FRAMESTORE
 `define DUMP_FRAMESTORE 1
 
-// write framestore to file 'framestore_001.ppm' every 200 macroblocks. requires DUMP_FRAMESTORE.
-`undef DUMP_FRAMESTORE_OFTEN
-`define DUMP_FRAMESTORE_OFTEN 1
+`ifndef DUMP_FRAMESTORE_PPM
+`ifndef DUMP_FRAMESTORE_OFTEN
+`ifndef DUMP_FRAMESTORE_RAW
+`define DUMP_FRAMESTORE_RAW 1
+`endif
+`endif
+`endif
+
+// number of raw dumps to write before giving up. Each is a dozen mbyte.
+`define DUMP_FRAMESTORE_RAW_MAX 8
 
 module mem_ctl(
   clk, rst,
@@ -106,7 +132,7 @@ module mem_ctl(
                          && (mem_req_rd_addr == ADDR_ERR)) 
 			 begin
 			   $display("%m *** error: access to ADDR_ERR ***");
-`ifdef DUMP_FRAMESTORE
+`ifdef DUMP_FRAMESTORE_PPM
 			   write_framestore;
 `endif
 			   //$stop;
@@ -440,24 +466,183 @@ module mem_ctl(
     end
   endtask
 
-`ifndef DUMP_FRAMESTORE_OFTEN
+`ifdef DUMP_FRAMESTORE_PPM
   /* trigger framestore dump when updating picture buffers */
 
 /*
-  always @(posedge update_picture_buffers) 
+  always @(posedge update_picture_buffers)
     write_framestore;
 */
 
-  always @(posedge clk) 
+  always @(posedge clk)
     if (mem_req_rd_valid && (mem_req_rd_cmd == CMD_WRITE)
                          && ((mem_req_rd_addr == FRAME_0_Y) || (mem_req_rd_addr == FRAME_1_Y) || (mem_req_rd_addr == FRAME_2_Y) || (mem_req_rd_addr == FRAME_3_Y)))
-      write_framestore; 
+      write_framestore;
 `endif
 
 `ifdef DUMP_FRAMESTORE_OFTEN
   /* trigger framestore dump every 200 macroblocks */
   always @(macroblock_address)
-    if ((^macroblock_address !== 1'bx) && (macroblock_address % 200) == 0) write_framestore; 
+    if ((^macroblock_address !== 1'bx) && (macroblock_address % 200) == 0) write_framestore;
+`endif
+
+`ifdef DUMP_FRAMESTORE_RAW
+
+  /*
+   * Raw framestore dump.
+   *
+   * Writes memory words [FRAME_0_Y, OSD) to 'fs_NNNN.bin' as raw little-endian
+   * 64-bit words: word w lands at file offset 8*w, and within that word bit [7:0]
+   * is the first byte written. That is exactly the byte order a hardware dump of
+   * the same DDR region has, so tools/framecmp/framecmp.py extracts sim and
+   * hardware frames with the same code path -- the point being that the
+   * extraction rules (signed offset-128 pixels, reversed pixel order inside a
+   * word, plane strides) get validated once, in simulation, against the
+   * reference decoder, and are then reused verbatim on hardware.
+   *
+   * The companion 'fs_NNNN.txt' records everything the extractor needs that is
+   * not in the bits: image geometry, base addresses, and which frame buffer the
+   * display path is about to read.
+   */
+
+  reg [31:0]raw_fname_cnt = "0000";
+  integer   raw_dump_count = 0;
+
+  task write_framestore_raw;
+
+    reg [32*8:1]fname;
+    integer fp;
+    integer addr;
+    reg [63:0]dta;
+
+    `include "vld_codes.v"
+
+    begin
+      if ((^mb_width === 1'bx) || (^mb_height === 1'bx))
+        $display("%m\traw framestore dump skipped: image size not valid yet");
+      else if (raw_dump_count >= `DUMP_FRAMESTORE_RAW_MAX)
+        ; /* already wrote as many as asked for */
+      else
+        begin
+          raw_dump_count = raw_dump_count + 1;
+
+          /* metadata sidecar */
+          fname = {"fs_", raw_fname_cnt, ".txt"};
+          fp = $fopen(fname, "w");
+          if (fp == 0)
+            begin
+              $display ("%m\t*** error opening file ***");
+              $finish;
+            end
+          $fwrite(fp, "# mpeg2fpga raw framestore dump\n");
+          $fwrite(fp, "source simulation\n");
+          $timeformat(-3, 2, " ms", 8);
+          $fwrite(fp, "time %0t\n", $time);
+          $timeformat(-9, 2, " ns", 20);
+          $fwrite(fp, "dump %0d\n", raw_dump_count - 1);
+          $fwrite(fp, "frame_number %0d\n", frame_number);
+          $fwrite(fp, "horizontal_size %0d\n", width);
+          $fwrite(fp, "vertical_size %0d\n", height);
+          $fwrite(fp, "display_horizontal_size %0d\n", display_horizontal_size);
+          $fwrite(fp, "display_vertical_size %0d\n", display_vertical_size);
+          $fwrite(fp, "mb_width %0d\n", mb_width);
+          $fwrite(fp, "mb_height %0d\n", mb_height);
+          $fwrite(fp, "picture_structure %0d\n", picture_structure);
+          $fwrite(fp, "frame_picture %0d\n", (picture_structure == FRAME_PICTURE) ? 1 : 0);
+          $fwrite(fp, "chroma_format %0d\n", chroma_format);
+          $fwrite(fp, "output_frame %0d\n", testbench.mpeg2.motcomp.output_frame);
+          /* file offset 0 corresponds to this memory word address */
+          $fwrite(fp, "base_word_address %0d\n", FRAME_0_Y);
+          $fwrite(fp, "word_count %0d\n", OSD - FRAME_0_Y);
+          $fwrite(fp, "word_bytes 8\n");
+          $fwrite(fp, "byteorder little\n");
+          $fclose(fp);
+
+          /* the framestore itself */
+          fname = {"fs_", raw_fname_cnt, ".bin"};
+          fp = $fopen(fname, "wb");
+          if (fp == 0)
+            begin
+              $display ("%m\t*** error opening file ***");
+              $finish;
+            end
+          $display("%m\tdumping raw framestore to %0s @ %0t", fname, $time);
+          for (addr = FRAME_0_Y; addr < OSD; addr = addr + 1)
+            begin
+              dta = mem[addr];
+              $fwrite(fp, "%u", dta[31:0]);
+              $fwrite(fp, "%u", dta[63:32]);
+            end
+          $fclose(fp);
+
+          /* implement a counter for string "raw_fname_cnt" */
+          if (raw_fname_cnt[7:0] != "9")
+            raw_fname_cnt[7:0] = raw_fname_cnt[7:0] + 1;
+          else
+            begin
+              raw_fname_cnt[7:0] = "0";
+              if (raw_fname_cnt[15:8] != "9")
+                raw_fname_cnt[15:8] = raw_fname_cnt[15:8] + 1;
+              else
+                begin
+                  raw_fname_cnt[15:8] = "0";
+                  if (raw_fname_cnt[23:16] != "9")
+                    raw_fname_cnt[23:16] = raw_fname_cnt[23:16] + 1;
+                  else
+                    begin
+                      raw_fname_cnt[23:16] = "0";
+                      raw_fname_cnt[31:24] = raw_fname_cnt[31:24] + 1;
+                    end
+                end
+            end
+        end
+    end
+  endtask
+
+  /*
+   * When to dump.
+   *
+   * update_picture_buffers marks the end of a picture at the *vld*. It is not a
+   * safe moment to read the framestore: the reconstruction path behind it (mvec
+   * fifo -> picbuf -> dst fifo -> recon -> framestore_request) still has a good
+   * part of that picture in flight, and dumping there yields a torn frame --
+   * which then shows up as a large MAD and gets misread as a decoder bug.
+   *
+   * So update_picture_buffers only *arms* a dump; the dump happens once the
+   * framestore has gone quiet, i.e. no write to the frame region for
+   * RAW_SETTLE_CYCLES consecutive clocks.
+   */
+
+  parameter RAW_SETTLE_CYCLES = 20000;
+
+  reg        raw_dump_armed = 1'b0;
+  reg        raw_upb_delayed = 1'b0;
+  integer    raw_idle_count = 0;
+  wire       framestore_written = mem_req_rd_valid && (mem_req_rd_cmd == CMD_WRITE) && (mem_req_rd_addr < OSD);
+
+  always @(posedge clk)
+    begin
+      raw_upb_delayed <= update_picture_buffers;
+
+      if (update_picture_buffers && ~raw_upb_delayed)
+        begin
+          /* rising edge of update_picture_buffers: arm, and restart the timer */
+          raw_dump_armed <= 1'b1;
+          raw_idle_count <= 0;
+        end
+      else if (framestore_written)
+        raw_idle_count <= 0;
+      else if (raw_idle_count < RAW_SETTLE_CYCLES)
+        begin
+          raw_idle_count <= raw_idle_count + 1;
+          if (raw_dump_armed && (raw_idle_count == RAW_SETTLE_CYCLES - 1))
+            begin
+              raw_dump_armed <= 1'b0;
+              write_framestore_raw;
+            end
+        end
+    end
+
 `endif
 
   always @(macroblock_address)
