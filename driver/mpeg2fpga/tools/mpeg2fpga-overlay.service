@@ -1,15 +1,18 @@
 [Unit]
 Description=Apply the mpeg2fpga UIO device tree overlay
-Documentation=https://github.com/esbon/tandem docs/bringup
+Documentation=man:mpeg2fpga-overlay.sh(8)
 # configfs is where the overlay lands, and the FPGA register window only
 # exists once it is applied -- anything that touches the decoder has to wait.
 After=sys-kernel-config.mount
 Requires=sys-kernel-config.mount
-ConditionPathExists=/etc/mpeg2fpga/mpeg2fpga-uio.dtbo
+ConditionPathExists=/etc/mpeg2fpga
 
 [Service]
 Type=oneshot
 RemainAfterExit=yes
+# driver mode (the default) also insmods mpeg2fpga.ko and waits for it to bind;
+# uio mode exposes /dev/uioN instead. See the script.
+EnvironmentFile=-/etc/mpeg2fpga/mode.env
 ExecStart=/usr/local/sbin/mpeg2fpga-overlay.sh
 # Applying it twice is a no-op, so a restart after reprogramming the FPGA is
 # harmless.

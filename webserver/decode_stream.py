@@ -39,16 +39,12 @@ Two things had to be right before this worked, both of them counterintuitive:
 import threading
 import time
 
+import decoder_control
 import elementary_stream
 import framestore
-from ddr_region import DDRRegion, FRAMESTORE_DEVICE, STAGING_DEVICE
-from decoder_push import PAGE_OFFSET
-from dma_push import (DmaPusher, REG_DMA_ADDR, REG_DMA_CTRL, REG_DMA_LEN,
-                      STAGE_OFFSET, sync_for_device)
 import trick_mode
-
-REG = lambda word: PAGE_OFFSET + word * 4
-REG_STATUS, REG_SIZE = 0x01, 0x02
+from ddr_region import DDRRegion, FRAMESTORE_DEVICE, STAGING_DEVICE
+from dma_push import STAGE_OFFSET, sync_for_device
 
 POISON = 0xEE
 
@@ -99,15 +95,17 @@ def _fingerprint(region, geometry):
 
 
 def decode(data, on_frame, on_progress=None, on_capture_progress=None,
-           trick=None, reset=False):
+           control=None, reset=False):
     """Decode `data`, calling on_frame(Capture) per picture in decode order.
 
     on_capture_progress(captured, total) is called from *this* thread while the
     capture runs, so a caller can report progress without putting a socket write
     inside the capture loop, where it would cost frames.
 
-    `trick` is a trick_mode.TrickMode; if given, the previous stream is cleared
-    out of the input buffer with flush_vbuf instead of by resetting the core.
+    `control` is a decoder_control backend (the kernel driver's sysfs interface
+    when the module is bound, raw UIO otherwise); one is opened here if not
+    given. The previous stream is cleared out of the input buffer with
+    flush_vbuf instead of by resetting the core.
     That is what the decoder is designed for -- see trick_mode.py -- and it is
     both faster and closer to how a real player behaves. `reset=True` forces the
     old behaviour: pulse core enable and poison the framestore, which is worth
@@ -126,33 +124,32 @@ def decode(data, on_frame, on_progress=None, on_capture_progress=None,
 
     def run():
         try:
-            with DmaPusher() as pusher, DDRRegion(FRAMESTORE_DEVICE) as fs:
-                controls = trick or trick_mode.TrickMode()
+            own_control = control is None
+            control_ = control or decoder_control.open_control()
+            with DDRRegion(FRAMESTORE_DEVICE) as fs:
                 if reset:
                     # The sledgehammer: hold the core in reset and poison the
                     # framestore so "never written" is distinguishable from
                     # "reconstructed to mid-grey". Costs ~0.6 s, almost all of
                     # it in two conservative sleeps.
-                    pusher.set_core_enable(False)
+                    control_.set_enable(False)
                     time.sleep(0.2)
                     block = bytes([POISON]) * (1 << 20)
                     for offset in range(0, framestore.FRAMESTORE_BYTES,
                                         len(block)):
                         fs.write(offset, block)
-                    pusher.set_core_enable(True)
+                    control_.set_enable(True)
                     time.sleep(0.3)
-                    controls.apply(pusher)   # the reset cleared the register too
                 else:
                     # What the decoder is actually designed for: drop the tail
                     # of the previous stream and carry on. The frame buffers
                     # keep their contents, which is fine -- capture watches for
                     # *changes*, and the display keeps showing the last picture
                     # instead of flashing black between streams.
-                    controls.set_freeze(pusher, False)
-                    controls.set_source_select(pusher,
-                                               trick_mode.SOURCE_LAST_DECODED)
-                    controls.flush_vbuf(pusher)
-                pusher._read_reg(REG(REG_STATUS))
+                    control_.set_freeze(False)
+                    control_.set_source_select(trick_mode.SOURCE_LAST_DECODED)
+                    control_.flush_vbuf()
+                control_.clear_status()
 
                 geometries = [framestore.PlaneGeometry(f, width, height)
                               for f in range(framestore.NUM_FRAMES)]
@@ -171,11 +168,8 @@ def decode(data, on_frame, on_progress=None, on_capture_progress=None,
                 with DDRRegion(STAGING_DEVICE) as staging:
                     staging.write(STAGE_OFFSET, data)
                 sync_for_device(len(data))
-                pusher._write_reg(REG_DMA_ADDR, STAGE_OFFSET)
-                pusher._write_reg(REG_DMA_LEN, len(data))
-                pusher._write_reg(REG_DMA_CTRL, 1)
+                control_.dma_start(STAGE_OFFSET, len(data))
 
-                sticky = 0
                 held = 0
                 last_activity = time.time()
                 wanted = min(len(sequence.pictures), MAX_FRAMES)
@@ -202,26 +196,36 @@ def decode(data, on_frame, on_progress=None, on_capture_progress=None,
                             if len(captures) >= wanted or held > MAX_CAPTURE_BYTES:
                                 break
                     else:
-                        sticky |= pusher._read_reg(REG(REG_STATUS))
                         continue
                     break
 
-                size = pusher._read_reg(REG(REG_SIZE))
+                # Status is read once, at the end: the driver's IRQ handler
+                # accumulates the read-to-clear bits, so there is no need to
+                # keep polling the register the way the raw path had to.
+                status = control_.status()
+                geom = control_.geometry()
                 summary.update({
                     "width": width,
                     "height": height,
-                    "decoder_size": [(size >> 16) & 0x3FFF, size & 0x3FFF],
+                    "backend": control_.backend,
+                    "decoder_size": [geom["width"], geom["height"]],
                     "frame_rate": round(sequence.frame_rate, 3),
                     "pictures": len(sequence.pictures),
                     "captured": len(captures),
-                    "sticky": "0x%04x" % sticky,
-                    "error": bool(sticky & 0x1),
-                    "watchdog": bool(sticky & 0x80),
+                    "sticky": "0x%04x" % status.get("sticky", 0),
+                    "error": bool(status.get("error")),
+                    "watchdog": bool(status.get("watchdog")),
                     "capture_seconds": round(time.time() - started, 2),
                     "reset": bool(reset),
                 })
         except Exception as exc:                # noqa: BLE001 - hand it to the caller
             summary["exception"] = repr(exc)
+        finally:
+            if own_control:
+                try:
+                    control_.close()
+                except Exception:               # noqa: BLE001
+                    pass
 
     # The capture runs on its own thread only so that a slow client cannot
     # stall it; nothing is sent until it has finished.

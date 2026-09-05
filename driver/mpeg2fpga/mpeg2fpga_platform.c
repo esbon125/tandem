@@ -389,6 +389,20 @@ static ssize_t source_select_store(struct device *dev,
 }
 static DEVICE_ATTR_RW(source_select);
 
+static ssize_t persistence_show(struct device *dev,
+				struct device_attribute *attr, char *buf)
+{
+	struct mpeg2fpga_platform *priv = dev_get_drvdata(dev);
+	unsigned long flags;
+	bool on;
+
+	spin_lock_irqsave(&priv->lock, flags);
+	on = !!(priv->core.trick_shadow & MPEG2FPGA_TRICK_MODE_PERSISTENCE);
+	spin_unlock_irqrestore(&priv->lock, flags);
+
+	return sysfs_emit(buf, "%d\n", on);
+}
+
 static ssize_t persistence_store(struct device *dev,
 				 struct device_attribute *attr,
 				 const char *buf, size_t count)
@@ -408,7 +422,7 @@ static ssize_t persistence_store(struct device *dev,
 
 	return count;
 }
-static DEVICE_ATTR_WO(persistence);
+static DEVICE_ATTR_RW(persistence);
 
 static ssize_t flush_vbuf_store(struct device *dev,
 				struct device_attribute *attr,

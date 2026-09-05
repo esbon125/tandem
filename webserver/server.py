@@ -9,13 +9,14 @@ reconstructs pictures that match the reference decoder.
 
 Flow:
 
-  POST /upload   poison the framestore (so "the decoder never wrote here" is
-                 distinguishable from "it reconstructed mid-grey"), DMA the
-                 stream in, wait for reconstruction to go quiet, and report the
-                 geometry the decoder parsed plus which frame buffers hold a
-                 picture.
-  GET  /frame/N  that frame buffer's three planes as raw DRAM bytes, behind a
-                 small binary header.
+  POST /decode   push a stream and stream every reconstructed picture back, in
+                 display order, as it is captured. See decode_stream.py.
+  GET  /frame/N  frame buffer N's three planes, read live out of DRAM. A
+                 debugging view of what is in the framestore right now, which
+                 is not the same thing as the captured sequence.
+
+Registers go through decoder_control, which prefers the kernel driver's sysfs
+interface and falls back to raw UIO when the module is not bound.
 
 The planes are handed over untouched.  Undoing the framestore's storage format
 -- pixels are signed and offset by -128, and the eight pixels of a 64-bit word
@@ -23,7 +24,7 @@ appear reversed in little-endian DRAM -- is per-byte work, which Python on the
 MSS is bad at and a browser's JIT is good at, so static/index.html does it there
 along with the YUV to RGB conversion.  See framestore.py.
 
-  POST /control/{pause,resume,blank,flush,slow,show_buffer}
+  POST /control/{pause,resume,blank,flush,show_buffer}
                  trick mode. The core is reset once, at the first decode, and
                  never again: streams after that are separated with flush_vbuf,
                  which is what the decoder is designed for. See trick_mode.py.
@@ -42,15 +43,14 @@ import time
 import urllib.parse
 
 import decode_stream
+import decoder_control
 import framestore
 import trick_mode
 from ddr_region import DDRRegion, FRAMESTORE_DEVICE
-from decoder_push import PAGE_OFFSET, OverlayNotApplied
-from dma_push import DmaPusher
+from decoder_push import OverlayNotApplied
 
 HTTP_PORT = 8080
 STATIC_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")
-UPLOAD_PATH = "/tmp/uploaded_stream.m2v"
 
 REG = lambda word: PAGE_OFFSET + word * 4
 REG_STATUS, REG_SIZE, REG_DISP_SIZE, REG_FRAME_RATE = 0x01, 0x02, 0x03, 0x04
@@ -70,18 +70,22 @@ _state = {"width": 0, "height": 0, "written": []}
 # The decoder is driven continuously: the core is reset once, at startup, and
 # every stream after that is separated with flush_vbuf rather than another
 # reset. See trick_mode.py for why that is the design's own intent.
-_controls = {"trick": None, "reset_done": False}
+_controls = {"control": None, "reset_done": False}
 _controls_lock = threading.Lock()
 
 
 def controls():
-    """The shared trick-mode shadow. One per process: the register is
-    write-only, so two independent shadows would fight over it. It deliberately
-    holds no register handle -- see trick_mode.TrickMode."""
+    """The one decoder handle for this process.
+
+    Shared rather than opened per request because the UIO backend has to shadow
+    the write-only trick mode register, and two independent shadows would fight
+    over it. (The sysfs backend keeps that shadow in the driver, where it
+    belongs, and is stateless here -- one more reason to prefer it.)
+    """
     with _controls_lock:
-        if _controls["trick"] is None:
-            _controls["trick"] = trick_mode.TrickMode()
-        return _controls["trick"]
+        if _controls["control"] is None:
+            _controls["control"] = decoder_control.open_control()
+        return _controls["control"]
 
 
 def _decode_status(sticky):
@@ -92,75 +96,6 @@ def _fingerprint(region):
     """Cheap sample of the framestore, to tell whether it is still changing."""
     return bytes(region.read(word * 8, 64)[0]
                  for word in range(0, framestore.OSD_WORD, 4096))
-
-
-def push_and_settle(data):
-    """Push a stream and wait for reconstruction to finish. Returns a report.
-
-    The wait matters.  frame_end is asserted by the VLD, which runs well ahead
-    of the reconstruction pipeline behind it; reading the framestore there gives
-    a half-written picture that looks exactly like a decoder bug.  Waiting for
-    the memory to stop changing is what the simulation testbench does too.
-    """
-    with DmaPusher() as pusher, DDRRegion(FRAMESTORE_DEVICE) as fs:
-        pusher.set_core_enable(False)
-        time.sleep(0.3)
-        block = bytes([POISON]) * (1 << 20)
-        for offset in range(0, framestore.FRAMESTORE_BYTES, len(block)):
-            fs.write(offset, block)
-        pusher.set_core_enable(True)
-        time.sleep(0.5)
-        pusher._read_reg(REG(REG_STATUS))       # clear sticky bits
-
-        started = time.time()
-        pusher.push_dma(data)
-        dma_s = time.time() - started
-
-        sticky = 0
-        previous, quiet_since = None, None
-        started = time.time()
-        while time.time() - started < SETTLE_TIMEOUT_S:
-            time.sleep(0.25)
-            sticky |= pusher._read_reg(REG(REG_STATUS))
-            now = _fingerprint(fs)
-            if now == previous:
-                if quiet_since is None:
-                    quiet_since = time.time()
-                elif time.time() - quiet_since > SETTLE_QUIET_S:
-                    break
-            else:
-                quiet_since = None
-            previous = now
-        settled = quiet_since is not None
-        decode_s = time.time() - started
-
-        size = pusher._read_reg(REG(REG_SIZE))
-        disp = pusher._read_reg(REG(REG_DISP_SIZE))
-        rate = pusher._read_reg(REG(REG_FRAME_RATE))
-        width, height = (size >> 16) & 0x3FFF, size & 0x3FFF
-
-        written = []
-        if width and height:
-            for frame in range(framestore.NUM_FRAMES):
-                geometry = framestore.PlaneGeometry(frame, width, height)
-                if geometry.looks_written(fs):
-                    written.append(frame)
-
-    _state.update(width=width, height=height, written=written)
-    return {
-        "status": "ok",
-        "bytes": len(data),
-        "width": width,
-        "height": height,
-        "display_size": [(disp >> 16) & 0x3FFF, disp & 0x3FFF],
-        "frame_rate": "0x%04x" % rate,
-        "sticky": "0x%04x" % sticky,
-        "flags": _decode_status(sticky),
-        "settled": settled,
-        "frames": written,
-        "dma_seconds": round(dma_s, 3),
-        "decode_seconds": round(decode_s, 3),
-    }
 
 
 def frame_payload(frame):
@@ -210,7 +145,12 @@ class Handler(http.server.BaseHTTPRequestHandler):
         if path == "/":
             self._send_file(os.path.join(STATIC_DIR, "index.html"), "text/html")
         elif path == "/state":
-            self._send_json(200, dict(_state))
+            report = dict(_state)
+            try:
+                report["backend"] = controls().backend
+            except Exception:                   # noqa: BLE001
+                report["backend"] = "unavailable"
+            self._send_json(200, report)
         elif path == "/control/state":
             self._do_control("state", None)
         elif path.startswith("/frame/"):
@@ -243,34 +183,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self._do_control(path[len("/control/"):],
                              int(value) if value is not None else None)
             return
-        if path != "/upload":
-            self.send_error(404)
-            return
-        length = int(self.headers.get("Content-Length", 0))
-        if length <= 0:
-            self.send_error(400, "empty body")
-            return
-        body = self.rfile.read(length)
-        with open(UPLOAD_PATH, "wb") as fp:
-            fp.write(body)
-        print("[http] upload: %d bytes -> %s" % (length, UPLOAD_PATH))
-
-        try:
-            report = push_and_settle(body)
-        except OverlayNotApplied as exc:
-            self._send_json(503, {"status": "no_overlay", "error": str(exc)})
-            return
-        except Exception as exc:                # noqa: BLE001 - report, don't die
-            print("[http] push failed: %r" % (exc,))
-            self._send_json(500, {"status": "error", "error": repr(exc)})
-            return
-
-        print("[http] decoded %dx%d, frames %s, sticky %s"
-              % (report["width"], report["height"], report["frames"],
-                 report["sticky"]))
-        self._send_json(200, report)
-
-
+        self.send_error(404)
     def _do_control(self, action, value):
         """Trick mode from the browser: pause, resume, blank, freeze a buffer.
 
@@ -279,31 +192,25 @@ class Handler(http.server.BaseHTTPRequestHandler):
         stall behind it. See trick_mode.py.
         """
         try:
-            trick = controls()
-            with DmaPusher() as pusher:
-                if action == "pause":
-                    trick.set_freeze(pusher, True)
-                elif action == "resume":
-                    trick.set_freeze(pusher, False)
-                    trick.set_source_select(pusher,
-                                            trick_mode.SOURCE_LAST_DECODED)
-                elif action == "blank":
-                    trick.set_source_select(pusher, trick_mode.SOURCE_BLANK)
-                elif action == "show_buffer":
-                    if value is None or not 0 <= value < framestore.NUM_FRAMES:
-                        self.send_error(400, "buffer must be 0..3")
-                        return
-                    trick.set_source_select(pusher,
-                                            trick_mode.SOURCE_FRAME_0 + value)
-                elif action == "slow":
-                    trick.set_repeat_frame(pusher,
-                                           value if value is not None else 3)
-                elif action == "flush":
-                    trick.flush_vbuf(pusher)
-                elif action != "state":
-                    self.send_error(404, "unknown control")
+            control = controls()
+            if action == "pause":
+                control.set_freeze(True)
+            elif action == "resume":
+                control.set_freeze(False)
+                control.set_source_select(trick_mode.SOURCE_LAST_DECODED)
+            elif action == "blank":
+                control.set_source_select(trick_mode.SOURCE_BLANK)
+            elif action == "show_buffer":
+                if value is None or not 0 <= value < framestore.NUM_FRAMES:
+                    self.send_error(400, "buffer must be 0..3")
                     return
-                state = trick.describe()
+                control.set_source_select(trick_mode.SOURCE_FRAME_0 + value)
+            elif action == "flush":
+                control.flush_vbuf()
+            elif action != "state":
+                self.send_error(404, "unknown control")
+                return
+            state = control.trick_state()
         except OverlayNotApplied as exc:
             self._send_json(503, {"status": "no_overlay", "error": str(exc)})
             return
@@ -348,7 +255,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 "frame_rate": round(sequence.frame_rate, 3),
                 "pictures": len(sequence.pictures),
             }))
-            trick = controls()
+            control = controls()
             first = not _controls["reset_done"]
             _controls["reset_done"] = True
             report = decode_stream.decode(
@@ -356,8 +263,11 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 lambda cap: chunk(_frame_record(cap)),
                 on_capture_progress=lambda done, total: chunk(_json_record(
                     {"kind": "capturing", "captured": done, "total": total})),
-                trick=trick, reset=first)
+                control=control, reset=first)
             report["kind"] = "done"
+            _state.update(width=report.get("width", 0),
+                          height=report.get("height", 0),
+                          written=list(range(framestore.NUM_FRAMES)))
             chunk(_json_record(report))
             print("[http] decode done: %s" % report)
         except Exception as exc:                # noqa: BLE001 - tell the client

@@ -1,0 +1,36 @@
+/*
+ * Device tree overlay for the mpeg2fpga platform driver.
+ *
+ * The counterpart to mpeg2fpga-uio.dts, and mutually exclusive with it: both
+ * describe the same register window at 0x40000400, and whichever driver probes
+ * second fails to claim the memory region. Use this one to let the kernel
+ * driver own the decoder (registers and IRQ, with the sysfs interface); use the
+ * UIO one to drive it from userspace instead.
+ *
+ * The PLIC source is 138, which Linux presents as IRQ 100 -- see
+ * docs/bringup/13_fase6d_hardware_verification.md, where probe() reported
+ * "mpeg2fpga hw version 0x000c, irq 100" and /proc/interrupts listed
+ * 40000400.mpeg2fpga.
+ *
+ *   dtc -@ -I dts -O dtb -o mpeg2fpga.dtbo mpeg2fpga.dts
+ */
+/dts-v1/;
+/plugin/;
+
+/ {
+	fragment@0 {
+		target-path = "/fabric-bus@40000000";
+		__overlay__ {
+			#address-cells = <2>;
+			#size-cells = <2>;
+
+			mpeg2fpga: mpeg2fpga@40000400 {
+				compatible = "esbon,mpeg2fpga";
+				reg = <0x0 0x40000400 0x0 0x100>;
+				interrupt-parent = <&plic>;
+				interrupts = <138>;
+				status = "okay";
+			};
+		};
+	};
+};
