@@ -58,8 +58,57 @@ en el log de todas las síntesis de este proyecto. Y "possible simulation
 mismatch" explica de una por qué `bench/iverilog` nunca reprodujo nada de esto,
 por más streams que se le tiraran.
 
-Contraste en el mismo log: las matrices de cuantización (`wrappers.v:77`) **sí**
-llevan propiedades `block_ram`/`no_rw_check`. A esta RAM se le pasó.
+**Corrección** (una versión anterior de este doc afirmaba que las matrices de
+cuantización sí llevaban `no_rw_check` y que a esta RAM "se le pasó"): es
+falso. `wrappers.v:70-78` no tiene ningún atributo, y las matrices reciben
+FX107 igual. El mensaje `FX403 | Property "block_ram" or "no_rw_check" found …`
+es una nota de inferencia propia de Synplify, no evidencia de un atributo en
+nuestro fuente. **Ninguna RAM del diseño tiene la protección.** No fue un
+olvido puntual sino algo ausente en todo el port.
+
+## No es un bug del port: viene de upstream
+
+| | `fifo_sc` | `fifo_dc` |
+|---|---|---|
+| **upstream original** (`fb030ea`) | `FIFO_XILINX = 0` → el soft `xfifo_sc.v` | `FIFO_XILINX = 1` → FIFO hard de Xilinx |
+| **este port** | `= 0`, sin cambios | `= 0` → CoreFIFO (el cambio documentado del port) |
+
+O sea **el diseño original usaba exactamente este mismo `xfifo_sc.v`**, con la
+colisión adentro. El archivo tiene un solo commit en la historia del repo (el
+import) y nunca se tocó. Lo que el port cambió fue `fifo_dc`, no `fifo_sc`.
+
+Aclaración sobre el origen, porque se presta a confusión: `xfifo_sc.v` **no es
+el FIFO de OpenCores**. Es código propio de Koen. Los de OpenCores son
+`generic_fifo_sc_b.v` / `generic_fifo_dc.v`, que viven en `bench/iverilog/` y
+solo los usa la copia local de `wrappers.v` de ese bench. El que sí ofrece un
+camino OpenCores es `xfifo_dc.v` (agregado por el port), vía su parámetro
+`USE_GENERIC`.
+
+Por qué sobrevivió en Virtex-5 **no se puede verificar desde acá** -- no
+tenemos el build de Xilinx. La explicación plausible es que cada herramienta
+resuelve distinto una colisión de misma dirección (XST podría inferir una RAM
+cuya lectura devuelve limpiamente el dato viejo, igual que la simulación),
+pero es hipótesis, no dato.
+
+## Alcance real: son diez FIFOs, no uno
+
+El `.srr` tiene **41 avisos FX107**, y entre ellos **las diez instancias de
+`xfifo_sc`** del decoder:
+
+```
+vbuf_read_fifo      vbuf_write_fifo     predict_err_fifo    mvec_fifo
+frame_idct_fifo     fwd_reader          bwd_reader          disp_reader
+recon_writer        osd_writer
+```
+
+Atrapamos `vbuf_read_fifo` solamente porque su corrupción produce un síntoma
+binario y visible: se pierde el sequence header y `SIZE` queda en 0. Las otras
+nueve ensuciarían píxeles, vectores de movimiento o coeficientes DCT -- se
+verían como artefactos de imagen, no como una falla limpia, y podrían llevar
+mucho tiempo sin ser notadas.
+
+Eso decide el fix: **corregirlo en `xfifo_sc.v`**, que cubre las diez de una,
+en vez de poner atributos instancia por instancia.
 
 ## Por qué encaja con todo lo observado
 
