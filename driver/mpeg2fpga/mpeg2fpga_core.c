@@ -39,6 +39,14 @@ void mpeg2fpga_core_init(struct mpeg2fpga_core *core,
 	core->stream_shadow = MPEG2FPGA_WATCHDOG_DEFAULT_INTERVAL
 		<< MPEG2FPGA_STREAM_WATCHDOG_INTERVAL_SHIFT;
 	mpeg2fpga_core_write(core, MPEG2FPGA_W_STREAM, core->stream_shadow);
+
+	/* persistence is 1 at reset: when no new picture is ready the last one
+	 * is shown again rather than a blank screen. Seed the shadow with it so
+	 * the first read-modify-write of any other trick-mode field does not
+	 * silently turn it off.
+	 */
+	core->trick_shadow = MPEG2FPGA_TRICK_MODE_PERSISTENCE;
+	mpeg2fpga_core_write(core, MPEG2FPGA_W_TRICK_MODE, core->trick_shadow);
 }
 
 u16 mpeg2fpga_core_get_version(struct mpeg2fpga_core *core)
@@ -233,4 +241,62 @@ void mpeg2fpga_core_get_geometry(struct mpeg2fpga_core *core,
 	 */
 	geom->macroblocks_wide = (geom->width + 15) / 16;
 	geom->macroblocks_high = (geom->height + 15) / 16;
+}
+
+/* Read-modify-write MPEG2FPGA_W_TRICK_MODE against its shadow. */
+static void mpeg2fpga_core_write_trick(struct mpeg2fpga_core *core,
+					u32 mask, u32 val)
+{
+	core->trick_shadow = (core->trick_shadow & ~mask) | (val & mask);
+	mpeg2fpga_core_write(core, MPEG2FPGA_W_TRICK_MODE, core->trick_shadow);
+}
+
+void mpeg2fpga_core_flush_vbuf(struct mpeg2fpga_core *core)
+{
+	/* A strobe, not a mode: raise it for one write and drop it again, so
+	 * the shadow does not carry a permanent flush into the next
+	 * read-modify-write of some unrelated field.
+	 */
+	mpeg2fpga_core_write(core, MPEG2FPGA_W_TRICK_MODE,
+			     core->trick_shadow |
+			     MPEG2FPGA_TRICK_MODE_FLUSH_VBUF);
+	mpeg2fpga_core_write(core, MPEG2FPGA_W_TRICK_MODE, core->trick_shadow);
+}
+
+void mpeg2fpga_core_set_freeze(struct mpeg2fpga_core *core, bool freeze)
+{
+	u32 repeat = freeze ? MPEG2FPGA_TRICK_REPEAT_FRAME_FREEZE : 0;
+
+	mpeg2fpga_core_write_trick(core,
+		MPEG2FPGA_TRICK_MODE_REPEAT_FRAME_MASK,
+		repeat << MPEG2FPGA_TRICK_MODE_REPEAT_FRAME_SHIFT);
+}
+
+bool mpeg2fpga_core_is_frozen(struct mpeg2fpga_core *core)
+{
+	u32 repeat = (core->trick_shadow &
+		      MPEG2FPGA_TRICK_MODE_REPEAT_FRAME_MASK) >>
+		     MPEG2FPGA_TRICK_MODE_REPEAT_FRAME_SHIFT;
+
+	return repeat == MPEG2FPGA_TRICK_REPEAT_FRAME_FREEZE;
+}
+
+void mpeg2fpga_core_set_source_select(struct mpeg2fpga_core *core, u8 source)
+{
+	mpeg2fpga_core_write_trick(core,
+		MPEG2FPGA_TRICK_MODE_SOURCE_SELECT_MASK,
+		(u32)source << MPEG2FPGA_TRICK_MODE_SOURCE_SELECT_SHIFT);
+}
+
+u8 mpeg2fpga_core_get_source_select(struct mpeg2fpga_core *core)
+{
+	return (core->trick_shadow &
+		MPEG2FPGA_TRICK_MODE_SOURCE_SELECT_MASK) >>
+	       MPEG2FPGA_TRICK_MODE_SOURCE_SELECT_SHIFT;
+}
+
+void mpeg2fpga_core_set_persistence(struct mpeg2fpga_core *core, bool on)
+{
+	mpeg2fpga_core_write_trick(core, MPEG2FPGA_TRICK_MODE_PERSISTENCE,
+		on ? MPEG2FPGA_TRICK_MODE_PERSISTENCE : 0);
 }

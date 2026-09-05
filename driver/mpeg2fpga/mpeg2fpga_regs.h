@@ -102,6 +102,16 @@
 #define MPEG2FPGA_TRICK_MODE_SOURCE_SELECT_MASK	GENMASK(3, 1)
 #define MPEG2FPGA_TRICK_MODE_FLUSH_VBUF	BIT(0)
 
+/* repeat_frame = 31 halts the decoder on the current picture; the watchdog is
+ * held off in that state, so a freeze cannot trip a reset (doc sec. 1.10).
+ */
+#define MPEG2FPGA_TRICK_REPEAT_FRAME_FREEZE	31
+
+/* source_select values, doc table 1.9 */
+#define MPEG2FPGA_SOURCE_LAST_DECODED	0
+#define MPEG2FPGA_SOURCE_BLANK		1
+#define MPEG2FPGA_SOURCE_FRAME_0	4	/* 4..7 select framestore 0..3 */
+
 /*
  * Bridge-owned registers, word addresses 0x10 and up.
  *

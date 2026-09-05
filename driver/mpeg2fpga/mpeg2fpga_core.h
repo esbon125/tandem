@@ -67,6 +67,12 @@ struct mpeg2fpga_status {
 struct mpeg2fpga_core {
 	const struct mpeg2fpga_regops *ops;
 	u32 stream_shadow;
+	/* @trick_shadow: the same problem for MPEG2FPGA_W_TRICK_MODE. Seeded
+	 * with the hardware's reset value, which has persistence set --
+	 * clobbering that turns "hold the last picture when starved" into
+	 * "go black".
+	 */
+	u32 trick_shadow;
 	/* @sticky: status bits accumulated by mpeg2fpga_core_poll_status().
 	 * The status register is read-to-clear, so whoever reads it is the
 	 * only one who will ever see those events.
@@ -152,6 +158,30 @@ void mpeg2fpga_core_dma_get_status(struct mpeg2fpga_core *core,
 
 void mpeg2fpga_core_get_geometry(struct mpeg2fpga_core *core,
 				  struct mpeg2fpga_geometry *geom);
+
+/*
+ * Trick mode -- what makes the decoder usable continuously rather than one
+ * stream per reset. doc/mpeg2fpga.txt sec 1.11.
+ */
+
+/* Clear the incoming video buffer. The documentation's own words: "useful
+ * when changing channels". Doing this between streams is what replaces
+ * resetting the whole core.
+ */
+void mpeg2fpga_core_flush_vbuf(struct mpeg2fpga_core *core);
+
+/* Freeze on the current picture. repeat_frame=31 halts the decoder, and the
+ * watchdog is held off while it is frozen, so a pause cannot trip a reset.
+ */
+void mpeg2fpga_core_set_freeze(struct mpeg2fpga_core *core, bool freeze);
+bool mpeg2fpga_core_is_frozen(struct mpeg2fpga_core *core);
+
+/* 0 shows the last decoded frame, 1 a blank screen, 4-7 framestore frame 0-3. */
+void mpeg2fpga_core_set_source_select(struct mpeg2fpga_core *core, u8 source);
+u8 mpeg2fpga_core_get_source_select(struct mpeg2fpga_core *core);
+
+/* When starved: hold the last picture (true) or go blank (false). */
+void mpeg2fpga_core_set_persistence(struct mpeg2fpga_core *core, bool on);
 u32 mpeg2fpga_core_frame_rate_millihz(u8 code, u8 extension_n, u8 extension_d);
 
 #endif /* MPEG2FPGA_CORE_H */

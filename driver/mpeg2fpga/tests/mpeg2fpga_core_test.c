@@ -358,6 +358,108 @@ static void mpeg2fpga_core_test_status_sticky_accumulates(struct kunit *test)
 	KUNIT_EXPECT_EQ(test, mpeg2fpga_core_get_sticky(&ctx->core), 0u);
 }
 
+
+/*
+ * Trick mode -- what turns the decoder from "one stream per reset" into
+ * something that can be driven continuously. Measured on hardware: pushing a
+ * second stream after flush_vbuf works with no core reset (704x480 to 720x576,
+ * video_ch raised, error 0), and repeat_frame=31 takes framestore writes from
+ * 130/s to 0/s and back without tripping the watchdog.
+ */
+
+static u32 trick_repeat_field(u32 trick)
+{
+	return (trick & MPEG2FPGA_TRICK_MODE_REPEAT_FRAME_MASK) >>
+		MPEG2FPGA_TRICK_MODE_REPEAT_FRAME_SHIFT;
+}
+
+static void mpeg2fpga_core_test_init_keeps_persistence(struct kunit *test)
+{
+	struct mpeg2fpga_core_test_ctx *ctx = test->priv;
+	u32 trick = ctx->fake.write_regs[MPEG2FPGA_W_TRICK_MODE];
+
+	/* persistence is 1 at reset; losing it turns "hold the last picture"
+	 * into "go black" the moment the decoder is starved.
+	 */
+	KUNIT_EXPECT_TRUE(test, trick & MPEG2FPGA_TRICK_MODE_PERSISTENCE);
+	KUNIT_EXPECT_EQ(test, trick_repeat_field(trick), 0);
+	KUNIT_EXPECT_EQ(test, mpeg2fpga_core_get_source_select(&ctx->core), 0);
+	KUNIT_EXPECT_FALSE(test, mpeg2fpga_core_is_frozen(&ctx->core));
+}
+
+static void mpeg2fpga_core_test_freeze_round_trip(struct kunit *test)
+{
+	struct mpeg2fpga_core_test_ctx *ctx = test->priv;
+
+	mpeg2fpga_core_set_freeze(&ctx->core, true);
+	KUNIT_EXPECT_EQ(test,
+		trick_repeat_field(ctx->fake.write_regs[MPEG2FPGA_W_TRICK_MODE]),
+		MPEG2FPGA_TRICK_REPEAT_FRAME_FREEZE);
+	KUNIT_EXPECT_TRUE(test, mpeg2fpga_core_is_frozen(&ctx->core));
+	/* freezing must not cost persistence */
+	KUNIT_EXPECT_TRUE(test, ctx->fake.write_regs[MPEG2FPGA_W_TRICK_MODE] &
+			  MPEG2FPGA_TRICK_MODE_PERSISTENCE);
+
+	mpeg2fpga_core_set_freeze(&ctx->core, false);
+	KUNIT_EXPECT_EQ(test,
+		trick_repeat_field(ctx->fake.write_regs[MPEG2FPGA_W_TRICK_MODE]), 0);
+	KUNIT_EXPECT_FALSE(test, mpeg2fpga_core_is_frozen(&ctx->core));
+}
+
+static void mpeg2fpga_core_test_flush_vbuf_is_a_strobe(struct kunit *test)
+{
+	struct mpeg2fpga_core_test_ctx *ctx = test->priv;
+	int first, second;
+
+	mpeg2fpga_core_set_freeze(&ctx->core, true);
+	ctx->fake.log_len = 0;
+
+	mpeg2fpga_core_flush_vbuf(&ctx->core);
+
+	/* raised once, then dropped -- otherwise the shadow carries a
+	 * permanent flush into the next unrelated read-modify-write
+	 */
+	first = fake_write_index(&ctx->fake, MPEG2FPGA_W_TRICK_MODE, 0);
+	KUNIT_ASSERT_GE(test, first, 0);
+	second = fake_write_index(&ctx->fake, MPEG2FPGA_W_TRICK_MODE, first + 1);
+	KUNIT_ASSERT_GE(test, second, 0);
+
+	KUNIT_EXPECT_TRUE(test, ctx->fake.log[first].val &
+			  MPEG2FPGA_TRICK_MODE_FLUSH_VBUF);
+	KUNIT_EXPECT_FALSE(test, ctx->fake.log[second].val &
+			   MPEG2FPGA_TRICK_MODE_FLUSH_VBUF);
+
+	/* and everything else survives the strobe */
+	KUNIT_EXPECT_TRUE(test, mpeg2fpga_core_is_frozen(&ctx->core));
+	KUNIT_EXPECT_TRUE(test, ctx->fake.log[second].val &
+			  MPEG2FPGA_TRICK_MODE_PERSISTENCE);
+}
+
+static void mpeg2fpga_core_test_source_select_preserves_freeze(struct kunit *test)
+{
+	struct mpeg2fpga_core_test_ctx *ctx = test->priv;
+	u32 trick;
+
+	mpeg2fpga_core_set_freeze(&ctx->core, true);
+	mpeg2fpga_core_set_source_select(&ctx->core, MPEG2FPGA_SOURCE_BLANK);
+
+	trick = ctx->fake.write_regs[MPEG2FPGA_W_TRICK_MODE];
+	KUNIT_EXPECT_EQ(test, mpeg2fpga_core_get_source_select(&ctx->core),
+			MPEG2FPGA_SOURCE_BLANK);
+	KUNIT_EXPECT_EQ(test, trick_repeat_field(trick),
+			MPEG2FPGA_TRICK_REPEAT_FRAME_FREEZE);
+	KUNIT_EXPECT_TRUE(test, trick & MPEG2FPGA_TRICK_MODE_PERSISTENCE);
+
+	/* framestore frame 2 is source_select 6 */
+	mpeg2fpga_core_set_source_select(&ctx->core, MPEG2FPGA_SOURCE_FRAME_0 + 2);
+	KUNIT_EXPECT_EQ(test, mpeg2fpga_core_get_source_select(&ctx->core), 6);
+
+	mpeg2fpga_core_set_persistence(&ctx->core, false);
+	trick = ctx->fake.write_regs[MPEG2FPGA_W_TRICK_MODE];
+	KUNIT_EXPECT_FALSE(test, trick & MPEG2FPGA_TRICK_MODE_PERSISTENCE);
+	KUNIT_EXPECT_EQ(test, mpeg2fpga_core_get_source_select(&ctx->core), 6);
+}
+
 static struct kunit_case mpeg2fpga_core_test_cases[] = {
 	KUNIT_CASE(mpeg2fpga_core_test_init_sets_default_watchdog),
 	KUNIT_CASE(mpeg2fpga_core_test_get_version),
@@ -372,6 +474,10 @@ static struct kunit_case mpeg2fpga_core_test_cases[] = {
 	KUNIT_CASE(mpeg2fpga_core_test_geometry),
 	KUNIT_CASE(mpeg2fpga_core_test_frame_rate_table),
 	KUNIT_CASE(mpeg2fpga_core_test_status_sticky_accumulates),
+	KUNIT_CASE(mpeg2fpga_core_test_init_keeps_persistence),
+	KUNIT_CASE(mpeg2fpga_core_test_freeze_round_trip),
+	KUNIT_CASE(mpeg2fpga_core_test_flush_vbuf_is_a_strobe),
+	KUNIT_CASE(mpeg2fpga_core_test_source_select_preserves_freeze),
 	{}
 };
 

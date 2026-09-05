@@ -24,6 +24,10 @@
                flex-wrap: wrap; }
   .transport input[type=range] { flex: 1; min-width: 220px; }
   .muted { opacity: .6; font-variant-numeric: tabular-nums; }
+  .decoder { display: flex; gap: 8px; align-items: center; margin-top: 16px;
+             flex-wrap: wrap; }
+  .decoder .label { font-weight: 600; opacity: .6; margin-right: 4px; }
+  .note { font-size: 12px; opacity: .6; max-width: 62ch; margin: 8px 0 0; }
   table { border-collapse: collapse; margin-top: 20px; font-size: 13px; }
   th, td { text-align: left; padding: 2px 18px 2px 0; vertical-align: top; }
   th { font-weight: 600; opacity: .65; font-weight: 500; }
@@ -52,6 +56,19 @@ and every reconstructed picture comes back here.</p>
   <input type="range" id="seek" min="0" max="0" value="0">
   <span class="muted" id="counter"></span>
 </div>
+
+<div class="decoder">
+  <span class="label">decoder</span>
+  <button data-control="pause">Pause</button>
+  <button data-control="resume">Resume</button>
+  <button data-control="blank">Blank</button>
+  <span class="muted" id="trick"></span>
+</div>
+<p class="note">These act on the hardware's display path, not on the playback
+above: pause is <code>repeat_frame=31</code>, which holds the picture the
+decoder is showing and stalls it behind that. The core is only reset on the
+first decode; every stream after that is separated with
+<code>flush_vbuf</code>.</p>
 
 <table id="report"></table>
 
@@ -279,6 +296,22 @@ $("go").onclick = async () => {
     $("go").disabled = false;
   }
 };
+
+for (const button of document.querySelectorAll("[data-control]")) {
+  button.onclick = async () => {
+    try {
+      const resp = await fetch(`/control/${button.dataset.control}`, { method: "POST" });
+      const state = await resp.json();
+      if (!resp.ok) { $("trick").textContent = state.error || resp.status; return; }
+      $("trick").textContent =
+        `trick ${state.raw} · ${state.frozen ? "frozen" : "running"}` +
+        ` · source ${state.source_select}` +
+        ` · persistence ${state.persistence ? "on" : "off"}`;
+    } catch (err) {
+      $("trick").textContent = String(err);
+    }
+  };
+}
 
 function showReport(r) {
   const rows = [

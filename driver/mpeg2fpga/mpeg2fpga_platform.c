@@ -304,6 +304,140 @@ static ssize_t dma_start_store(struct device *dev,
 }
 static DEVICE_ATTR_WO(dma_start);
 
+
+/*
+ * Trick mode. These are what let a client drive the decoder continuously --
+ * stream after stream, paused and resumed -- instead of resetting the core for
+ * every push. doc/mpeg2fpga.txt sec 1.11.
+ */
+
+static ssize_t freeze_show(struct device *dev, struct device_attribute *attr,
+			   char *buf)
+{
+	struct mpeg2fpga_platform *priv = dev_get_drvdata(dev);
+	unsigned long flags;
+	bool frozen;
+
+	spin_lock_irqsave(&priv->lock, flags);
+	frozen = mpeg2fpga_core_is_frozen(&priv->core);
+	spin_unlock_irqrestore(&priv->lock, flags);
+
+	return sysfs_emit(buf, "%d\n", frozen);
+}
+
+static ssize_t freeze_store(struct device *dev, struct device_attribute *attr,
+			    const char *buf, size_t count)
+{
+	struct mpeg2fpga_platform *priv = dev_get_drvdata(dev);
+	unsigned long flags;
+	bool freeze;
+	int ret;
+
+	ret = kstrtobool(buf, &freeze);
+	if (ret)
+		return ret;
+
+	/* repeat_frame=31 holds the current picture; the decoder stalls behind
+	 * it for want of anywhere to put the next one, and the watchdog is
+	 * held off in this state so a pause cannot trip a reset.
+	 */
+	spin_lock_irqsave(&priv->lock, flags);
+	mpeg2fpga_core_set_freeze(&priv->core, freeze);
+	spin_unlock_irqrestore(&priv->lock, flags);
+
+	return count;
+}
+static DEVICE_ATTR_RW(freeze);
+
+static ssize_t source_select_show(struct device *dev,
+				  struct device_attribute *attr, char *buf)
+{
+	struct mpeg2fpga_platform *priv = dev_get_drvdata(dev);
+	unsigned long flags;
+	u8 source;
+
+	spin_lock_irqsave(&priv->lock, flags);
+	source = mpeg2fpga_core_get_source_select(&priv->core);
+	spin_unlock_irqrestore(&priv->lock, flags);
+
+	return sysfs_emit(buf, "%u\n", source);
+}
+
+static ssize_t source_select_store(struct device *dev,
+				   struct device_attribute *attr,
+				   const char *buf, size_t count)
+{
+	struct mpeg2fpga_platform *priv = dev_get_drvdata(dev);
+	unsigned long flags;
+	u8 source;
+	int ret;
+
+	/* 0 last decoded, 1 blank, 4-7 framestore frame 0-3 (doc table 1.9);
+	 * 2 and 3 are not defined.
+	 */
+	ret = kstrtou8(buf, 0, &source);
+	if (ret)
+		return ret;
+	if (source == 2 || source == 3 || source > 7)
+		return -EINVAL;
+
+	spin_lock_irqsave(&priv->lock, flags);
+	mpeg2fpga_core_set_source_select(&priv->core, source);
+	spin_unlock_irqrestore(&priv->lock, flags);
+
+	return count;
+}
+static DEVICE_ATTR_RW(source_select);
+
+static ssize_t persistence_store(struct device *dev,
+				 struct device_attribute *attr,
+				 const char *buf, size_t count)
+{
+	struct mpeg2fpga_platform *priv = dev_get_drvdata(dev);
+	unsigned long flags;
+	bool on;
+	int ret;
+
+	ret = kstrtobool(buf, &on);
+	if (ret)
+		return ret;
+
+	spin_lock_irqsave(&priv->lock, flags);
+	mpeg2fpga_core_set_persistence(&priv->core, on);
+	spin_unlock_irqrestore(&priv->lock, flags);
+
+	return count;
+}
+static DEVICE_ATTR_WO(persistence);
+
+static ssize_t flush_vbuf_store(struct device *dev,
+				struct device_attribute *attr,
+				const char *buf, size_t count)
+{
+	struct mpeg2fpga_platform *priv = dev_get_drvdata(dev);
+	unsigned long flags;
+	bool flush;
+	int ret;
+
+	ret = kstrtobool(buf, &flush);
+	if (ret)
+		return ret;
+	if (!flush)
+		return count;
+
+	/* Clears whatever is left of the previous stream in the input buffer.
+	 * This is what makes "push another stream" work without resetting the
+	 * core: verified on hardware going from 704x480 to 720x576 with
+	 * video_ch raised and no error.
+	 */
+	spin_lock_irqsave(&priv->lock, flags);
+	mpeg2fpga_core_flush_vbuf(&priv->core);
+	spin_unlock_irqrestore(&priv->lock, flags);
+
+	return count;
+}
+static DEVICE_ATTR_WO(flush_vbuf);
+
 static struct attribute *mpeg2fpga_attrs[] = {
 	&dev_attr_version.attr,
 	&dev_attr_enable.attr,
@@ -313,6 +447,10 @@ static struct attribute *mpeg2fpga_attrs[] = {
 	&dev_attr_dma_len.attr,
 	&dev_attr_dma_status.attr,
 	&dev_attr_dma_start.attr,
+	&dev_attr_freeze.attr,
+	&dev_attr_source_select.attr,
+	&dev_attr_persistence.attr,
+	&dev_attr_flush_vbuf.attr,
 	NULL,
 };
 ATTRIBUTE_GROUPS(mpeg2fpga);

@@ -23,6 +23,11 @@ appear reversed in little-endian DRAM -- is per-byte work, which Python on the
 MSS is bad at and a browser's JIT is good at, so static/index.html does it there
 along with the YUV to RGB conversion.  See framestore.py.
 
+  POST /control/{pause,resume,blank,flush,slow,show_buffer}
+                 trick mode. The core is reset once, at the first decode, and
+                 never again: streams after that are separated with flush_vbuf,
+                 which is what the decoder is designed for. See trick_mode.py.
+
 There is no WebSocket any more.  The decoder consumes a whole stream in about a
 second and only the last four pictures survive in the frame buffers, so there
 is nothing to stream in real time yet; plain request/response is easier to
@@ -32,11 +37,13 @@ import http.server
 import json
 import os
 import struct
+import threading
 import time
 import urllib.parse
 
 import decode_stream
 import framestore
+import trick_mode
 from ddr_region import DDRRegion, FRAMESTORE_DEVICE
 from decoder_push import PAGE_OFFSET, OverlayNotApplied
 from dma_push import DmaPusher
@@ -59,6 +66,22 @@ FRAME_MAGIC = b"M2FS"
 
 # Last successful decode, so GET /frame/N knows the geometry.
 _state = {"width": 0, "height": 0, "written": []}
+
+# The decoder is driven continuously: the core is reset once, at startup, and
+# every stream after that is separated with flush_vbuf rather than another
+# reset. See trick_mode.py for why that is the design's own intent.
+_controls = {"trick": None, "reset_done": False}
+_controls_lock = threading.Lock()
+
+
+def controls():
+    """The shared trick-mode shadow. One per process: the register is
+    write-only, so two independent shadows would fight over it. It deliberately
+    holds no register handle -- see trick_mode.TrickMode."""
+    with _controls_lock:
+        if _controls["trick"] is None:
+            _controls["trick"] = trick_mode.TrickMode()
+        return _controls["trick"]
 
 
 def _decode_status(sticky):
@@ -188,6 +211,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self._send_file(os.path.join(STATIC_DIR, "index.html"), "text/html")
         elif path == "/state":
             self._send_json(200, dict(_state))
+        elif path == "/control/state":
+            self._do_control("state", None)
         elif path.startswith("/frame/"):
             try:
                 frame = int(path[len("/frame/"):])
@@ -207,9 +232,16 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self.send_error(404)
 
     def do_POST(self):
-        path = urllib.parse.urlparse(self.path).path
+        parsed = urllib.parse.urlparse(self.path)
+        path = parsed.path
         if path == "/decode":
             self._do_decode()
+            return
+        if path.startswith("/control/"):
+            query = urllib.parse.parse_qs(parsed.query)
+            value = query.get("value", [None])[0]
+            self._do_control(path[len("/control/"):],
+                             int(value) if value is not None else None)
             return
         if path != "/upload":
             self.send_error(404)
@@ -237,6 +269,51 @@ class Handler(http.server.BaseHTTPRequestHandler):
               % (report["width"], report["height"], report["frames"],
                  report["sticky"]))
         self._send_json(200, report)
+
+
+    def _do_control(self, action, value):
+        """Trick mode from the browser: pause, resume, blank, freeze a buffer.
+
+        None of these touch the decoder's reset -- pause is repeat_frame=31,
+        which holds the display on the current picture and lets the decoder
+        stall behind it. See trick_mode.py.
+        """
+        try:
+            trick = controls()
+            with DmaPusher() as pusher:
+                if action == "pause":
+                    trick.set_freeze(pusher, True)
+                elif action == "resume":
+                    trick.set_freeze(pusher, False)
+                    trick.set_source_select(pusher,
+                                            trick_mode.SOURCE_LAST_DECODED)
+                elif action == "blank":
+                    trick.set_source_select(pusher, trick_mode.SOURCE_BLANK)
+                elif action == "show_buffer":
+                    if value is None or not 0 <= value < framestore.NUM_FRAMES:
+                        self.send_error(400, "buffer must be 0..3")
+                        return
+                    trick.set_source_select(pusher,
+                                            trick_mode.SOURCE_FRAME_0 + value)
+                elif action == "slow":
+                    trick.set_repeat_frame(pusher,
+                                           value if value is not None else 3)
+                elif action == "flush":
+                    trick.flush_vbuf(pusher)
+                elif action != "state":
+                    self.send_error(404, "unknown control")
+                    return
+                state = trick.describe()
+        except OverlayNotApplied as exc:
+            self._send_json(503, {"status": "no_overlay", "error": str(exc)})
+            return
+        except ValueError as exc:
+            self.send_error(400, str(exc))
+            return
+
+        state["status"] = "ok"
+        state["action"] = action
+        self._send_json(200, state)
 
     def _do_decode(self):
         """Decode a whole stream, streaming every captured frame back as it lands.
@@ -271,11 +348,15 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 "frame_rate": round(sequence.frame_rate, 3),
                 "pictures": len(sequence.pictures),
             }))
+            trick = controls()
+            first = not _controls["reset_done"]
+            _controls["reset_done"] = True
             report = decode_stream.decode(
                 data,
                 lambda cap: chunk(_frame_record(cap)),
                 on_capture_progress=lambda done, total: chunk(_json_record(
-                    {"kind": "capturing", "captured": done, "total": total})))
+                    {"kind": "capturing", "captured": done, "total": total})),
+                trick=trick, reset=first)
             report["kind"] = "done"
             chunk(_json_record(report))
             print("[http] decode done: %s" % report)
