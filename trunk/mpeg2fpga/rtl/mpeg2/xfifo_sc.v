@@ -146,7 +146,45 @@ module xfifo_sc (dbg,
    * dual-port ram w/registered output
    */
 
-  reg    [dta_width-1:0]ram[(1 << addr_width)-1:0];
+  /* 2026-09-05 (docs/bringup 37): without an attribute, Synplify maps this
+   * 64x256 memory onto TWO RAM1K20 blocks instead of four, using BOTH ports of
+   * each block to reach the width -- port A carrying rd_addr and port B
+   * wr_addr. A fifo reads and writes different addresses in the same cycle, so
+   * the bits living on a port-A slice lose their write and keep the previous
+   * content. Measured: all 30 corrupt bits across three bitstreams landed in
+   * port-A slices, none in port B.
+   * Success criterion for any attribute here is NOT that it compiles -- it is
+   * that the netlist shows a real simple-dual-port mapping.
+   *
+   * Two syn_ramstyle values were tried on hardware-bound synthesis and BOTH
+   * failed, deliberately left unset rather than leaving a misleading one in:
+   *   "rw_check"    -- accepted, and it SILENCED the FX107 warning for this
+   *                    RAM (41 warnings -> 23), but the netlist was byte for
+   *                    byte the same: still two blocks, still rd_addr on one
+   *                    port and wr_addr on the other with the data split
+   *                    between them. A false fix that also destroys the one
+   *                    warning that was pointing at the problem.
+   *   "distributed" -- not a valid value for this target at all ("FX344
+   *                    Unrecognized syn_ramstyle"), so it was ignored.
+   *
+   * The valid values, from the tool's own docs (microchip_attribute_reference
+   * and fpga_reference), are block_ram (default), registers, no_rw_check,
+   * rw_check, lsram and uram. None of them controls the port arrangement
+   * directly -- but the default's own description names the culprit: "by
+   * default, the software uses deep block RAM configurations instead of wide
+   * configurations to get better timing results". That heuristic is what
+   * ganged the two ports of each LSRAM to reach 40 bits of width.
+   *
+   * "uram" is the fix: uSRAM (RAM64x12) has genuinely dedicated write and read
+   * ports (W_ADDR/W_DATA/W_EN and R_ADDR/R_DATA), so width expansion adds
+   * blocks in parallel instead of ganging ports. Verified in the netlist, not
+   * just by the absence of a warning:
+   *   - 24 x RAM64x12, zero RAM1K20 (4 deep x 6 wide for 256x64)
+   *   - W_ADDR = wr_addr and R_ADDR = rd_addr on separate buses
+   *   - RAM report: 64X12, "Inferring instance using URAM"
+   * Cost across all 13 fifo_sc instances: uSRAM 97 -> 319 of 876, LSRAM
+   * 51 -> 30 of 308. See docs/bringup 38. */
+  reg    [dta_width-1:0]ram[(1 << addr_width)-1:0] /* synthesis syn_ramstyle = "uram" */;
 
   always @(posedge clk)
     if (~rst) dout <= 0;
