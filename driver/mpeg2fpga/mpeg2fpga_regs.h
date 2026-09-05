@@ -102,4 +102,53 @@
 #define MPEG2FPGA_TRICK_MODE_SOURCE_SELECT_MASK	GENMASK(3, 1)
 #define MPEG2FPGA_TRICK_MODE_FLUSH_VBUF	BIT(0)
 
+/*
+ * Bridge-owned registers, word addresses 0x10 and up.
+ *
+ * Source: trunk/mpeg2fpga/rtl/mpeg2/apb3_mpeg2fpga_bridge.v (localparams
+ * around line 248). These are NOT part of the decoder's two-bank read/write
+ * split above -- they are a flat map added by the APB bridge for this port,
+ * and each one is either read-only or write-only as noted.
+ *
+ * Everything here was previously known only to the ad-hoc Python under
+ * webserver/, which is why the same magic offsets were open-coded in a dozen
+ * scripts. The driver owns them now.
+ */
+#define MPEG2FPGA_B_STREAM_PUSH		0x10	/* wo: one stream byte per write */
+#define MPEG2FPGA_B_DMA_ADDR		0x11	/* wo: byte offset into staging */
+#define MPEG2FPGA_B_DMA_LEN		0x12	/* wo: length in bytes */
+#define MPEG2FPGA_B_DMA_CTRL		0x13	/* wo: bit 0 starts a transfer */
+#define MPEG2FPGA_B_DMA_STATUS		0x14	/* ro */
+#define MPEG2FPGA_B_PWDATA_STICKY	0x15	/* ro */
+#define MPEG2FPGA_B_VBUF_WR_ADDR	0x16	/* ro */
+#define MPEG2FPGA_B_VBUF_RD_ADDR	0x17	/* ro */
+#define MPEG2FPGA_B_DISP_SERVICE_CNT	0x18	/* ro: cycles arbiter served display */
+#define MPEG2FPGA_B_VBR_SERVICE_CNT	0x19	/* ro: cycles serving the video buffer */
+#define MPEG2FPGA_B_VBR_STARVED_CNT	0x1a	/* ro: cycles the VLD wanted data and lost */
+#define MPEG2FPGA_B_ARBITER_FLAGS	0x1b	/* ro */
+#define MPEG2FPGA_B_MEM_RES_VALID_CNT	0x1c	/* ro: memory responses returned */
+#define MPEG2FPGA_B_CORE_ENABLE		0x20	/* rw: bit 0 releases the core from reset */
+
+/* dma ctrl (0x13, write-only) */
+#define MPEG2FPGA_DMA_CTRL_START	BIT(0)
+
+/* dma status (0x14, read-only), packed as
+ * {bytes_done[23:0], 6'b0, done_sticky, busy} -- see the bridge's
+ * DMA_STATUS_ADDR read case. done is sticky and is cleared by starting the
+ * next transfer, not by reading.
+ */
+#define MPEG2FPGA_DMA_STATUS_BUSY	BIT(0)
+#define MPEG2FPGA_DMA_STATUS_DONE	BIT(1)
+#define MPEG2FPGA_DMA_STATUS_BYTES_SHIFT	8
+#define MPEG2FPGA_DMA_STATUS_BYTES_MASK		GENMASK(31, 8)
+
+/* core enable (0x20) */
+#define MPEG2FPGA_CORE_ENABLE		BIT(0)
+
+/* frame_rate_code values, ISO/IEC 13818-2 table 6-4, in milli-Hz so the
+ * 1000/1001 rates stay exact in integer arithmetic.
+ */
+#define MPEG2FPGA_FRAME_RATE_CODE_MIN	1
+#define MPEG2FPGA_FRAME_RATE_CODE_MAX	8
+
 #endif /* MPEG2FPGA_REGS_H */

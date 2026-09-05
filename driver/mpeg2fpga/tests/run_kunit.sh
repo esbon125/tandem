@@ -8,7 +8,15 @@
 # kunit.py. The repo copy under driver/mpeg2fpga/ stays the source of
 # truth; nothing is written back here.
 #
-# Usage: KERNEL_SRC=/path/to/linux4microchip-linux ./run_kunit.sh
+# KERNEL_SRC must be a *clean* tree: kunit.py builds with O=.kunit, and an
+# O= build refuses to run if the source tree has in-tree build artifacts. Do
+# not run `make mrproper` on the tree used to cross-build the real module --
+# that would destroy the .config/Module.symvers the out-of-tree build needs.
+# Use a second checkout instead:
+#
+#   git -C <kernel> worktree add --detach ~/kernel-src/kunit-worktree HEAD
+#
+# Usage: KERNEL_SRC=/path/to/clean/linux ./run_kunit.sh
 
 set -euo pipefail
 
@@ -54,6 +62,13 @@ cat > "$KERNEL_SRC/.kunitconfig" <<'EOF'
 CONFIG_KUNIT=y
 CONFIG_MPEG2FPGA_KUNIT_TEST=y
 EOF
+
+# linux4microchip-2026.04.1 does not build for UML as shipped: UML has no
+# asm/unwind_user.h, so kernel/fork.c pulls in the x86 one and fails on
+# regs->flags / X86_VM_MASK. Route it to the generic header.
+UM_KBUILD="$KERNEL_SRC/arch/um/include/asm/Kbuild"
+grep -q 'unwind_user.h' "$UM_KBUILD" || \
+	echo 'generic-y += unwind_user.h' >> "$UM_KBUILD"
 
 cd "$KERNEL_SRC"
 # kunit.py uses walrus operators etc. that require Python >= 3.8; this host's
