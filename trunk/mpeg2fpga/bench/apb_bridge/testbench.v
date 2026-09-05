@@ -68,6 +68,9 @@ module testbench ();
   reg   [7:0] dbg_mem_req_wr_push_cnt;
   reg [127:0] vld_dbg;
   reg [191:0] getbits_dbg;
+  reg  [63:0] dbg_first_rdata;
+  reg  [63:0] dbg_first_mem_res;
+  reg  [63:0] dbg_first_vbr_wr;
   reg   [7:0] dbg_mem_req_rd_pop_cnt;
   wire        core_enable;
 
@@ -95,6 +98,9 @@ module testbench ();
       .dbg_mem_req_wr_push_cnt(dbg_mem_req_wr_push_cnt),
       .vld_dbg(vld_dbg),
       .getbits_dbg(getbits_dbg),
+      .dbg_first_rdata(dbg_first_rdata),
+      .dbg_first_mem_res(dbg_first_mem_res),
+      .dbg_first_vbr_wr(dbg_first_vbr_wr),
       .dbg_mem_req_rd_pop_cnt(dbg_mem_req_rd_pop_cnt),
       .core_enable(core_enable)
   );
@@ -158,6 +164,9 @@ module testbench ();
     dbg_last_mem_req_wr_addr = 22'b0;
     dbg_mem_req_wr_push_cnt = 8'b0;
     vld_dbg = {32'hdddd3333, 32'hcccc2222, 32'hbbbb1111, 32'haaaa0000};
+    dbg_first_rdata   = 64'hAAAA1111_BBBB2222;
+    dbg_first_mem_res = 64'hCCCC3333_DDDD4444;
+    dbg_first_vbr_wr  = 64'hEEEE5555_FFFF6666;
     getbits_dbg = {32'h55550005, 32'h44440004, 32'h33330003, 32'h22220002, 32'h11110001, 32'h00000000};
     dbg_mem_req_rd_pop_cnt = 8'b0;
   end
@@ -623,6 +632,24 @@ module testbench ();
     check_eq("GB_DBG4 returns getbits_dbg word 4", rdata, 32'h44440004);
     apb_transfer(1'b0, 6'h2a, 32'b0, rdata);
     check_eq("GB_DBG5 returns getbits_dbg word 5", rdata, 32'h55550005);
+
+    /* 2026-09-05: the three read-return-path probes (0x2b-0x30), each a
+     * 64-bit word split low/high. dbg_first_rdata crosses mem_clk->core_clk
+     * through a 2-FF synchroniser, so give it a few core_clk cycles to
+     * propagate before reading -- the other two are core_clk already. */
+    repeat (8) @(posedge core_clk);
+    apb_transfer(1'b0, 6'h2b, 32'b0, rdata);
+    check_eq("first AXI RDATA low word", rdata, 32'hBBBB2222);
+    apb_transfer(1'b0, 6'h2c, 32'b0, rdata);
+    check_eq("first AXI RDATA high word", rdata, 32'hAAAA1111);
+    apb_transfer(1'b0, 6'h2d, 32'b0, rdata);
+    check_eq("first mem_response word low", rdata, 32'hDDDD4444);
+    apb_transfer(1'b0, 6'h2e, 32'b0, rdata);
+    check_eq("first mem_response word high", rdata, 32'hCCCC3333);
+    apb_transfer(1'b0, 6'h2f, 32'b0, rdata);
+    check_eq("first vbuf_read_fifo word low", rdata, 32'hFFFF6666);
+    apb_transfer(1'b0, 6'h30, 32'b0, rdata);
+    check_eq("first vbuf_read_fifo word high", rdata, 32'hEEEE5555);
 
     /* 0x22 must NOT reach the regfile any more. If it fell through, this
      * read would return the fake regfile's REG_RD_SIZE instead. */

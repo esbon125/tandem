@@ -134,6 +134,7 @@ module framestore(rst, clk, mem_clk, mem_rst,
                   osd_rd_empty, osd_rd_almost_empty, osd_rd_en, osd_rd_valid, osd_rd_addr, osd_rd_dta, osd_wr_almost_full,
                   vbw_rd_empty, vbw_rd_almost_empty, vbw_rd_en, vbw_rd_valid, vbw_rd_dta, vbw_wr_almost_full,
                   vbr_wr_full, vbr_wr_almost_full, vbr_wr_dta, vbr_wr_en, vbr_wr_ack, vb_flush, vbr_rd_almost_empty,
+                  dbg_first_mem_res, dbg_first_vbr_wr,
                   mem_req_rd_cmd, mem_req_rd_addr, mem_req_rd_dta, mem_req_rd_en, mem_req_rd_valid, mem_req_rd_empty,
                   mem_res_wr_dta, mem_res_wr_en, mem_res_wr_almost_full, mem_res_wr_full, mem_res_wr_overflow,
                   mem_req_wr_almost_full, mem_req_wr_full, mem_req_wr_overflow,
@@ -206,6 +207,20 @@ module framestore(rst, clk, mem_clk, mem_rst,
   input             vbw_wr_almost_full;
   /* video buffer: reading from circular buffer */
   output      [63:0]vbr_wr_dta;
+
+  /* 2026-09-05: two probes splitting the VBUF read RETURN path (docs/bringup
+   * 34: the first word getbits receives is corrupted on a failing push, while
+   * DRAM reads back byte-perfect). Together with mem2axi_bridge's
+   * dbg_first_rdata (AXI side) and getbits.v's own dbg_word0 (far end), these
+   * cut the path into segments so the corrupting stage can be named instead of
+   * guessed:
+   *   dbg_first_mem_res  -- first word OUT of mem_response_fifo, i.e. just
+   *                         after the mem_clk->clk crossing
+   *   dbg_first_vbr_wr   -- first word INTO vbuf_read_fifo, i.e. after
+   *                         framestore_response has handled it
+   * Both clk domain, no CDC needed. */
+  output reg  [63:0]dbg_first_mem_res;
+  output reg  [63:0]dbg_first_vbr_wr;
   output            vbr_wr_en;
   input             vbr_wr_ack;
   input             vbr_wr_full;
@@ -494,6 +509,33 @@ module framestore(rst, clk, mem_clk, mem_rst,
     .underflow(),
     .prog_empty()
     );
+
+  reg dbg_first_mem_res_seen;
+  reg dbg_first_vbr_wr_seen;
+
+  always @(posedge clk)
+    if (~rst)
+      begin
+        dbg_first_mem_res      <= 64'b0;
+        dbg_first_mem_res_seen <= 1'b0;
+      end
+    else if (mem_res_rd_valid && ~dbg_first_mem_res_seen)
+      begin
+        dbg_first_mem_res      <= mem_res_rd_dta;
+        dbg_first_mem_res_seen <= 1'b1;
+      end
+
+  always @(posedge clk)
+    if (~rst)
+      begin
+        dbg_first_vbr_wr      <= 64'b0;
+        dbg_first_vbr_wr_seen <= 1'b0;
+      end
+    else if (vbr_wr_en && ~dbg_first_vbr_wr_seen)
+      begin
+        dbg_first_vbr_wr      <= vbr_wr_dta;
+        dbg_first_vbr_wr_seen <= 1'b1;
+      end
 
 `ifdef CHECK
   /*

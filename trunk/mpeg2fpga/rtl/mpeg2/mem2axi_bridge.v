@@ -100,7 +100,8 @@ module mem2axi_bridge (
     m_axi_rid, m_axi_rdata, m_axi_rresp, m_axi_rlast, m_axi_ruser, m_axi_rvalid, m_axi_rready,
 
     /* Fase 7a debug (2026-08-23) */
-    dbg_last_write_addr_from_fifo, dbg_last_write_awaddr_issued
+    dbg_last_write_addr_from_fifo, dbg_last_write_awaddr_issued,
+    dbg_first_rdata
 );
 
   parameter [37:0] DDR_BASE = 38'h0;
@@ -282,6 +283,17 @@ module mem2axi_bridge (
   output reg [21:0] dbg_last_write_addr_from_fifo;
   output reg [37:0] dbg_last_write_awaddr_issued;
 
+  /* 2026-09-05: first 64-bit word ever returned by the AXI read channel.
+   * The very first word handed to getbits.v is corrupted on a failing push
+   * (docs/bringup 34) while DRAM reads back byte-perfect, so the corruption
+   * lives somewhere on the read RETURN path. This is that path's first stage:
+   * if dbg_first_rdata already differs from the stream's first 8 bytes, the
+   * problem is at/below the MSS; if it is correct, the corruption happens
+   * downstream in mem_response_fifo or framestore_response. mem_clk domain --
+   * the APB bridge synchronises it, same as dbg_last_write_awaddr_issued. */
+  output reg [63:0] dbg_first_rdata;
+  reg               dbg_first_rdata_seen;
+
   always @(posedge clk)
     if (~rst) begin
       dbg_last_write_addr_from_fifo <= 22'b0;
@@ -423,6 +435,18 @@ module mem2axi_bridge (
   always @(posedge clk)
     if (~rst) mem_res_wr_dta <= 64'b0;
     else if ((state == S_RDATA) && m_axi_rvalid) mem_res_wr_dta <= m_axi_rdata;
+
+  always @(posedge clk)
+    if (~rst)
+      begin
+        dbg_first_rdata      <= 64'b0;
+        dbg_first_rdata_seen <= 1'b0;
+      end
+    else if ((state == S_RDATA) && m_axi_rvalid && ~dbg_first_rdata_seen)
+      begin
+        dbg_first_rdata      <= m_axi_rdata;
+        dbg_first_rdata_seen <= 1'b1;
+      end
 
   always @(posedge clk)
     if (~rst) mem_res_wr_en <= 1'b0;

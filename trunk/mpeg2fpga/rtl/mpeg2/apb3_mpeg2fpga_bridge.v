@@ -138,6 +138,9 @@ module apb3_mpeg2fpga_bridge (
     dbg_last_mem_req_wr_addr,
     vld_dbg,
     getbits_dbg,
+    dbg_first_rdata,
+    dbg_first_mem_res,
+    dbg_first_vbr_wr,
 
     /* 2026-08-26 (mem_req_wr_almost_full investigation): free-running
      * occupancy counters straddling mem_request_fifo -- see framestore.v's
@@ -224,6 +227,9 @@ module apb3_mpeg2fpga_bridge (
   input       [21:0]dbg_last_mem_req_wr_addr;       /* core_clk domain, no CDC needed */
   input      [127:0]vld_dbg;                        /* core_clk domain, no CDC needed -- vld.v parse state */
   input      [191:0]getbits_dbg;                    /* core_clk domain, no CDC needed -- getbits.v window startup */
+  input       [63:0]dbg_first_rdata;                /* mem_clk domain -- synchronised below */
+  input       [63:0]dbg_first_mem_res;              /* core_clk domain */
+  input       [63:0]dbg_first_vbr_wr;               /* core_clk domain */
   input        [7:0]dbg_mem_req_wr_push_cnt;        /* core_clk domain, no CDC needed */
   input        [7:0]dbg_mem_req_rd_pop_cnt;         /* mem_clk domain -- genuine CDC needed */
 
@@ -258,6 +264,12 @@ module apb3_mpeg2fpga_bridge (
   localparam [5:0] GB_DBG0_ADDR = 6'h25, GB_DBG1_ADDR = 6'h26,
                    GB_DBG2_ADDR = 6'h27, GB_DBG3_ADDR = 6'h28,
                    GB_DBG4_ADDR = 6'h29, GB_DBG5_ADDR = 6'h2a;
+  /* 2026-09-05: three probes splitting the VBUF read return path, each a
+   * 64-bit word over two addresses (low, high). See framestore.v and
+   * mem2axi_bridge.v for what each captures and docs/bringup 34 for why. */
+  localparam [5:0] RDATA_LO_ADDR   = 6'h2b, RDATA_HI_ADDR   = 6'h2c,
+                   MEMRES_LO_ADDR  = 6'h2d, MEMRES_HI_ADDR  = 6'h2e,
+                   VBRWR_LO_ADDR   = 6'h2f, VBRWR_HI_ADDR   = 6'h30;
 
   /* Fase 7c PWDATA investigation: hold the Access phase open for this many
    * extra PCLK cycles before committing, instead of on the very first
@@ -308,6 +320,7 @@ module apb3_mpeg2fpga_bridge (
   reg  [2:0] core_state;
   reg        req_toggle_meta, req_toggle_sync, req_toggle_seen;
   reg        reg_wr_en_r, reg_rd_en_r;
+  reg [63:0] dbg_first_rdata_meta, dbg_first_rdata_sync;   /* 2-FF sync, mem_clk -> core_clk */
   reg [31:0] rdata_hold;
   reg        ack_toggle;
   reg        core_enable_r;   /* default 0 (held disabled); see header comment */
@@ -497,6 +510,12 @@ module apb3_mpeg2fpga_bridge (
   wire is_vld_dbg3 = (apb_addr_r == VLD_DBG3_ADDR);
   wire is_gb_dbg = (apb_addr_r >= GB_DBG0_ADDR) && (apb_addr_r <= GB_DBG5_ADDR);
   wire [2:0] gb_dbg_idx = apb_addr_r[2:0] - GB_DBG0_ADDR[2:0];   /* 0..5 within the bundle */
+  wire is_rdata_lo  = (apb_addr_r == RDATA_LO_ADDR);
+  wire is_rdata_hi  = (apb_addr_r == RDATA_HI_ADDR);
+  wire is_memres_lo = (apb_addr_r == MEMRES_LO_ADDR);
+  wire is_memres_hi = (apb_addr_r == MEMRES_HI_ADDR);
+  wire is_vbrwr_lo  = (apb_addr_r == VBRWR_LO_ADDR);
+  wire is_vbrwr_hi  = (apb_addr_r == VBRWR_HI_ADDR);
   wire is_core_enable = (apb_addr_r == CORE_ENABLE_ADDR);
 
   always @(posedge core_clk or negedge core_rst_n) begin
@@ -520,6 +539,8 @@ module apb3_mpeg2fpga_bridge (
       dbg_last_write_addr_from_fifo_sync <= 22'b0;
       dbg_last_write_awaddr_issued_meta  <= 38'b0;
       dbg_last_write_awaddr_issued_sync  <= 38'b0;
+      dbg_first_rdata_meta               <= 64'b0;
+      dbg_first_rdata_sync               <= 64'b0;
       dbg_mem_req_rd_pop_cnt_meta        <= 8'b0;
       dbg_mem_req_rd_pop_cnt_sync        <= 8'b0;
       core_enable_r   <= 1'b0;   /* core held in reset by default -- see header comment */
@@ -533,6 +554,8 @@ module apb3_mpeg2fpga_bridge (
       dbg_last_write_addr_from_fifo_sync <= dbg_last_write_addr_from_fifo_meta;
       dbg_last_write_awaddr_issued_meta  <= dbg_last_write_awaddr_issued;
       dbg_last_write_awaddr_issued_sync  <= dbg_last_write_awaddr_issued_meta;
+      dbg_first_rdata_meta               <= dbg_first_rdata;
+      dbg_first_rdata_sync               <= dbg_first_rdata_meta;
       dbg_mem_req_rd_pop_cnt_meta        <= dbg_mem_req_rd_pop_cnt;
       dbg_mem_req_rd_pop_cnt_sync        <= dbg_mem_req_rd_pop_cnt_meta;
 
@@ -639,6 +662,24 @@ module apb3_mpeg2fpga_bridge (
             end else if (is_gb_dbg) begin
               if (!apb_write_r)
                 rdata_hold <= getbits_dbg[{gb_dbg_idx, 5'b0} +: 32];
+              core_state <= C_DONE;
+            end else if (is_rdata_lo) begin
+              if (!apb_write_r) rdata_hold <= dbg_first_rdata_sync[31:0];
+              core_state <= C_DONE;
+            end else if (is_rdata_hi) begin
+              if (!apb_write_r) rdata_hold <= dbg_first_rdata_sync[63:32];
+              core_state <= C_DONE;
+            end else if (is_memres_lo) begin
+              if (!apb_write_r) rdata_hold <= dbg_first_mem_res[31:0];
+              core_state <= C_DONE;
+            end else if (is_memres_hi) begin
+              if (!apb_write_r) rdata_hold <= dbg_first_mem_res[63:32];
+              core_state <= C_DONE;
+            end else if (is_vbrwr_lo) begin
+              if (!apb_write_r) rdata_hold <= dbg_first_vbr_wr[31:0];
+              core_state <= C_DONE;
+            end else if (is_vbrwr_hi) begin
+              if (!apb_write_r) rdata_hold <= dbg_first_vbr_wr[63:32];
               core_state <= C_DONE;
             end else if (is_core_enable) begin
               if (apb_write_r) core_enable_r <= apb_wdata_r[0];

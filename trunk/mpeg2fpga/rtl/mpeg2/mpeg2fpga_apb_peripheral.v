@@ -383,6 +383,9 @@ module mpeg2fpga_apb_peripheral (
   wire [21:0]  dbg_last_mem_req_wr_addr_internal;
   wire [127:0] vld_dbg_internal;   /* clk domain, no CDC needed -- same as the line above */
   wire [191:0] getbits_dbg_internal;
+  wire  [63:0] dbg_first_rdata_internal;      /* mem_clk domain -- bridge synchronises */
+  wire  [63:0] dbg_first_mem_res_internal;    /* clk domain */
+  wire  [63:0] dbg_first_vbr_wr_internal;     /* clk domain */
   /* 2026-08-26 (mem_req_wr_almost_full investigation): see framestore.v's
    * header comment on these two -- push_cnt is core_clk domain (matches
    * this wrapper's own clk_internal), pop_cnt is mem_clk domain and needs
@@ -465,9 +468,12 @@ module mpeg2fpga_apb_peripheral (
 
       .dbg_last_write_addr_from_fifo(dbg_last_write_addr_from_fifo_internal),
       .dbg_last_write_awaddr_issued(dbg_last_write_awaddr_issued_internal),
+      .dbg_first_rdata(dbg_first_rdata_internal),
       .dbg_last_mem_req_wr_addr(dbg_last_mem_req_wr_addr_internal),
       .vld_dbg(vld_dbg_internal),
       .getbits_dbg(getbits_dbg_internal),
+      .dbg_first_mem_res(dbg_first_mem_res_internal),
+      .dbg_first_vbr_wr(dbg_first_vbr_wr_internal),
       .dbg_mem_req_wr_push_cnt(dbg_mem_req_wr_push_cnt_internal),
       .dbg_mem_req_rd_pop_cnt(dbg_mem_req_rd_pop_cnt_internal),
       .core_enable(core_enable_internal)
@@ -547,6 +553,8 @@ module mpeg2fpga_apb_peripheral (
       .dbg_last_mem_req_wr_addr(dbg_last_mem_req_wr_addr_internal),
       .vld_dbg(vld_dbg_internal),
       .getbits_dbg(getbits_dbg_internal),
+      .dbg_first_mem_res(dbg_first_mem_res_internal),
+      .dbg_first_vbr_wr(dbg_first_vbr_wr_internal),
       .dbg_mem_req_wr_push_cnt(dbg_mem_req_wr_push_cnt_internal),
       .dbg_mem_req_rd_pop_cnt(dbg_mem_req_rd_pop_cnt_internal)
   );
@@ -586,7 +594,8 @@ module mpeg2fpga_apb_peripheral (
       .m_axi_rlast(m_axi_rlast), .m_axi_ruser(m_axi_ruser), .m_axi_rvalid(m_axi_rvalid), .m_axi_rready(m_axi_rready),
 
       .dbg_last_write_addr_from_fifo(dbg_last_write_addr_from_fifo_internal),
-      .dbg_last_write_awaddr_issued(dbg_last_write_awaddr_issued_internal)
+      .dbg_last_write_awaddr_issued(dbg_last_write_awaddr_issued_internal),
+      .dbg_first_rdata(dbg_first_rdata_internal)
   );
 
 endmodule
