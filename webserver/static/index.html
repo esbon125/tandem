@@ -2,66 +2,188 @@
 <html>
 <head>
 <meta charset="utf-8">
-<title>mpeg2fpga demo</title>
+<title>mpeg2fpga on PolarFire SoC</title>
+<style>
+  :root { color-scheme: light dark; }
+  body { font: 14px/1.5 system-ui, sans-serif; margin: 0; padding: 24px;
+         max-width: 1100px; }
+  h1 { font-size: 18px; margin: 0 0 4px; }
+  .sub { opacity: .65; margin: 0 0 20px; }
+  .bar { display: flex; gap: 10px; align-items: center; flex-wrap: wrap;
+         margin-bottom: 16px; }
+  button { font: inherit; padding: 5px 14px; }
+  button:disabled { opacity: .5; }
+  #status { opacity: .8; }
+  #status.bad { color: #c02020; }
+  canvas { border: 1px solid #8886; image-rendering: pixelated;
+           max-width: 100%; background: #0002; }
+  .strip { display: flex; gap: 8px; margin: 14px 0; flex-wrap: wrap; }
+  .strip button { padding: 4px 12px; }
+  .strip button[aria-pressed="true"] { outline: 2px solid currentColor; }
+  table { border-collapse: collapse; margin-top: 18px; font-size: 13px; }
+  th, td { text-align: left; padding: 2px 16px 2px 0; }
+  th { font-weight: 600; opacity: .7; }
+  code { font-family: ui-monospace, monospace; }
+</style>
 </head>
 <body>
-<h1>mpeg2fpga - PolarFire SoC</h1>
-<p>
-  <input type="file" id="streamFile" accept=".m2v,.mpg,.mpeg">
-  <button id="uploadBtn">Upload</button>
-  <span id="status"></span>
-</p>
-<canvas id="screen" width="320" height="240" style="border:1px solid #444; image-rendering: pixelated;"></canvas>
+
+<h1>mpeg2fpga on PolarFire SoC</h1>
+<p class="sub">Push an MPEG-2 elementary stream at the decoder and look at what
+it reconstructed.</p>
+
+<div class="bar">
+  <input type="file" id="file" accept=".m2v,.mpg,.mpeg,.bits,.bit">
+  <button id="push" disabled>Decode</button>
+  <span id="status">pick a stream</span>
+</div>
+
+<div class="strip" id="strip"></div>
+<canvas id="screen" width="320" height="240"></canvas>
+<table id="report"></table>
 
 <script>
-const canvas = document.getElementById("screen");
-const ctx = canvas.getContext("2d");
-const statusEl = document.getElementById("status");
+const $ = (id) => document.getElementById(id);
+const ctx = $("screen").getContext("2d");
+let selected = null;
 
-document.getElementById("uploadBtn").onclick = async () => {
-  const file = document.getElementById("streamFile").files[0];
-  if (!file) {
-    statusEl.textContent = "select a file first";
-    return;
-  }
-  statusEl.textContent = "uploading...";
-  const buf = await file.arrayBuffer();
-  const resp = await fetch("/upload", { method: "POST", body: buf });
-  const json = await resp.json();
-  if (json.status === "ok") {
-    statusEl.textContent = `uploaded ${json.bytes} bytes, decoder SIZE before/after: ` +
-      `0x${json.regs_before.size.toString(16)} / 0x${json.regs_after.size.toString(16)}`;
-  } else {
-    statusEl.textContent = `uploaded ${json.bytes} bytes, decoder push skipped: ${json.error}`;
+$("file").onchange = () => { $("push").disabled = !$("file").files[0]; };
+
+function setStatus(text, bad) {
+  $("status").textContent = text;
+  $("status").className = bad ? "bad" : "";
+}
+
+$("push").onclick = async () => {
+  const file = $("file").files[0];
+  if (!file) return;
+  $("push").disabled = true;
+  setStatus(`pushing ${file.size} bytes...`);
+  $("strip").textContent = "";
+  $("report").textContent = "";
+  try {
+    const resp = await fetch("/upload", { method: "POST", body: await file.arrayBuffer() });
+    const report = await resp.json();
+    if (!resp.ok || report.status !== "ok") {
+      setStatus(report.error || `server said ${resp.status}`, true);
+      return;
+    }
+    showReport(report);
+    if (!report.frames.length) {
+      setStatus("decoded nothing - no frame buffer was written", true);
+      return;
+    }
+    setStatus(`${report.width}x${report.height}, ` +
+              `${report.frames.length} frame buffer(s) in ` +
+              `${report.decode_seconds.toFixed(1)} s`);
+    buildStrip(report.frames);
+    await show(report.frames[0]);
+  } catch (err) {
+    setStatus(String(err), true);
+  } finally {
+    $("push").disabled = false;
   }
 };
 
-function connectWS() {
-  const ws = new WebSocket(`ws://${location.hostname}:8081/`);
-  ws.binaryType = "arraybuffer";
-
-  ws.onmessage = (ev) => {
-    const buf = ev.data;
-    const view = new DataView(buf);
-    const width = view.getUint32(0, true);
-    const height = view.getUint32(4, true);
-    if (canvas.width !== width || canvas.height !== height) {
-      canvas.width = width;
-      canvas.height = height;
-    }
-    const rgba = new Uint8ClampedArray(buf, 8);
-    const imageData = new ImageData(rgba, width, height);
-    ctx.putImageData(imageData, 0, 0);
-  };
-
-  ws.onclose = () => {
-    statusEl.textContent = "disconnected, retrying...";
-    setTimeout(connectWS, 1000);
-  };
-  ws.onerror = () => ws.close();
+function showReport(r) {
+  const rows = [
+    ["size", `${r.width} x ${r.height}`],
+    ["display size", r.display_size.join(" x ")],
+    ["frame rate code", r.frame_rate],
+    ["stream", `${r.bytes} bytes, DMA in ${r.dma_seconds.toFixed(3)} s`],
+    ["status", `${r.sticky} ` +
+      Object.entries(r.flags).filter(([, v]) => v).map(([k]) => k).join(" ")],
+    ["settled", r.settled ? "yes" : "no - framestore still changing"],
+    ["frame buffers written", r.frames.join(", ") || "none"],
+  ];
+  $("report").innerHTML = rows
+    .map(([k, v]) => `<tr><th>${k}</th><td><code>${v}</code></td></tr>`).join("");
 }
 
-connectWS();
+function buildStrip(frames) {
+  $("strip").innerHTML = frames
+    .map((f) => `<button data-frame="${f}">buffer ${f}</button>`).join("");
+  for (const button of $("strip").children) {
+    button.onclick = () => show(Number(button.dataset.frame));
+  }
+}
+
+async function show(frame) {
+  selected = frame;
+  for (const button of $("strip").children) {
+    button.setAttribute("aria-pressed", Number(button.dataset.frame) === frame);
+  }
+  const resp = await fetch(`/frame/${frame}`);
+  if (!resp.ok) { setStatus(`frame ${frame}: ${resp.status}`, true); return; }
+  draw(await resp.arrayBuffer());
+}
+
+// The board hands over the frame store's bytes untouched, so the two things
+// its storage format does to a pixel get undone here:
+//   * the eight pixels of a 64-bit word are reversed, because the leftmost
+//     pixel is bits [63:56] and DRAM is little-endian;
+//   * values are signed and offset by -128, which `^ 0x80` undoes.
+// Doing it in the browser rather than in Python on the MSS is the whole reason
+// the wire format is raw.
+function plane(src, at, stride, rows, width, height) {
+  const out = new Uint8Array(width * height);
+  for (let y = 0; y < height; y++) {
+    const from = at + y * stride;
+    const to = y * width;
+    for (let x = 0; x < width; x++) {
+      // byte holding pixel x, with the eight-pixel group reversed
+      out[to + x] = src[from + (x & ~7) + (7 - (x & 7))] ^ 0x80;
+    }
+  }
+  return out;
+}
+
+function draw(buffer) {
+  const bytes = new Uint8Array(buffer);
+  const magic = String.fromCharCode(...bytes.subarray(0, 4));
+  if (magic !== "M2FS") { setStatus("bad frame header", true); return; }
+  const head = new DataView(buffer, 4);
+  const [, , width, height, lumaStride, lumaRows, chromaStride, chromaRows] =
+    Array.from({ length: 9 }, (_, i) => head.getUint32(i * 4, true));
+
+  let at = 4 + 9 * 4;
+  const cw = width >> 1, ch = height >> 1;
+  const Y = plane(bytes, at, lumaStride, lumaRows, width, height);
+  at += lumaStride * lumaRows;
+  const Cb = plane(bytes, at, chromaStride, chromaRows, cw, ch);
+  at += chromaStride * chromaRows;
+  const Cr = plane(bytes, at, chromaStride, chromaRows, cw, ch);
+
+  const canvas = $("screen");
+  canvas.width = width;
+  canvas.height = height;
+  const image = ctx.createImageData(width, height);
+  const px = image.data;
+
+  // BT.601, 4:2:0 chroma repeated over each 2x2 luma block.
+  for (let y = 0; y < height; y++) {
+    const crow = (y >> 1) * cw;
+    for (let x = 0; x < width; x++) {
+      const c = 1.164 * (Y[y * width + x] - 16);
+      const u = Cb[crow + (x >> 1)] - 128;
+      const v = Cr[crow + (x >> 1)] - 128;
+      const o = (y * width + x) * 4;
+      px[o]     = c + 1.596 * v;
+      px[o + 1] = c - 0.813 * v - 0.391 * u;
+      px[o + 2] = c + 2.018 * u;
+      px[o + 3] = 255;
+    }
+  }
+  ctx.putImageData(image, 0, 0);
+}
+
+fetch("/state").then((r) => r.json()).then((s) => {
+  if (s.frames && s.frames.length) {
+    setStatus(`last decode: ${s.width}x${s.height}`);
+    buildStrip(s.frames);
+    show(s.frames[0]);
+  }
+}).catch(() => {});
 </script>
 </body>
 </html>

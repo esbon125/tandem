@@ -30,12 +30,8 @@ from decoder_push import PAGE_OFFSET
 from dma_push import (DmaPusher, REG_DMA_ADDR, REG_DMA_LEN, REG_DMA_CTRL,
                       STAGE_OFFSET, sync_for_device)
 from ddr_region import DDRRegion, STAGING_DEVICE, FRAMESTORE_DEVICE
-
-# mem_codes.v, MP_AT_HL mapping
-WIDTH_Y, WIDTH_C = 18, 16
-FRAME_WORDS = (1 << WIDTH_Y) + 2 * (1 << WIDTH_C)
-OSD_WORD = 4 * FRAME_WORDS                      # first word past the four frames
-FRAMESTORE_BYTES = OSD_WORD * 8                 # 12 MiB
+from framestore import (WIDTH_Y, WIDTH_C, OSD_WORD, FRAMESTORE_BYTES,
+                        macroblocks)
 
 REG = lambda a: PAGE_OFFSET + a * 4
 REG_STATUS, REG_SIZE, REG_DISP_SIZE, REG_FRAME_RATE = 0x01, 0x02, 0x03, 0x04
@@ -134,8 +130,9 @@ def main():
         fp.write("vertical_size %d\n" % height)
         fp.write("display_horizontal_size %d\n" % ((disp >> 16) & 0x3FFF))
         fp.write("display_vertical_size %d\n" % (disp & 0x3FFF))
-        fp.write("mb_width %d\n" % ((width + 15) // 16))
-        fp.write("mb_height %d\n" % ((height + 15) // 16))
+        mb_width, mb_height = macroblocks(width, height)
+        fp.write("mb_width %d\n" % mb_width)
+        fp.write("mb_height %d\n" % mb_height)
         fp.write("frame_rate 0x%04x\n" % rate)
         fp.write("status_sticky 0x%04x\n" % sticky)
         fp.write("settled %d\n" % int(settled))
