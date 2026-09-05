@@ -22,9 +22,49 @@ Ese último punto **confirma la predicción falsable** que había quedado del fi
 de CDC de `pixel_queue` (commit `90e1a9a`, doc 32): el arbiter nunca servía al
 display y ahora sí.
 
-## Lo que NO funciona todavía
+## CORRECCIÓN: la comparación de frames no era concluyente
 
-**Los píxeles reconstruidos no coinciden con un decode de referencia.**
+Una versión anterior de este doc afirmaba que los píxeles reconstruidos no
+coinciden con un decode de referencia, midiendo MAD contra `tools/mpeg2dec`.
+**Esa conclusión se retira.** Corriendo la misma comparación contra la
+**simulación** -- el diseño upstream, que decodifica bien -- salió MAD ~94,
+prácticamente lo mismo que el hardware (121). Si el known-good tampoco pasa la
+comparación, el método está mal.
+
+Dos defectos encontrados y corregidos sin que alcanzara:
+`mem_ctl.v write_mb` escribe una fila blanca separadora **antes** de cada
+plano, y el plano de salida de la referencia es `frame_NN_out_`, no `aux`.
+Queda sin resolver que el stream es *field picture*: el frame store guarda
+campos y la referencia emite frames, así que comparar requiere conocer el
+entrelazado.
+
+**La comparación de frames completos no es una herramienta de validación
+confiable acá.** Depende del layout, del entrelazado y de qué buffer se lee.
+
+## Lo que SÍ está validado: IEEE 1180
+
+`bench/ieee1180` (nuevo, commit `f35efa0`) corre el test de precisión de IDCT
+IEEE 1180-1990 contra el `rtl/mpeg2/idct.v` real. **Pasa las seis condiciones**,
+coincidiendo con la corrida publicada por Koen
+(`tools/ieee1180/ieee-1180-results`) hasta el cuarto decimal:
+
+| métrica | nosotros | Koen | límite |
+|---|---|---|---|
+| peak error | 1 | 1 | 1 |
+| worst pmse | 0.0052 | 0.0049 | 0.06 |
+| overall mse | 0.003619 | 0.003627 | 0.02 |
+| worst mean error | 0.0016 | 0.0014 | 0.015 |
+| overall mean error | 0.000031 | 0.000052 | 0.0015 |
+| IDCT(0) no-cero | 0 | 0 | 0 |
+
+Es el único test numérico e inequívoco del proyecto: pasa o falla contra
+límites publicados, sin depender de layout ni entrelazado. Ojo con el alcance:
+valida el IDCT **en simulación**, no el hardware sintetizado, y no habría
+atrapado ninguno de los bugs de la Fase 7a.
+
+## Lo que sigue sin verificarse
+
+**Si la imagen que sale del hardware es correcta.**
 
 Comparando contra `tools/mpeg2dec` compilado y corrido sobre el mismo stream
 (plano `frame_NN_out_.y.ppm`, el de salida real -- no `aux`, que es el frame
@@ -55,6 +95,12 @@ Otros dos síntomas menores anotados:
 
 ### A. Corrección de la reconstrucción (bloqueante)
 
+0. **Encontrar una forma confiable de comparar imágenes.** Es prerequisito de
+   todo lo demás: hoy no tenemos manera de decir si un frame del hardware está
+   bien. Opciones: usar un stream *frame picture* (no field) para eliminar el
+   entrelazado, sincronizar la captura con `frame_end`, y validar el método
+   primero contra la simulación -- si el sim no da MAD ≈ 0, el método sigue
+   mal, sin importar lo que diga el hardware.
 1. **Bisecar la cadena de reconstrucción.** El VLD entrega bien; hay que ver
    dónde se rompe entre ahí y el frame store. En orden de sospecha:
    `iquant` → `idct` → `predict_err_fifo` → `motcomp_recon`. La instrumentación
