@@ -11,3 +11,5 @@
 !webserver/**
 !.github
 !.github/**
+!assets
+!assets/**
