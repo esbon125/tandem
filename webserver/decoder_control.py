@@ -154,6 +154,15 @@ class UioControl:
         self._pusher = DmaPusher()
         self._trick = trick_mode.TrickMode()
         self._trick_mode = trick_mode
+        # The kernel driver accumulates read-to-clear status bits in its IRQ
+        # handler, so a caller can clear once, do work, and read once at the
+        # end without missing anything in between. UIO has no interrupt
+        # thread to do that, so status() accumulates here on every call
+        # instead -- the two backends have to agree on this, or code written
+        # against one silently loses events on the other (as this once did:
+        # a status() call inside a polling loop, one raw read-and-clear per
+        # call, kept only the last poll's bits instead of the whole run's).
+        self._sticky = 0
 
     def close(self):
         self._pusher.close()
@@ -201,21 +210,23 @@ class UioControl:
         }
 
     def status(self):
-        """A raw read, which also clears the register -- the caller has to
-        accumulate. This is exactly the trap the driver backend removes."""
+        """Read-to-clear in hardware, accumulated here -- see __init__."""
         raw = self._pusher._read_reg(self._reg(self._R_STATUS))
+        self._sticky |= raw & 0x8F           # bits 0-3 and 7; 8-15 are matrix_coefficients
+        s = self._sticky
         return {
-            "sticky": raw,
-            "error": bool(raw & 0x1),
-            "video_ch": bool(raw & 0x2),
-            "frame_end": bool(raw & 0x4),
-            "picture_hdr": bool(raw & 0x8),
-            "watchdog": bool(raw & 0x80),
-            "matrix_coefficients": (raw >> 8) & 0xFF,
+            "sticky": s,
+            "error": bool(s & 0x1),
+            "video_ch": bool(s & 0x2),
+            "frame_end": bool(s & 0x4),
+            "picture_hdr": bool(s & 0x8),
+            "watchdog": bool(s & 0x80),
+            "matrix_coefficients": (raw >> 8) & 0xFF,   # not sticky in hardware either
         }
 
     def clear_status(self):
         self._pusher._read_reg(self._reg(self._R_STATUS))
+        self._sticky = 0
 
     def dma_start(self, addr, length):
         from dma_push import REG_DMA_ADDR, REG_DMA_CTRL, REG_DMA_LEN
