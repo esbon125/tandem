@@ -1,0 +1,174 @@
+name: Release
+
+# Manual, deliberate release process. Never triggered by a push or a tag --
+# merging three long-lived branches into master and publishing a GitHub
+# Release is not something that should ever happen as a side effect.
+#
+# What this does, in order:
+#   1. Records the current HEAD of docs, hardware_development and
+#      firmware_development (each keeps existing afterward -- this never
+#      deletes or closes a branch).
+#   2. Merges each of those three commits into master with --no-ff. Any
+#      conflict aborts the whole run before anything is pushed; conflicts
+#      are for a human to resolve (locally or via a PR), not for this
+#      workflow to guess at.
+#   3. Tags each branch's recorded HEAD as <version>-<branch>, and the
+#      resulting master commit as <version>.
+#   4. Pushes master and the four tags, then publishes a GitHub Release
+#      for <version>.
+#
+# Test/sanity suites per branch type (docs build, hardware sim + on-board
+# sanity, firmware driver build + KUnit + on-board sanity) are intentionally
+# not part of this workflow yet -- this is the git/release mechanics only.
+#
+# Uses the RELEASE_PAT repository secret (a personal access token, `repo`
+# scope) rather than the default GITHUB_TOKEN, for two reasons: commits and
+# tags are authored with the identity configured below regardless of which
+# token pushes them, but the GitHub Release *object* itself is recorded as
+# created by whichever account's credentials called the API -- the default
+# GITHUB_TOKEN would show that as the github-actions bot, not a person.
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Release tag, e.g. v0.0.1"
+        required: true
+        type: string
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ secrets.RELEASE_PAT }}
+      RELEASE_GIT_NAME: Esteban Bustamante
+      RELEASE_GIT_EMAIL: ebustamante896@gmail.com
+      VERSION: ${{ inputs.version }}
+    steps:
+      - name: Validate version input
+        run: |
+          set -euo pipefail
+          if [[ ! "$VERSION" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::version must look like vX.Y.Z, got: '$VERSION'"
+            exit 1
+          fi
+
+      - name: Check RELEASE_PAT is set
+        run: |
+          if [ -z "$GH_TOKEN" ]; then
+            echo "::error::RELEASE_PAT repository secret is not set"
+            exit 1
+          fi
+
+      - uses: actions/checkout@v4
+        with:
+          ref: master
+          fetch-depth: 0
+          token: ${{ secrets.RELEASE_PAT }}
+
+      - name: Configure git identity
+        run: |
+          git config user.name "$RELEASE_GIT_NAME"
+          git config user.email "$RELEASE_GIT_EMAIL"
+
+      - name: Fetch the three working branches
+        run: |
+          git fetch origin \
+            docs:refs/remotes/origin/docs \
+            hardware_development:refs/remotes/origin/hardware_development \
+            firmware_development:refs/remotes/origin/firmware_development \
+            --no-tags
+
+      - name: Refuse to run if this version already exists
+        run: |
+          set -euo pipefail
+          for tag in "$VERSION" "$VERSION-docs" "$VERSION-hardware_development" "$VERSION-firmware_development"; do
+            if git rev-parse --verify --quiet "refs/tags/$tag" >/dev/null; then
+              echo "::error::tag $tag already exists"
+              exit 1
+            fi
+          done
+          if gh release view "$VERSION" >/dev/null 2>&1; then
+            echo "::error::release $VERSION already exists"
+            exit 1
+          fi
+
+      - name: Record each branch's current HEAD
+        id: heads
+        run: |
+          {
+            echo "docs=$(git rev-parse origin/docs)"
+            echo "hardware_development=$(git rev-parse origin/hardware_development)"
+            echo "firmware_development=$(git rev-parse origin/firmware_development)"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Merge the three working branches into master
+        env:
+          DOCS_SHA: ${{ steps.heads.outputs.docs }}
+          HW_SHA: ${{ steps.heads.outputs.hardware_development }}
+          FW_SHA: ${{ steps.heads.outputs.firmware_development }}
+        run: |
+          set -euo pipefail
+
+          merge_or_fail() {
+            local sha="$1" label="$2"
+            if ! git merge --no-ff --no-edit -m "Merge $label ($sha) for release $VERSION" "$sha"; then
+              git merge --abort || true
+              echo "::error::merging $label ($sha) into master conflicted -- resolve by hand (locally or via a PR), then re-run this workflow"
+              exit 1
+            fi
+          }
+
+          merge_or_fail "$DOCS_SHA" "docs"
+          merge_or_fail "$HW_SHA" "hardware_development"
+          merge_or_fail "$FW_SHA" "firmware_development"
+
+      - name: Tag each branch head and the release commit
+        env:
+          DOCS_SHA: ${{ steps.heads.outputs.docs }}
+          HW_SHA: ${{ steps.heads.outputs.hardware_development }}
+          FW_SHA: ${{ steps.heads.outputs.firmware_development }}
+        run: |
+          set -euo pipefail
+          git tag -a "$VERSION-docs" "$DOCS_SHA" -m "$VERSION"
+          git tag -a "$VERSION-hardware_development" "$HW_SHA" -m "$VERSION"
+          git tag -a "$VERSION-firmware_development" "$FW_SHA" -m "$VERSION"
+          git tag -a "$VERSION" HEAD -m "$VERSION"
+
+      - name: Push master and the release tags
+        run: |
+          set -euo pipefail
+          git push origin master
+          git push origin \
+            "refs/tags/$VERSION" \
+            "refs/tags/$VERSION-docs" \
+            "refs/tags/$VERSION-hardware_development" \
+            "refs/tags/$VERSION-firmware_development"
+
+      - name: Publish the GitHub Release
+        env:
+          DOCS_SHA: ${{ steps.heads.outputs.docs }}
+          HW_SHA: ${{ steps.heads.outputs.hardware_development }}
+          FW_SHA: ${{ steps.heads.outputs.firmware_development }}
+        run: |
+          set -euo pipefail
+          notes="$(cat <<EOF
+          Merges the three working branches into \`master\` at this release point. Each branch keeps existing and keeps being developed independently.
+
+          | branch | tag | commit |
+          |---|---|---|
+          | docs | \`$VERSION-docs\` | \`$DOCS_SHA\` |
+          | hardware_development | \`$VERSION-hardware_development\` | \`$HW_SHA\` |
+          | firmware_development | \`$VERSION-firmware_development\` | \`$FW_SHA\` |
+          EOF
+          )"
+          gh release create "$VERSION" \
+            --title "$VERSION" \
+            --notes "$notes"
