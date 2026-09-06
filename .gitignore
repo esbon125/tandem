@@ -9,3 +9,5 @@
 !renode/**
 !webserver
 !webserver/**
+!.github
+!.github/**
