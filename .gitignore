@@ -1,3 +1,11 @@
 *
 !docs
 !.gitignore
+!trunk
+!CLAUDE.md
+!driver
+!driver/**
+!renode
+!renode/**
+!webserver
+!webserver/**
