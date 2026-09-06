@@ -43,11 +43,19 @@
 `undef DEBUG
 //`define DEBUG 1
 
+/*
+ * Framestore dumping, off unless asked for -- DUMP_FRAMESTORE_OFTEN writes
+ * ~45 mbyte of ascii every 200 macroblocks, which swamps a long timing run.
+ * Define DUMP_FRAMESTORE_PPM or DUMP_FRAMESTORE_OFTEN on the iverilog command
+ * line to get them back.
+ */
 `undef DUMP_FRAMESTORE
+`ifdef DUMP_FRAMESTORE_PPM
 `define DUMP_FRAMESTORE 1
-
-`undef DUMP_FRAMESTORE_OFTEN
-`define DUMP_FRAMESTORE_OFTEN 1
+`endif
+`ifdef DUMP_FRAMESTORE_OFTEN
+`define DUMP_FRAMESTORE 1
+`endif
 
 module mem_ctl(
   clk, rst,
@@ -108,6 +116,29 @@ module mem_ctl(
   always @(posedge clk)
     if (~rst) state <= S_IDLE;
     else state <= next;
+
+`ifdef MEM_CTL_LATENCY_MBTRACE
+  /*
+   * Macroblock progress against simulated time, and nothing else.
+   *
+   * Enough to measure the decode rate at a given LATENCY without paying for
+   * the full trace below, which prints on every vbuf/wait_state movement too.
+   * The testbench clock is 9.259 ns -- 108 MHz, the same core clock the
+   * PolarFire build runs at -- so simulated nanoseconds convert straight into
+   * hardware cycles: cycles = ns / 9.259.
+   */
+  reg [12:0] mb_trace_prev;
+  always @(posedge clk)
+    if (testbench.mpeg2.macroblock_address !== mb_trace_prev)
+      begin
+        $display("t=%0t mb %0d", $time, testbench.mpeg2.macroblock_address);
+        /* Unbuffered: at a realistic LATENCY a macroblock takes tens of
+         * seconds of wall clock, so a 4 kbyte stdio buffer hides all progress
+         * for hours and an empty log reads as "it never decoded". */
+        $fflush;
+        mb_trace_prev <= testbench.mpeg2.macroblock_address;
+      end
+`endif
 
 `ifdef MEM_CTL_LATENCY_TRACE
   /* Change-gated, not per-cycle: a full $strobe every cycle was too

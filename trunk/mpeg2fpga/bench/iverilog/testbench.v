@@ -44,8 +44,14 @@
 //`define DEBUG_DUMP 1
 
 // write rgb+sync output to file tvout_0.ppm or tv_out_1.ppm, alternately.
+/* Writing an 8 mbyte ascii ppm per displayed frame dominates the wall clock of
+ * a long run -- an SVGA frame took ~35 minutes to write in one timing run --
+ * and is useless when what is being measured is decode rate. -DNO_TVOUT turns
+ * it off. */
 `undef DUMP_TVOUT
+`ifndef NO_TVOUT
 `define DUMP_TVOUT 1
+`endif
 
 module testbench();
    /* clocks and reset */
