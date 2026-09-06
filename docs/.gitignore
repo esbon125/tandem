@@ -1,4 +1,7 @@
 !anteproyecto
+!bringup
+!presentaciones
+!presentaciones/**
 !propuesta/*.pdf
 !polarfire/*.pdf
 !.gitignore
