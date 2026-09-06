@@ -1,0 +1,12 @@
+# Microchip/Actel DirectCore & SgCore IP (COREFIFO, PF_CCC, etc.) is
+# proprietary, licensed Libero content ("Proprietary and Confidential" /
+# redistribution requires written Microchip approval) - keep it local only.
+component/work/
+component/Actel/
+
+# Libero-regenerated synthesis/PnR/simulation artifacts - not hand-authored source.
+designer/
+simulation/
+synthesis/
+top/MPFS095T/top.ppd
+top/projectData/top.ppd

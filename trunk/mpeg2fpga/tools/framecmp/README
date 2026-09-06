@@ -1,0 +1,72 @@
+framecmp -- is the decoded picture right?
+=========================================
+
+`framecmp.py` scores a framestore dump against `tools/mpeg2dec`, the reference
+C decoder. It works on a dump from the Icarus simulation and on a dump of DDR
+from the PolarFire board, using the same code for both.
+
+This replaces the ad-hoc "MAD of the framestore ppm against mpeg2dec" that was
+tried during Fase 7a and gave meaningless numbers (the known-good simulation
+scored MAD ~94, the hardware ~121, so the method was wrong, not the hardware).
+What that method got wrong, and this one gets right:
+
+  - framestore pixels are **signed, offset by -128** (`motcomp_recon.v`), not
+    unsigned. Reading them unsigned shifts every pixel by 128, which on its own
+    produces a MAD near 128 -- essentially the whole of the old number.
+  - the leftmost pixel of a 64-bit word is bits [63:56], so in a little-endian
+    dump the eight pixels of a word are **reversed**.
+  - there is no fixed mapping from frame buffer to displayed frame, so every
+    buffer is scored against every reference frame and the best match is
+    reported. A correct decode gives one near-zero score per buffer.
+  - the reference's decoded output is `frame_NN_out_`, not `frame_NN_aux_`.
+  - streams must be cut on a picture boundary (`framecmp.py cut`), otherwise
+    the hardware writes a partial picture over a frame buffer the reference
+    never produced a frame for.
+
+How to use it
+-------------
+
+Build the reference decoder once:
+
+    cd tools/mpeg2dec && make
+
+Cut a test stream to a whole number of pictures and decode it with the
+reference:
+
+    python3 tools/framecmp/framecmp.py cut \
+        tools/streams/ccett/mcp10ccett/mcp10ccett.bits 4 -o /tmp/s.bits
+    python3 tools/framecmp/framecmp.py ref /tmp/s.bits -o /tmp/ref
+
+Simulation: `bench/iverilog` writes `fs_NNNN.bin` + `fs_NNNN.txt` once per
+completed picture (see `DUMP_FRAMESTORE_RAW` at the top of
+`bench/iverilog/mem_ctl.v`). Point the same stream at the testbench, then:
+
+    python3 tools/framecmp/framecmp.py compare bench/iverilog/fs_0003.bin /tmp/ref
+
+Hardware: `webserver/capture_framestore.py` on the board (firmware_development
+branch) pushes the stream and dumps the 12 MiB framestore region of
+`/dev/udmabuf-ddr-nc0` in exactly the same format. Copy the `.bin` and `.txt`
+to the host and run the same `compare`.
+
+Reading the output
+------------------
+
+    buffer    best reference frame      MAD(Y)   PSNR(Y)    peak   chroma MAD (U/V)
+    0         frame_00_out_              0.000       inf       0   0.000 / 0.000
+
+  - **MAD 0.000, peak 0** -- bit exact with the reference.
+  - **MAD below ~0.02, peak 1** -- the two IDCTs disagree in the last bit, which
+    IEEE 1180 allows. This is what a correct decode normally looks like.
+  - **MAD of a few units with peak over 100** -- real damage. Extract the planes
+    (`framecmp.py extract --pgm`) and look at where it is.
+  - **MAD ~128** -- the dump is being read as unsigned. Check `--base-word` and
+    the memory map.
+  - **"never written"** -- the plane is one uniform value. Capture poisons the
+    framestore first so this really does mean the decoder never wrote there.
+
+`--fast-idct` lets the reference use its own 8-bit IDCT instead of the double
+precision one, which tells you how much of a difference is just two conformant
+IDCTs disagreeing.
+
+`--memory-map` must match how `rtl/mpeg2/mem_codes.v` was built; the default
+`MP_AT_HL` is what `mem_codes.v` currently selects.

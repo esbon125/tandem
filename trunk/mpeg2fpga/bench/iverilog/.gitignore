@@ -1,0 +1,13 @@
+# iverilog build outputs and per-run scratch. `make clean` removes the ones
+# it knows about; the mpeg2_lat*/mpeg2_trace* names are from ad-hoc timing
+# runs (see mem_ctl_latency.v) that build to a name chosen at the command
+# line, so list the pattern rather than every name that has existed.
+mpeg2
+mpeg2_lat*
+mpeg2_latency*
+mpeg2_trace*
+stream.dat
+framestore_*.ppm
+tv_out_*.ppm
+fs_*.bin
+fs_*.txt

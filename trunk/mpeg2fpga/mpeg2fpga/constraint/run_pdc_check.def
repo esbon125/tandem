@@ -1,0 +1,8 @@
+DESIGN=top
+DESDIR=/home/esbon/Proyectos/tandem/trunk/mpeg2fpga/mpeg2fpga/designer/top
+TARGET_DIR=/home/esbon/Proyectos/tandem/trunk/mpeg2fpga/mpeg2fpga/designer/top
+FAM=PolarFireSoC
+DIE=PA5SOC095T
+PACKAGE=fcsg325
+SPEED=-1
+PDC_FILE=/home/esbon/Proyectos/tandem/trunk/mpeg2fpga/mpeg2fpga/constraint/io/constraints.pdc,,

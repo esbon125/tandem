@@ -1,0 +1,28 @@
+IEEE 1180-1990 IDCT accuracy test, against rtl/mpeg2/idct.v.
+
+  make quick   one condition, 500 iterations, ~15 s
+  make test    the full six-condition series, ~27 min
+
+This is the project's only numeric, unambiguous correctness test: pass/fail
+against published limits, with no dependence on frame layout, field
+interleaving or buffer rotation -- all of which made full-frame comparison
+against a reference decoder unreliable (see docs/bringup 39).
+
+Result 2026-09-05 on the PolarFire port: PASSES all six conditions, matching
+the original author's numbers to the fourth decimal.
+
+  metric              ours        Koen      limit
+  peak error             1           1        1
+  worst pmse        0.0052      0.0049     0.06
+  overall mse     0.003619    0.003627     0.02
+  worst mean err    0.0016      0.0014    0.015
+  overall mean    0.000031    0.000052   0.0015
+  IDCT(0) nonzero        0           0        0
+
+Koen's reference run is in tools/ieee1180/ieee-1180-results; ours in
+results-mpfs.txt.
+
+Note this validates the IDCT in simulation, not the synthesised hardware. It
+would not have caught any of the Fase 7a bugs (memory aliasing, reset-domain
+CDC, RAM port sharing) -- those were hardware and mapping problems. It is the
+right guard for arithmetic regressions in idct.v, and nothing more.
