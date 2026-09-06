@@ -1,0 +1,26 @@
+include @/home/esbon/Proyectos/tandem/renode/mpeg2fpga.resc
+
+echo "--- version register (expect 0x00000001) ---"
+sysbus ReadDoubleWord 0x40000000
+
+echo "--- enable picture_hdr_intr_en, watchdog_interval=127 (write 0x00007F04) ---"
+sysbus WriteDoubleWord 0x40000000 0x00007F04
+
+echo "--- mpeg2fpga.IRQ before RaisePictureHeader (expect False) ---"
+mpeg2fpga IRQ
+
+mpeg2fpga RaisePictureHeader
+
+echo "--- mpeg2fpga.IRQ after RaisePictureHeader (expect True) ---"
+mpeg2fpga IRQ
+
+echo "--- status register read (expect bit3 picture_hdr set = 0x00000008) ---"
+sysbus ReadDoubleWord 0x40000004
+
+echo "--- status register read again (expect 0, read-to-clear) ---"
+sysbus ReadDoubleWord 0x40000004
+
+echo "--- mpeg2fpga.IRQ after status read (expect False again) ---"
+mpeg2fpga IRQ
+
+quit

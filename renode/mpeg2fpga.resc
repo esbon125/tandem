@@ -1,0 +1,34 @@
+:name: PolarFire SoC + mpeg2fpga (simulated)
+:description: PolarFire SoC Discovery Kit platform with a simulated mpeg2fpga register/IRQ peripheral, for Fase 4b/4c driver TDD.
+
+# polarfire-soc-base-platform.resc/macros.resc live in the Microchip-specific
+# script tree (renode-microchip-mods/scripts/), a sibling of the main renode/
+# install dir shipped with SoftConsole, not under renode/scripts/ itself --
+# SoftConsole's IDE launcher adds it to PATH automatically; from a bare CLI
+# invocation it must be added by hand. Adjust if SoftConsole is installed
+# elsewhere.
+path add @/home/esbon/Microchip/SoftConsole-v2022.2-RISC-V-747/renode-microchip-mods
+
+$CWD=@/home/esbon/Proyectos/tandem/renode
+
+# polarfire-soc-base-platform.resc unconditionally starts a GDB server and
+# expects this variable to be pre-set.
+$GDB_SERVER_PORT=3333
+
+include @scripts/macros.resc
+
+include @scripts/polarfire-soc-base-platform.resc
+
+# Compile and load the peripheral model. Not bundled with Renode (unlike
+# MusteinGenericGPU), so it must be included explicitly on every run.
+include $CWD/models/MPEG2FPGARegisters.cs
+
+machine LoadPlatformDescriptionFromString
+"""
+mpeg2fpga: Miscellaneous.MPEG2FPGARegisters @ sysbus 0x40000000
+    IRQ -> plic@120
+"""
+
+logLevel -1 sysbus.mpeg2fpga
+
+runMacro $ReadyForGdb

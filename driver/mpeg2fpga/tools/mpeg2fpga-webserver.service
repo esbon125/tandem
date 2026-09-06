@@ -1,0 +1,26 @@
+[Unit]
+Description=mpeg2fpga decoder demo webserver
+# The register window does not exist until the overlay is applied, and the
+# server opens it at the first request rather than at startup, so an ordering
+# dependency is not enough -- it has to actually be there.
+After=network-online.target mpeg2fpga-overlay.service
+Wants=network-online.target
+Requires=mpeg2fpga-overlay.service
+
+[Service]
+Type=simple
+WorkingDirectory=/root/webserver
+# Without this, server.py's print()s sit in Python's stdout buffer -- which
+# is block- not line-buffered once stdout isn't a TTY -- and never reach the
+# journal until the process exits. journalctl then shows nothing for a
+# healthy, currently-running server, which looks identical to "it never
+# logged anything" and blocked diagnosing a real capture bug this way once.
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/usr/bin/python3 /root/webserver/server.py
+Restart=on-failure
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
