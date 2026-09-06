@@ -81,6 +81,7 @@ let meta = null;
 let playing = false;
 let position = 0;
 let timer = null;
+let previewIndex = 0;       // how far the receiving-phase preview has advanced
 
 $("file").onchange = () => { $("go").disabled = !$("file").files[0]; };
 
@@ -230,6 +231,7 @@ $("go").onclick = async () => {
   $("go").disabled = true;
   frames.length = 0;
   meta = null;
+  previewIndex = 0;
   $("report").textContent = "";
   $("transport").hidden = true;
   if (timer) { clearInterval(timer); timer = null; }
@@ -276,7 +278,20 @@ $("go").onclick = async () => {
           const have = frames.filter(Boolean).length;
           $("progress").value = have;
           setStatus(`receiving frames: ${have} / ${frames.length}`);
-          if (!playing) { position = displayIndex; present(displayIndex); }
+          // Pictures arrive in decode order, not display order (a B picture's
+          // reference frames decode before it but display after), so frame 3
+          // can land before frame 1. Presenting each frame the instant it
+          // arrives was showing them out of order -- display 0, then 3, then
+          // back to 1, then 2 -- which read as the video jumping backward.
+          // Advance the preview only through what is *contiguously* filled
+          // from where it left off, so it only ever moves forward.
+          if (!playing) {
+            while (previewIndex < frames.length && frames[previewIndex]) {
+              present(previewIndex);
+              position = previewIndex;
+              previewIndex++;
+            }
+          }
           if (have === 8) startPlayback();
         }
       }

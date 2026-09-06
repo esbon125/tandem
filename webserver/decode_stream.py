@@ -62,7 +62,26 @@ FINGERPRINT_SPOT_BYTES = 64
 # 23.5 ms (p95 20.3 ms) as the memory arbiter serves the display path, while
 # consecutive pictures are ~133 ms apart. 35 ms sits between the two.
 STABLE_S = 0.035
-IDLE_GIVE_UP_S = 1.5            # nothing moved this long: the stream is done
+
+# When to decide the stream is finished rather than just slow.
+#
+# A fixed 1.5 s once cut capture short on tcela-10-killer (a conformance
+# stream) at 59-61 of a claimed 122 pictures, with neither error nor watchdog
+# set. That looked at first like one unusually slow picture -- it wasn't:
+# raising the floor to 20 s changed nothing, and decoding the same stream with
+# the reference decoder (tools/mpeg2dec) independently stops at 61 frames too.
+# tcela-10-killer is a two-layer (data-partitioned/scalable) stream: every real
+# picture carries two consecutive picture_start_codes with the same
+# temporal_reference, one per layer, which elementary_stream.py's plain byte
+# scan counts as two pictures. 122 was simply the wrong number -- the hardware
+# had already captured everything decodable (61 of 61) well within 1.5 s.
+#
+# The margin below is a genuine, separate improvement (a stream where later
+# pictures are slower than earlier ones is real and plausible) kept for that
+# reason, not because it explains this incident.
+IDLE_GIVE_UP_S = 3.0
+IDLE_GIVE_UP_MARGIN = 8          # tolerate a gap up to this many times the worst seen so far
+IDLE_GIVE_UP_MAX_S = 30.0        # still bail eventually if the decoder is truly wedged
 
 # Captured frames are held in RAM until the decode finishes, then sent. Sending
 # from inside the capture loop costs pictures: not because the link is slow (it
@@ -172,9 +191,11 @@ def decode(data, on_frame, on_progress=None, on_capture_progress=None,
 
                 held = 0
                 last_activity = time.time()
+                last_capture = last_activity
+                give_up_after = IDLE_GIVE_UP_S
                 wanted = min(len(sequence.pictures), MAX_FRAMES)
                 while (len(captures) < wanted
-                       and time.time() - last_activity < IDLE_GIVE_UP_S):
+                       and time.time() - last_activity < give_up_after):
                     now = time.time()
                     for buffer, geometry in enumerate(geometries):
                         mark = _fingerprint(fs, geometry)
@@ -190,6 +211,16 @@ def decode(data, on_frame, on_progress=None, on_capture_progress=None,
                             captures.append(Capture(picture, buffer, geometry, planes))
                             held += sum(len(p) for p in planes)
                             last_activity = time.time()
+                            # Widen the give-up window to comfortably outlast
+                            # the slowest picture seen so far, not just the
+                            # first one -- content complexity (and so
+                            # per-picture decode time) can vary a lot within
+                            # one stream, not only between streams.
+                            gap = last_activity - last_capture
+                            last_capture = last_activity
+                            give_up_after = min(
+                                IDLE_GIVE_UP_MAX_S,
+                                max(give_up_after, IDLE_GIVE_UP_MARGIN * gap))
                             # re-mark: the read took a few ms, during which the
                             # decoder may have started on this buffer again
                             marks[buffer] = _fingerprint(fs, geometry)
@@ -217,6 +248,7 @@ def decode(data, on_frame, on_progress=None, on_capture_progress=None,
                     "watchdog": bool(status.get("watchdog")),
                     "capture_seconds": round(time.time() - started, 2),
                     "reset": bool(reset),
+                    "give_up_after": round(give_up_after, 2),
                 })
         except Exception as exc:                # noqa: BLE001 - hand it to the caller
             summary["exception"] = repr(exc)

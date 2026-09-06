@@ -10,6 +10,12 @@ Requires=mpeg2fpga-overlay.service
 [Service]
 Type=simple
 WorkingDirectory=/root/webserver
+# Without this, server.py's print()s sit in Python's stdout buffer -- which
+# is block- not line-buffered once stdout isn't a TTY -- and never reach the
+# journal until the process exits. journalctl then shows nothing for a
+# healthy, currently-running server, which looks identical to "it never
+# logged anything" and blocked diagnosing a real capture bug this way once.
+Environment=PYTHONUNBUFFERED=1
 ExecStart=/usr/bin/python3 /root/webserver/server.py
 Restart=on-failure
 RestartSec=5
