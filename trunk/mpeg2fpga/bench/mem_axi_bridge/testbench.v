@@ -236,10 +236,10 @@ module testbench ();
   reg [63:0] rdata;
 
 `ifdef DEBUG_TRACE
-  initial $monitor("t=%0t state=%0d cmd_r=%b addr_r=%h araddr=%h ar_hs=%b r_hs=%b rd_out=%0d wptr=%0d rptr=%0d cnt=%0d rdata=%h res_en=%b res_dta=%h ar_state=%b r_state=%b",
-    $time, dut.state, dut.cmd_r, dut.addr_r, m_axi_araddr, dut.ar_hs, dut.r_hs,
-    dut.rd_outstanding, dut.resp_wptr, dut.resp_rptr, dut.resp_count, m_axi_rdata,
-    mem_res_wr_en, mem_res_wr_dta, slave.ar_state, slave.r_state);
+  initial $monitor("t=%0t state=%0d cmd_r=%b addr_r=%h rd_out=%0d wr_out=%0d awvalid=%b awready=%b wvalid=%b wready=%b bvalid=%b awq=%0d wdq=%0d",
+    $time, dut.state, dut.cmd_r, dut.addr_r, dut.rd_outstanding, dut.wr_outstanding,
+    m_axi_awvalid, m_axi_awready, m_axi_wvalid, m_axi_wready, m_axi_bvalid,
+    slave.awq_count, slave.wdq_count);
 `endif
 
   initial begin
@@ -337,6 +337,54 @@ module testbench ();
     check_eq64("pipelined read before overlapping write (0x301)", rdata, 64'h2222_0000_0000_0002);
     wait_res(rdata);
     check_eq64("read after write that followed pipelined reads (0x300)", rdata, 64'h5555_0000_0000_0005);
+
+    /* Fase 8b write pipelining: push several writes back-to-back, same
+     * "push_req only blocks until accepted" trick as the read test above --
+     * now against fake_axi_ddr's real AW/W/B overlap (see its own 2026-09-07
+     * header comment) instead of a slave that is accidentally
+     * single-outstanding itself. Read every address back afterward to
+     * confirm all four actually committed, not just that the AXI handshakes
+     * looked right. */
+    push_req(2'b11, 22'h000400, 64'h6001_0000_0000_0001);
+    push_req(2'b11, 22'h000401, 64'h6002_0000_0000_0002);
+    push_req(2'b11, 22'h000402, 64'h6003_0000_0000_0003);
+    push_req(2'b11, 22'h000403, 64'h6004_0000_0000_0004);
+    push_req(2'b10, 22'h000400, 64'b0);
+    wait_res(rdata);
+    check_eq64("pipelined write 1/4 (0x400)", rdata, 64'h6001_0000_0000_0001);
+    push_req(2'b10, 22'h000401, 64'b0);
+    wait_res(rdata);
+    check_eq64("pipelined write 2/4 (0x401)", rdata, 64'h6002_0000_0000_0002);
+    push_req(2'b10, 22'h000402, 64'b0);
+    wait_res(rdata);
+    check_eq64("pipelined write 3/4 (0x402)", rdata, 64'h6003_0000_0000_0003);
+    push_req(2'b10, 22'h000403, 64'b0);
+    wait_res(rdata);
+    check_eq64("pipelined write 4/4 (0x403)", rdata, 64'h6004_0000_0000_0004);
+
+    /* Same address, written twice while both may be outstanding at once:
+     * AXI4's same-id-same-type ordering guarantee means the second write
+     * must always win, exactly as if they had been fully serialized. */
+    push_req(2'b11, 22'h000410, 64'hdead_0000_0000_0000);
+    push_req(2'b11, 22'h000410, 64'hbeef_0000_0000_0000);
+    push_req(2'b10, 22'h000410, 64'b0);
+    wait_res(rdata);
+    check_eq64("second overlapping write to same addr wins", rdata, 64'hbeef_0000_0000_0000);
+
+    /* Symmetric hazard (see header comment): a READ right after a burst of
+     * pipelined writes must wait for wr_outstanding == 0 -- every write
+     * actually committed, not just issued -- before its own AR may go out.
+     * Getting the *old* value here would mean the read raced ahead of a
+     * still-uncommitted write. */
+    push_req(2'b11, 22'h000420, 64'haaaa_1111_0000_0000);
+    push_req(2'b11, 22'h000421, 64'hbbbb_2222_0000_0000);
+    push_req(2'b11, 22'h000422, 64'hcccc_3333_0000_0000);
+    push_req(2'b10, 22'h000422, 64'b0);
+    wait_res(rdata);
+    check_eq64("read waited for pipelined writes to commit (0x422)", rdata, 64'hcccc_3333_0000_0000);
+    push_req(2'b10, 22'h000420, 64'b0);
+    wait_res(rdata);
+    check_eq64("earlier pipelined write also committed (0x420)", rdata, 64'haaaa_1111_0000_0000);
 
     /* CMD_NOOP must not produce any AXI transaction or mem_res_wr push */
     push_req(2'b00 /* CMD_NOOP */, 22'h0003ff, 64'b0);

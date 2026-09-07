@@ -243,6 +243,14 @@ module testbench_wedge ();
 
     repeat (5) @(posedge clk);
 
+`ifdef DEBUG_TRACE
+    $monitor("t=%0t state=%0d cmd_r=%b wr_out=%0d rd_out=%0d ar_hs=%b r_hs=%b arvalid=%b arready=%b rvalid=%b rready=%b awvalid=%b awready=%b wvalid=%b wready=%b abort_pending=%b watchdog_rst=%b mem_req_rd_valid=%b mem_req_rd_en=%b q_pending=%b",
+      $time, dut.state, dut.cmd_r, dut.wr_outstanding, dut.rd_outstanding, dut.ar_hs, dut.r_hs,
+      m_axi_arvalid, m_axi_arready, m_axi_rvalid, m_axi_rready,
+      m_axi_awvalid, m_axi_awready, m_axi_wvalid, m_axi_wready, dut.abort_pending, dut_watchdog_rst,
+      mem_req_rd_valid, mem_req_rd_en, q_pending);
+`endif
+
     /* ---- scenario A: watchdog_rst pulse while S_WRITE (AW issued,
      * AWREADY/WREADY not seen yet -- fake_axi_ddr's AW_LATENCY=2/W_LATENCY=3
      * guarantees a window where mem2axi_bridge is waiting) ---- */
@@ -274,19 +282,24 @@ module testbench_wedge ();
       $display("[%0t] RESULT (scenario A, mid S_WRITE): FAIL -- WEDGED (got 0x%016h, state=%0d awvalid=%b awready=%b wvalid=%b wready=%b bvalid=%b bready=%b).",
                 $time, rdata, dut.state, m_axi_awvalid, m_axi_awready, m_axi_wvalid, m_axi_wready, m_axi_bvalid, m_axi_bready);
 
-    /* ---- scenario B: watchdog_rst pulse while S_BRESP (AW+W already
-     * accepted by the slave, waiting on BVALID -- the same "response
-     * channel abandoned" shape as stream_dma's S_RDATA case) ---- */
+    /* ---- scenario B: watchdog_rst pulse while a write's AW+W have already
+     * been accepted but BRESP has not yet come back. Since Fase 8b's write
+     * pipelining, `state` itself returns to S_IDLE immediately after the
+     * AW+W handshake (see mem2axi_bridge.v), so this window no longer has
+     * its own `state` encoding -- wr_outstanding != 0 is what now marks it,
+     * and is exactly what in_axi_obligation gates the deferred reset on
+     * (the same "response channel abandoned" shape as stream_dma's S_RDATA
+     * case, and this module's own scenario D below for reads). ---- */
     repeat (10) @(posedge clk);
     queue_req(2'b11, 22'h000040, 64'h1111_2222_3333_4444);
 
     i = 0;
-    while (dut.state != S_BRESP && i < 1000) begin
+    while (dut.wr_outstanding == 3'd0 && i < 1000) begin
       @(posedge clk);
       i = i + 1;
     end
-    $display("[%0t] scenario B: caught in state=%0d (S_BRESP=%0d) after %0d cycles, bvalid=%b bready=%b",
-              $time, dut.state, S_BRESP, i, m_axi_bvalid, m_axi_bready);
+    $display("[%0t] scenario B: caught with wr_outstanding=%0d (state=%0d) after %0d cycles, bvalid=%b bready=%b",
+              $time, dut.wr_outstanding, dut.state, i, m_axi_bvalid, m_axi_bready);
 
     dut_watchdog_rst = 1'b0;
     @(posedge clk);
@@ -299,9 +312,9 @@ module testbench_wedge ();
     wait_res(rdata);
     result_B_wedged = (rdata !== 64'h5555_6666_7777_8888);
     if (!result_B_wedged)
-      $display("[%0t] RESULT (scenario B, mid S_BRESP): PASS -- recovered, read back 0x%016h.", $time, rdata);
+      $display("[%0t] RESULT (scenario B, mid BRESP-wait): PASS -- recovered, read back 0x%016h.", $time, rdata);
     else
-      $display("[%0t] RESULT (scenario B, mid S_BRESP): FAIL -- WEDGED (got 0x%016h, state=%0d awvalid=%b awready=%b wvalid=%b wready=%b bvalid=%b bready=%b).",
+      $display("[%0t] RESULT (scenario B, mid BRESP-wait): FAIL -- WEDGED (got 0x%016h, state=%0d awvalid=%b awready=%b wvalid=%b wready=%b bvalid=%b bready=%b).",
                 $time, rdata, dut.state, m_axi_awvalid, m_axi_awready, m_axi_wvalid, m_axi_wready, m_axi_bvalid, m_axi_bready);
 
     /* ---- scenario C: watchdog_rst pulse while S_ARADDR (AR issued,
@@ -362,9 +375,9 @@ module testbench_wedge ();
     wait_res(rdata);
     result_D_wedged = (rdata !== 64'hcccc_dddd_eeee_ffff);
     if (!result_D_wedged)
-      $display("[%0t] RESULT (scenario D, mid S_RDATA): PASS -- recovered, read back 0x%016h.", $time, rdata);
+      $display("[%0t] RESULT (scenario D, mid RDATA-wait): PASS -- recovered, read back 0x%016h.", $time, rdata);
     else
-      $display("[%0t] RESULT (scenario D, mid S_RDATA): FAIL -- WEDGED (got 0x%016h, state=%0d arvalid=%b arready=%b rvalid=%b rready=%b).",
+      $display("[%0t] RESULT (scenario D, mid RDATA-wait): FAIL -- WEDGED (got 0x%016h, state=%0d arvalid=%b arready=%b rvalid=%b rready=%b).",
                 $time, rdata, dut.state, m_axi_arvalid, m_axi_arready, m_axi_rvalid, m_axi_rready);
 
     if (result_A_wedged || result_B_wedged || result_C_wedged || result_D_wedged)
