@@ -113,6 +113,12 @@ class SysfsControl:
     def clear_status(self):
         self._write("status", "1")
 
+    def perf_counters(self):
+        """Free-running core_clk cycle counters -- see mpeg2fpga_core.h's
+        struct mpeg2fpga_perf_counters for what each one means. Never reset
+        by reading; take the delta of two calls bracketing one decode."""
+        return _parse_lines(self._read("perf_counters"))
+
     def dma_start(self, addr, length):
         self._write("dma_addr", addr)
         self._write("dma_len", length)

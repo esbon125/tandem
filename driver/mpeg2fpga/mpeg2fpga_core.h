@@ -118,6 +118,38 @@ struct mpeg2fpga_geometry {
 	u16 macroblocks_high;
 };
 
+/**
+ * struct mpeg2fpga_perf_counters - free-running cycle counters, core_clk domain
+ *
+ * All four wrap silently and never reset on their own (framestore_request.v's
+ * arbiter -- see its header comment); only deltas between two reads mean
+ * anything, e.g. bracketing one decode with two reads of this attribute.
+ * Meant to answer "where did the cycles go", the same question a slower
+ * decode rate raises: sum @disp_service_cnt + @vbr_service_cnt over an
+ * interval and compare against the core_clk cycles that interval took
+ * (elapsed wall time * the known 108 MHz core clock, since there is no
+ * software-readable free-running cycle counter -- mpeg2video.v's cnt_clk is
+ * SmartDebug-probe-only, not wired to the APB map) to see how much of the
+ * core was actually busy versus idle, and @vbr_starved_cnt to see whether
+ * the VLD went hungry waiting on the video buffer while it did.
+ *
+ * @disp_service_cnt: cycles the framestore arbiter spent servicing the
+ *	display (resample/OSD) path
+ * @vbr_service_cnt: cycles spent servicing vbuf_read_fifo (feeding the VLD)
+ * @vbr_starved_cnt: cycles the VLD wanted a vbuf read serviced but the
+ *	arbiter picked something else instead
+ * @mem_res_valid_cnt: cycles mem2axi_bridge (or mem_ctl.v in simulation)
+ *	presented a valid memory response -- the read-side occupancy of the
+ *	single external memory port, across every consumer (vbuf, motion
+ *	compensation, display)
+ */
+struct mpeg2fpga_perf_counters {
+	u32 disp_service_cnt;
+	u32 vbr_service_cnt;
+	u32 vbr_starved_cnt;
+	u32 mem_res_valid_cnt;
+};
+
 void mpeg2fpga_core_init(struct mpeg2fpga_core *core,
 			  const struct mpeg2fpga_regops *ops);
 
@@ -158,6 +190,9 @@ void mpeg2fpga_core_dma_get_status(struct mpeg2fpga_core *core,
 
 void mpeg2fpga_core_get_geometry(struct mpeg2fpga_core *core,
 				  struct mpeg2fpga_geometry *geom);
+
+void mpeg2fpga_core_get_perf_counters(struct mpeg2fpga_core *core,
+				       struct mpeg2fpga_perf_counters *perf);
 
 /*
  * Trick mode -- what makes the decoder usable continuously rather than one

@@ -313,6 +313,24 @@ static void mpeg2fpga_core_test_geometry(struct kunit *test)
 	KUNIT_EXPECT_EQ(test, geom.macroblocks_high, 30);
 }
 
+static void mpeg2fpga_core_test_perf_counters(struct kunit *test)
+{
+	struct mpeg2fpga_core_test_ctx *ctx = test->priv;
+	struct mpeg2fpga_perf_counters perf;
+
+	ctx->fake.read_regs[MPEG2FPGA_B_DISP_SERVICE_CNT] = 111;
+	ctx->fake.read_regs[MPEG2FPGA_B_VBR_SERVICE_CNT] = 222;
+	ctx->fake.read_regs[MPEG2FPGA_B_VBR_STARVED_CNT] = 333;
+	ctx->fake.read_regs[MPEG2FPGA_B_MEM_RES_VALID_CNT] = 444;
+
+	mpeg2fpga_core_get_perf_counters(&ctx->core, &perf);
+
+	KUNIT_EXPECT_EQ(test, perf.disp_service_cnt, 111u);
+	KUNIT_EXPECT_EQ(test, perf.vbr_service_cnt, 222u);
+	KUNIT_EXPECT_EQ(test, perf.vbr_starved_cnt, 333u);
+	KUNIT_EXPECT_EQ(test, perf.mem_res_valid_cnt, 444u);
+}
+
 static void mpeg2fpga_core_test_frame_rate_table(struct kunit *test)
 {
 	static const u32 expect[] = {
@@ -472,6 +490,7 @@ static struct kunit_case mpeg2fpga_core_test_cases[] = {
 	KUNIT_CASE(mpeg2fpga_core_test_dma_start_latches_before_trigger),
 	KUNIT_CASE(mpeg2fpga_core_test_dma_status_unpacks),
 	KUNIT_CASE(mpeg2fpga_core_test_geometry),
+	KUNIT_CASE(mpeg2fpga_core_test_perf_counters),
 	KUNIT_CASE(mpeg2fpga_core_test_frame_rate_table),
 	KUNIT_CASE(mpeg2fpga_core_test_status_sticky_accumulates),
 	KUNIT_CASE(mpeg2fpga_core_test_init_keeps_persistence),

@@ -243,6 +243,15 @@ void mpeg2fpga_core_get_geometry(struct mpeg2fpga_core *core,
 	geom->macroblocks_high = (geom->height + 15) / 16;
 }
 
+void mpeg2fpga_core_get_perf_counters(struct mpeg2fpga_core *core,
+				       struct mpeg2fpga_perf_counters *perf)
+{
+	perf->disp_service_cnt = mpeg2fpga_core_read(core, MPEG2FPGA_B_DISP_SERVICE_CNT);
+	perf->vbr_service_cnt = mpeg2fpga_core_read(core, MPEG2FPGA_B_VBR_SERVICE_CNT);
+	perf->vbr_starved_cnt = mpeg2fpga_core_read(core, MPEG2FPGA_B_VBR_STARVED_CNT);
+	perf->mem_res_valid_cnt = mpeg2fpga_core_read(core, MPEG2FPGA_B_MEM_RES_VALID_CNT);
+}
+
 /* Read-modify-write MPEG2FPGA_W_TRICK_MODE against its shadow. */
 static void mpeg2fpga_core_write_trick(struct mpeg2fpga_core *core,
 					u32 mask, u32 val)

@@ -452,6 +452,28 @@ static ssize_t flush_vbuf_store(struct device *dev,
 }
 static DEVICE_ATTR_WO(flush_vbuf);
 
+static ssize_t perf_counters_show(struct device *dev,
+				   struct device_attribute *attr, char *buf)
+{
+	struct mpeg2fpga_platform *priv = dev_get_drvdata(dev);
+	struct mpeg2fpga_perf_counters perf;
+	unsigned long flags;
+
+	spin_lock_irqsave(&priv->lock, flags);
+	mpeg2fpga_core_get_perf_counters(&priv->core, &perf);
+	spin_unlock_irqrestore(&priv->lock, flags);
+
+	/* Free-running, never reset by reading -- see the struct's own doc
+	 * comment in mpeg2fpga_core.h. A caller wanting the activity during
+	 * one decode reads this twice and takes the delta.
+	 */
+	return sysfs_emit(buf,
+		"disp_service_cnt %u\nvbr_service_cnt %u\nvbr_starved_cnt %u\nmem_res_valid_cnt %u\n",
+		perf.disp_service_cnt, perf.vbr_service_cnt,
+		perf.vbr_starved_cnt, perf.mem_res_valid_cnt);
+}
+static DEVICE_ATTR_RO(perf_counters);
+
 static struct attribute *mpeg2fpga_attrs[] = {
 	&dev_attr_version.attr,
 	&dev_attr_enable.attr,
@@ -465,6 +487,7 @@ static struct attribute *mpeg2fpga_attrs[] = {
 	&dev_attr_source_select.attr,
 	&dev_attr_persistence.attr,
 	&dev_attr_flush_vbuf.attr,
+	&dev_attr_perf_counters.attr,
 	NULL,
 };
 ATTRIBUTE_GROUPS(mpeg2fpga);
