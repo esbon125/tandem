@@ -7,3 +7,7 @@ script_support/components/MSS/
 *.job
 *.digest
 *.hex
+# Ad-hoc fallback-bitstream/build-log backups made around a given change --
+# same reasoning as the job/digest ignores above, just a whole directory of
+# them; see docs/bringup (docs branch) for the writeup, not these logs.
+backups/

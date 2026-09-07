@@ -182,22 +182,42 @@ module fake_axi_ddr (
   /* ---- AR channel: accept after AR_LATENCY cycles, latch address ----
    * ARS_DRAIN: see the AWS_DRAIN comment above -- same reasoning, ARVALID
    * lags one cycle behind ARREADY.
+   *
+   * 2026-09-06 (Fase 8a read pipelining): AR acceptance and R generation are
+   * now decoupled through a small address queue (AQ_DEPTH entries) instead
+   * of AR only being accepted once the *previous* read's R channel is fully
+   * idle. A slave modeling genuine single-outstanding behavior never
+   * exercises the scenario this bridge change targets -- multiple reads
+   * actually in flight in DRAM at once -- so it could pass while that
+   * behavior was silently broken. AQ_DEPTH matches mem2axi_bridge's own
+   * RESP_DEPTH so a directed test can legitimately fill the pipeline.
    */
   localparam [1:0] ARS_IDLE = 2'd0, ARS_WAIT = 2'd1, ARS_DRAIN = 2'd2;
   reg [1:0] ar_state;
   reg [2:0] ar_cnt;
-  reg [37:0]ar_addr_r;
+
+  localparam AQ_DEPTH = 4;
+  reg [37:0] aq_addr [0:AQ_DEPTH-1];
+  reg  [1:0] aq_wptr, aq_rptr;
+  reg  [2:0] aq_count;
 
   localparam RS_IDLE = 2'd0, RS_DELAY = 2'd1, RS_RVALID = 2'd2;
   reg [1:0] r_state;
   reg [2:0] r_cnt;
+  reg [37:0]r_addr_r;
+
+  wire aq_push = (ar_state == ARS_WAIT) && (ar_cnt == 0);
+  wire aq_pop  = (r_state == RS_IDLE) && (aq_count != 0);
 
   always @(posedge clk)
     if (~rst) begin
       ar_state <= ARS_IDLE;
       m_axi_arready <= 1'b0;
-      ar_addr_r <= 38'b0;
+      aq_wptr <= 2'd0;
+      aq_rptr <= 2'd0;
+      aq_count <= 3'd0;
       r_state <= RS_IDLE;
+      r_addr_r <= 38'b0;
       m_axi_rvalid <= 1'b0;
       m_axi_rdata  <= 64'b0;
       m_axi_rresp  <= 2'b00;
@@ -206,25 +226,34 @@ module fake_axi_ddr (
     end else begin
       m_axi_arready <= 1'b0;
       case (ar_state)
-        ARS_IDLE: if (m_axi_arvalid && (r_state == RS_IDLE)) begin
+        // only start accepting a new AR while the queue has room -- models
+        // a slave with AQ_DEPTH outstanding-read capacity, not infinite
+        ARS_IDLE: if (m_axi_arvalid && (aq_count < AQ_DEPTH)) begin
           ar_cnt   <= AR_LATENCY;
           ar_state <= ARS_WAIT;
         end
         ARS_WAIT: if (ar_cnt == 0) begin
           m_axi_arready <= 1'b1;
-          ar_addr_r     <= m_axi_araddr;
           ar_state      <= ARS_DRAIN;
         end else ar_cnt <= ar_cnt - 3'd1;
         ARS_DRAIN: if (~m_axi_arvalid) ar_state <= ARS_IDLE;
       endcase
 
+      if (aq_push) begin
+        aq_addr[aq_wptr] <= m_axi_araddr;
+        aq_wptr <= aq_wptr + 2'd1;
+      end
+      if (aq_pop) aq_rptr <= aq_rptr + 2'd1;
+      aq_count <= aq_count + (aq_push ? 3'd1 : 3'd0) - (aq_pop ? 3'd1 : 3'd0);
+
       case (r_state)
-        RS_IDLE: if (m_axi_arready) begin       // arready pulses the same cycle ar_addr_r becomes valid
-          r_cnt   <= R_LATENCY;
-          r_state <= RS_DELAY;
+        RS_IDLE: if (aq_count != 0) begin       // independent of AR acceptance -- true overlap
+          r_addr_r <= aq_addr[aq_rptr];
+          r_cnt    <= R_LATENCY;
+          r_state  <= RS_DELAY;
         end
         RS_DELAY: if (r_cnt == 0) begin
-          m_axi_rdata  <= mem[ar_addr_r[16:3]];
+          m_axi_rdata  <= mem[r_addr_r[16:3]];
           m_axi_rresp  <= 2'b00;
           m_axi_rlast  <= 1'b1;
           m_axi_rid    <= 4'b0;

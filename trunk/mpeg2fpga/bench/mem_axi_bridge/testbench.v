@@ -174,13 +174,38 @@ module testbench ();
     end
   endtask
 
-  /* wait for a mem_res_wr push and capture the data */
+  /* Recording every mem_res_wr push into a background queue as it happens,
+   * rather than polling for one right when the caller asks for it, matters
+   * now that reads are pipelined (Fase 8a): push_req(CMD_READ) returns as
+   * soon as the dut *accepts* a request, not once it is answered, so a
+   * response can land while the test is still issuing further requests --
+   * before it ever calls wait_res() for that read. The real consumer
+   * (framestore.v's mem_response_fifo) has exactly this property already:
+   * it drains in order whenever pushed, indifferent to request timing. A
+   * poll-only wait_res (the pre-Fase-8a version) silently missed any push
+   * that occurred before the poll started -- this queue is what fixes that. */
+  reg  [63:0] res_q [0:63];
+  integer     res_q_head, res_q_tail;
+
+  initial begin
+    res_q_head = 0;
+    res_q_tail = 0;
+  end
+
+  always @(posedge clk)
+    if (mem_res_wr_en === 1'b1) begin
+      res_q[res_q_tail] = mem_res_wr_dta;
+      res_q_tail = res_q_tail + 1;
+    end
+
+  /* wait for a mem_res_wr push (already recorded, or yet to come) and
+   * return it in FIFO order. */
   task wait_res;
     output [63:0] dta;
     integer       timeout;
     begin
       timeout = 0;
-      while (!(mem_res_wr_en === 1'b1)) begin
+      while (res_q_head == res_q_tail) begin
         @(posedge clk);
         timeout = timeout + 1;
         if (timeout > 1000) begin
@@ -188,8 +213,8 @@ module testbench ();
           $finish;
         end
       end
-      dta = mem_res_wr_dta;
-      @(posedge clk);
+      dta = res_q[res_q_head];
+      res_q_head = res_q_head + 1;
     end
   endtask
 
@@ -211,9 +236,10 @@ module testbench ();
   reg [63:0] rdata;
 
 `ifdef DEBUG_TRACE
-  initial $monitor("t=%0t state=%0d ar_state=%b ar_cnt=%0d r_state=%0d r_cnt=%0d arvalid=%b arready=%b rvalid=%b",
-    $time, dut.state, slave.ar_state, slave.ar_cnt, slave.r_state, slave.r_cnt,
-    m_axi_arvalid, m_axi_arready, m_axi_rvalid);
+  initial $monitor("t=%0t state=%0d cmd_r=%b addr_r=%h araddr=%h ar_hs=%b r_hs=%b rd_out=%0d wptr=%0d rptr=%0d cnt=%0d rdata=%h res_en=%b res_dta=%h ar_state=%b r_state=%b",
+    $time, dut.state, dut.cmd_r, dut.addr_r, m_axi_araddr, dut.ar_hs, dut.r_hs,
+    dut.rd_outstanding, dut.resp_wptr, dut.resp_rptr, dut.resp_count, m_axi_rdata,
+    mem_res_wr_en, mem_res_wr_dta, slave.ar_state, slave.r_state);
 `endif
 
   initial begin
@@ -270,6 +296,47 @@ module testbench ();
     mem_res_wr_almost_full = 1'b0;
     wait_res(rdata);
     check_eq64("backpressure: delivered later", rdata, 64'haaaa_aaaa_aaaa_aaaa);
+
+    /* Fase 8a read pipelining: push several reads back-to-back, with none
+     * of the wait_res() calls in between that earlier tests always used --
+     * push_req only blocks until the dut *accepts* the request (mem_req_rd_
+     * valid pulse), not until it is answered, so this actually drives
+     * multiple ARs in flight against fake_axi_ddr's real per-channel latency
+     * (AR_LATENCY/R_LATENCY), unlike every test above. Verifies RDATA still
+     * comes back in request order under real overlap, not just when the
+     * bridge happens to serialize anyway. */
+    push_req(2'b11, 22'h000300, 64'h1111_0000_0000_0001);
+    push_req(2'b11, 22'h000301, 64'h2222_0000_0000_0002);
+    push_req(2'b11, 22'h000302, 64'h3333_0000_0000_0003);
+    push_req(2'b11, 22'h000303, 64'h4444_0000_0000_0004);
+    push_req(2'b10, 22'h000300, 64'b0);
+    push_req(2'b10, 22'h000301, 64'b0);
+    push_req(2'b10, 22'h000302, 64'b0);
+    push_req(2'b10, 22'h000303, 64'b0);
+    wait_res(rdata);
+    check_eq64("pipelined read 1/4 (0x300)", rdata, 64'h1111_0000_0000_0001);
+    wait_res(rdata);
+    check_eq64("pipelined read 2/4 (0x301)", rdata, 64'h2222_0000_0000_0002);
+    wait_res(rdata);
+    check_eq64("pipelined read 3/4 (0x302)", rdata, 64'h3333_0000_0000_0003);
+    wait_res(rdata);
+    check_eq64("pipelined read 4/4 (0x303)", rdata, 64'h4444_0000_0000_0004);
+
+    /* a write immediately after a burst of pipelined reads must still see
+     * every one of them actually answered first (rd_outstanding == 0) --
+     * exercised implicitly above since push_req for a WRITE only returns
+     * once the dut has popped it, but confirm the write itself still lands
+     * correctly (no read/write reordering hazard slipped through). */
+    push_req(2'b10, 22'h000300, 64'b0);
+    push_req(2'b10, 22'h000301, 64'b0);
+    push_req(2'b11, 22'h000300, 64'h5555_0000_0000_0005);
+    push_req(2'b10, 22'h000300, 64'b0);
+    wait_res(rdata);
+    check_eq64("pipelined read before overlapping write (0x300)", rdata, 64'h1111_0000_0000_0001);
+    wait_res(rdata);
+    check_eq64("pipelined read before overlapping write (0x301)", rdata, 64'h2222_0000_0000_0002);
+    wait_res(rdata);
+    check_eq64("read after write that followed pipelined reads (0x300)", rdata, 64'h5555_0000_0000_0005);
 
     /* CMD_NOOP must not produce any AXI transaction or mem_res_wr push */
     push_req(2'b00 /* CMD_NOOP */, 22'h0003ff, 64'b0);

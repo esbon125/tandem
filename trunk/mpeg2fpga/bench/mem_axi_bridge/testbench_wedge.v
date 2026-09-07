@@ -334,24 +334,28 @@ module testbench_wedge ();
       $display("[%0t] RESULT (scenario C, mid S_ARADDR): FAIL -- WEDGED (got 0x%016h, state=%0d arvalid=%b arready=%b rvalid=%b rready=%b).",
                 $time, rdata, dut.state, m_axi_arvalid, m_axi_arready, m_axi_rvalid, m_axi_rready);
 
-    /* ---- scenario D: watchdog_rst pulse while S_RDATA (AR accepted,
-     * waiting on RVALID) ---- */
+    /* ---- scenario D: watchdog_rst pulse while a read's AR has already been
+     * accepted but RDATA has not arrived yet. Since Fase 8a's read
+     * pipelining, `state` itself returns to S_IDLE immediately after the AR
+     * handshake (see mem2axi_bridge.v), so this window no longer has its own
+     * `state` encoding -- rd_outstanding != 0 is what now marks it, and is
+     * exactly what in_axi_obligation gates the deferred reset on. */
     repeat (10) @(posedge clk);
     queue_req(2'b10, 22'h000070, 64'b0);
 
     i = 0;
-    while (dut.state != S_RDATA && i < 1000) begin
+    while (dut.rd_outstanding == 3'd0 && i < 1000) begin
       @(posedge clk);
       i = i + 1;
     end
-    $display("[%0t] scenario D: caught in state=%0d (S_RDATA=%0d) after %0d cycles, rvalid=%b rready=%b",
-              $time, dut.state, S_RDATA, i, m_axi_rvalid, m_axi_rready);
+    $display("[%0t] scenario D: caught with rd_outstanding=%0d (state=%0d) after %0d cycles, rvalid=%b rready=%b",
+              $time, dut.rd_outstanding, dut.state, i, m_axi_rvalid, m_axi_rready);
 
     dut_watchdog_rst = 1'b0;
     @(posedge clk);
     dut_watchdog_rst = 1'b1;
 
-    $display("[%0t] scenario D: post-pulse state=%0d", $time, dut.state);
+    $display("[%0t] scenario D: post-pulse state=%0d rd_outstanding=%0d", $time, dut.state, dut.rd_outstanding);
 
     push_req(2'b11, 22'h000080, 64'hcccc_dddd_eeee_ffff);
     push_req(2'b10, 22'h000080, 64'b0);
