@@ -32,6 +32,7 @@
   th, td { text-align: left; padding: 2px 18px 2px 0; vertical-align: top; }
   th { font-weight: 600; opacity: .65; font-weight: 500; }
   code { font-family: ui-monospace, SFMono-Regular, monospace; }
+  td.warn { color: #d33; }
 </style>
 </head>
 <body>
@@ -301,7 +302,8 @@ $("go").onclick = async () => {
     if (done) {
       showReport(done);
       const got = frames.filter(Boolean).length;
-      setStatus(`decoded ${got} frames in ${done.seconds} s` +
+      const fps = done.capture_seconds > 0 ? done.captured / done.capture_seconds : 0;
+      setStatus(`decoded ${got} frames at ${fps.toFixed(2)} fps` +
                 (done.error ? " - decoder reported an error" : ""), done.error);
       if (got) { position = 0; startPlayback(); }
     }
@@ -328,18 +330,41 @@ for (const button of document.querySelectorAll("[data-control]")) {
   };
 }
 
+// Performance stats, derived from what decode_stream.py already reports --
+// no server change needed. decode_stream.py's own timer (capture_seconds) is
+// setup + the capture-loop's poll, and stops as soon as the last expected
+// picture is seen; r.seconds also includes delivering every frame's pixels
+// over this HTTP response afterward, which is transfer time, not decode
+// time -- that split is why "decode rate" below uses capture_seconds, not
+// the "capture+delivery" row.
 function showReport(r) {
+  const decodeFps = r.capture_seconds > 0 ? r.captured / r.capture_seconds : 0;
+  // How this decode compares to playing the source at its own declared rate:
+  // 1.0x means the core kept up with real time, under 1.0x means it fell
+  // behind. See docs/bringup 41 (docs branch) for where the core currently
+  // stands on this for 704x480 content.
+  const realTime = r.frame_rate > 0 ? decodeFps / r.frame_rate : 0;
+  // give_up_after starts at IDLE_GIVE_UP_S (3.0s, see decode_stream.py) and
+  // only grows if some picture took much longer than the ones before it --
+  // a captured-but-slow picture, distinct from `complete` (which flags a
+  // picture that never arrived at all).
+  const stalled = r.give_up_after > 3.0;
+
   const rows = [
     ["size", `${r.width} x ${r.height}`],
     ["decoder SIZE register", r.decoder_size.join(" x ")],
-    ["frame rate", `${r.frame_rate} fps`],
-    ["pictures / captured", `${r.pictures} / ${r.captured}`],
-    ["capture time", `${r.seconds} s`],
+    ["stream's own frame rate", `${r.frame_rate} fps`],
+    ["decode rate", `${decodeFps.toFixed(2)} fps (${r.capture_seconds} s for ${r.captured} pictures)`],
+    ["real-time factor", `${realTime.toFixed(2)}x` + (realTime < 1 ? " -- slower than real time" : "")],
+    ["pictures / captured", `${r.pictures} / ${r.captured}`, !r.complete],
+    ["slowest-picture margin", `gave up after ${r.give_up_after} s` + (stalled ? " -- one picture ran much slower than the rest" : " (no stall seen)"), stalled],
+    ["capture + delivery time", `${r.seconds} s`],
     ["status register", `${r.sticky}` +
-      (r.error ? " error" : "") + (r.watchdog ? " watchdog" : "")],
+      (r.error ? " error" : "") + (r.watchdog ? " watchdog" : ""), r.error || r.watchdog],
   ];
   $("report").innerHTML = rows
-    .map(([k, v]) => `<tr><th>${k}</th><td><code>${v}</code></td></tr>`).join("");
+    .map(([k, v, warn]) => `<tr><th>${k}</th><td${warn ? ' class="warn"' : ""}><code>${v}</code></td></tr>`)
+    .join("");
 }
 </script>
 </body>
