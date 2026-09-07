@@ -121,7 +121,7 @@ struct mpeg2fpga_geometry {
 /**
  * struct mpeg2fpga_perf_counters - free-running cycle counters, core_clk domain
  *
- * All four wrap silently and never reset on their own (framestore_request.v's
+ * All five wrap silently and never reset on their own (framestore_request.v's
  * arbiter -- see its header comment); only deltas between two reads mean
  * anything, e.g. bracketing one decode with two reads of this attribute.
  * Meant to answer "where did the cycles go", the same question a slower
@@ -142,12 +142,19 @@ struct mpeg2fpga_geometry {
  *	presented a valid memory response -- the read-side occupancy of the
  *	single external memory port, across every consumer (vbuf, motion
  *	compensation, display)
+ * @write_service_cnt: cycles the framestore arbiter spent servicing a
+ *	write -- STATE_VBW (incoming stream bytes), STATE_RECON (reconstructed
+ *	macroblock), or STATE_OSD (overlay), combined. Added in Fase 8b
+ *	alongside the other three, which cover the read side fairly well
+ *	between them and mem_res_valid_cnt above; the write side had no
+ *	counter at all before this, sticky or otherwise.
  */
 struct mpeg2fpga_perf_counters {
 	u32 disp_service_cnt;
 	u32 vbr_service_cnt;
 	u32 vbr_starved_cnt;
 	u32 mem_res_valid_cnt;
+	u32 write_service_cnt;
 };
 
 void mpeg2fpga_core_init(struct mpeg2fpga_core *core,

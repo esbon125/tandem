@@ -322,6 +322,7 @@ static void mpeg2fpga_core_test_perf_counters(struct kunit *test)
 	ctx->fake.read_regs[MPEG2FPGA_B_VBR_SERVICE_CNT] = 222;
 	ctx->fake.read_regs[MPEG2FPGA_B_VBR_STARVED_CNT] = 333;
 	ctx->fake.read_regs[MPEG2FPGA_B_MEM_RES_VALID_CNT] = 444;
+	ctx->fake.read_regs[MPEG2FPGA_B_WRITE_SERVICE_CNT] = 555;
 
 	mpeg2fpga_core_get_perf_counters(&ctx->core, &perf);
 
@@ -329,6 +330,7 @@ static void mpeg2fpga_core_test_perf_counters(struct kunit *test)
 	KUNIT_EXPECT_EQ(test, perf.vbr_service_cnt, 222u);
 	KUNIT_EXPECT_EQ(test, perf.vbr_starved_cnt, 333u);
 	KUNIT_EXPECT_EQ(test, perf.mem_res_valid_cnt, 444u);
+	KUNIT_EXPECT_EQ(test, perf.write_service_cnt, 555u);
 }
 
 static void mpeg2fpga_core_test_frame_rate_table(struct kunit *test)

@@ -138,6 +138,7 @@
 #define MPEG2FPGA_B_ARBITER_FLAGS	0x1b	/* ro */
 #define MPEG2FPGA_B_MEM_RES_VALID_CNT	0x1c	/* ro: memory responses returned */
 #define MPEG2FPGA_B_CORE_ENABLE		0x20	/* rw: bit 0 releases the core from reset */
+#define MPEG2FPGA_B_WRITE_SERVICE_CNT	0x39	/* ro: cycles arbiter served a write (vbuf/recon/osd) -- Fase 8b */
 
 /* dma ctrl (0x13, write-only) */
 #define MPEG2FPGA_DMA_CTRL_START	BIT(0)

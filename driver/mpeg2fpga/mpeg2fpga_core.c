@@ -250,6 +250,7 @@ void mpeg2fpga_core_get_perf_counters(struct mpeg2fpga_core *core,
 	perf->vbr_service_cnt = mpeg2fpga_core_read(core, MPEG2FPGA_B_VBR_SERVICE_CNT);
 	perf->vbr_starved_cnt = mpeg2fpga_core_read(core, MPEG2FPGA_B_VBR_STARVED_CNT);
 	perf->mem_res_valid_cnt = mpeg2fpga_core_read(core, MPEG2FPGA_B_MEM_RES_VALID_CNT);
+	perf->write_service_cnt = mpeg2fpga_core_read(core, MPEG2FPGA_B_WRITE_SERVICE_CNT);
 }
 
 /* Read-modify-write MPEG2FPGA_W_TRICK_MODE against its shadow. */
