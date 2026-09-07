@@ -54,7 +54,7 @@ def main():
     print()
     print("%-20s %12s %10s" % ("counter", "delta", "% of window"))
     for key in ("disp_service_cnt", "vbr_service_cnt", "vbr_starved_cnt",
-                "mem_res_valid_cnt"):
+                "mem_res_valid_cnt", "write_service_cnt"):
         # 32-bit free-running counters: handle a wraparound between reads.
         delta = (after[key] - before[key]) & 0xFFFFFFFF
         pct = 100.0 * delta / total_cycles if total_cycles else 0.0
