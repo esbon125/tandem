@@ -59,7 +59,7 @@ module mpeg2video(clk, mem_clk, dot_clk,
              mem_res_wr_dta, mem_res_wr_en, mem_res_wr_almost_full,                                                               // clocked with mem_clk
              testpoint_dip, testpoint_dip_en, testpoint,
              vbuf_wr_addr, vbuf_rd_addr,                                                                                        // clocked with clk; Fase 7a debug
-             disp_service_cnt, vbr_service_cnt, vbr_starved_cnt, arbiter_flags,                                                 // clocked with clk; Fase 7a debug
+             disp_service_cnt, vbr_service_cnt, vbr_starved_cnt, write_service_cnt, arbiter_flags,                              // clocked with clk; Fase 7a/8b debug
              mem_res_valid_cnt, dbg_last_mem_req_wr_addr, vld_dbg, getbits_dbg,
              dbg_first_mem_res, dbg_first_vbr_wr, vbuf_read_fifo_dbg,                                                              // clocked with clk; Fase 7a debug
              dbg_mem_req_wr_push_cnt, dbg_mem_req_rd_pop_cnt                                                                    // push_cnt clocked with clk, pop_cnt with mem_clk
@@ -80,7 +80,7 @@ module mpeg2video(ref_clk, clk_out, mem_clk_out, mem_rst_out, core_rst_out,
              mem_res_wr_dta, mem_res_wr_en, mem_res_wr_almost_full,                                                               // clocked with mem_clk
              testpoint_dip, testpoint_dip_en, testpoint,
              vbuf_wr_addr, vbuf_rd_addr,                                                                                        // clocked with clk; Fase 7a debug
-             disp_service_cnt, vbr_service_cnt, vbr_starved_cnt, arbiter_flags,                                                 // clocked with clk; Fase 7a debug
+             disp_service_cnt, vbr_service_cnt, vbr_starved_cnt, write_service_cnt, arbiter_flags,                              // clocked with clk; Fase 7a/8b debug
              mem_res_valid_cnt, dbg_last_mem_req_wr_addr, vld_dbg, getbits_dbg,
              dbg_first_mem_res, dbg_first_vbr_wr, vbuf_read_fifo_dbg,                                                              // clocked with clk; Fase 7a debug
              dbg_mem_req_wr_push_cnt, dbg_mem_req_rd_pop_cnt                                                                    // push_cnt clocked with clk, pop_cnt with mem_clk
@@ -174,6 +174,7 @@ module mpeg2video(ref_clk, clk_out, mem_clk_out, mem_rst_out, core_rst_out,
   output      [31:0]disp_service_cnt;
   output      [31:0]vbr_service_cnt;
   output      [31:0]vbr_starved_cnt;
+  output      [31:0]write_service_cnt;
   output      [31:0]arbiter_flags;
   output      [31:0]mem_res_valid_cnt;
   output      [21:0]dbg_last_mem_req_wr_addr;
@@ -1515,6 +1516,7 @@ always @(posedge dot_clk)
     .disp_service_cnt(disp_service_cnt),
     .vbr_service_cnt(vbr_service_cnt),
     .vbr_starved_cnt(vbr_starved_cnt),
+    .write_service_cnt(write_service_cnt),
     .arbiter_flags(arbiter_flags_framestore),
     .mem_res_valid_cnt(mem_res_valid_cnt),
     .dbg_last_mem_req_wr_addr(dbg_last_mem_req_wr_addr),

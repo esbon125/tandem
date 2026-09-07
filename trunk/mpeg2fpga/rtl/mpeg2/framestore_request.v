@@ -54,6 +54,7 @@ module framestore_request(rst, clk,
                   tag_wr_dta, tag_wr_en, tag_wr_almost_full,
                   vbuf_wr_addr, vbuf_rd_addr,
                   disp_service_cnt, vbr_service_cnt, vbr_starved_cnt,
+                  write_service_cnt,
                   arbiter_flags, dbg_last_mem_req_wr_addr
                   );
 
@@ -269,6 +270,23 @@ module framestore_request(rst, clk,
   always @(posedge clk)
     if (~rst) vbr_starved_cnt <= 32'b0;
     else if (do_vbr && (next != STATE_VBR)) vbr_starved_cnt <= vbr_starved_cnt + 32'd1;
+
+  /* 2026-09-07 (Fase 8b, write pipelining): disp/vbr/fwd/bwd (the read
+   * side) are already covered between this module's own counters above and
+   * mem2axi_bridge.v's mem_res_valid_cnt -- profiling against the real
+   * decoder (docs/bringup 41) found those add up to a small slice of the
+   * cycle budget even after read pipelining, with most cycles unaccounted
+   * for. The write side (STATE_VBW/STATE_RECON/STATE_OSD -- incoming stream
+   * bytes, reconstructed macroblocks, and OSD overlay writes) had no counter
+   * at all, sticky or otherwise, to test that against. One combined counter
+   * rather than three: the question this answers is "how much of the
+   * remainder is writes at all", not which write consumer dominates. */
+  output reg [31:0] write_service_cnt;
+
+  always @(posedge clk)
+    if (~rst) write_service_cnt <= 32'b0;
+    else if ((state == STATE_VBW) || (state == STATE_RECON) || (state == STATE_OSD))
+      write_service_cnt <= write_service_cnt + 32'd1;
 
   /* Fase 7a debug (2026-08-22): live snapshot register -- declared here,
    * driven further down (after vbuf_holdoff's own declaration, which Icarus
