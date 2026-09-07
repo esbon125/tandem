@@ -141,7 +141,7 @@ module framestore(rst, clk, mem_clk, mem_rst,
 		  tag_wr_almost_full, tag_wr_full, tag_wr_overflow,
                   vbuf_wr_addr, vbuf_rd_addr,
                   disp_service_cnt, vbr_service_cnt, vbr_starved_cnt,
-                  write_service_cnt,
+                  write_service_cnt, fwd_service_cnt, bwd_service_cnt, idle_cnt,
                   arbiter_flags, mem_res_valid_cnt, dbg_last_mem_req_wr_addr,
                   dbg_mem_req_wr_push_cnt, dbg_mem_req_rd_pop_cnt
                   );
@@ -248,6 +248,9 @@ module framestore(rst, clk, mem_clk, mem_rst,
   output      [31:0]vbr_service_cnt;
   output      [31:0]vbr_starved_cnt;
   output      [31:0]write_service_cnt;
+  output      [31:0]fwd_service_cnt;
+  output      [31:0]bwd_service_cnt;
+  output      [31:0]idle_cnt;
   output      [31:0]arbiter_flags;
   output      [31:0]mem_res_valid_cnt;
   output      [21:0]dbg_last_mem_req_wr_addr;
@@ -387,6 +390,9 @@ module framestore(rst, clk, mem_clk, mem_rst,
     .vbr_service_cnt(vbr_service_cnt),
     .vbr_starved_cnt(vbr_starved_cnt),
     .write_service_cnt(write_service_cnt),
+    .fwd_service_cnt(fwd_service_cnt),
+    .bwd_service_cnt(bwd_service_cnt),
+    .idle_cnt(idle_cnt),
     .arbiter_flags(arbiter_flags),
     .dbg_last_mem_req_wr_addr(dbg_last_mem_req_wr_addr)
     );

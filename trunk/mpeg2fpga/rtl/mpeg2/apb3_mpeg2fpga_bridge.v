@@ -124,6 +124,7 @@ module apb3_mpeg2fpga_bridge (
     /* Fase 7a debug (2026-08-22): framestore_request.v's fixed-priority
      * memory arbiter starvation counters, same core_clk-domain treatment. */
     disp_service_cnt, vbr_service_cnt, vbr_starved_cnt, write_service_cnt,
+    fwd_service_cnt, bwd_service_cnt, idle_cnt,
     arbiter_flags, mem_res_valid_cnt,
 
     /* Fase 7a debug (2026-08-23): mem2axi_bridge.v's own view of the last
@@ -207,6 +208,9 @@ module apb3_mpeg2fpga_bridge (
   input       [31:0]vbr_service_cnt;  /* cycles state==STATE_VBR, core_clk domain, free-running */
   input       [31:0]vbr_starved_cnt;  /* cycles do_vbr true but arbiter picked something else */
   input       [31:0]write_service_cnt; /* cycles state==STATE_VBW/RECON/OSD, core_clk domain, free-running -- Fase 8b */
+  input       [31:0]fwd_service_cnt;   /* cycles state==STATE_FWD, core_clk domain, free-running -- Fase 8b follow-up */
+  input       [31:0]bwd_service_cnt;   /* cycles state==STATE_BWD, core_clk domain, free-running -- Fase 8b follow-up */
+  input       [31:0]idle_cnt;          /* cycles state==STATE_IDLE, core_clk domain, free-running -- Fase 8b follow-up */
 
   /* Fase 7a debug (2026-08-22): live snapshot -- bits[10:0]=state (one-hot),
    * [11]=do_vbr, [12]=do_disp, [13]=vbuf_empty, [14]=vbr_rd_almost_empty,
@@ -276,6 +280,9 @@ module apb3_mpeg2fpga_bridge (
   /* 2026-09-05: xfifo_sc's own internals for vbuf_read_fifo, eight words. */
   localparam [5:0] SCFIFO_DBG0_ADDR = 6'h31, SCFIFO_DBG7_ADDR = 6'h38;
   localparam [5:0] WRITE_SERVICE_CNT_ADDR = 6'h39;   /* Fase 8b */
+  localparam [5:0] FWD_SERVICE_CNT_ADDR = 6'h3a;     /* Fase 8b follow-up */
+  localparam [5:0] BWD_SERVICE_CNT_ADDR = 6'h3b;     /* Fase 8b follow-up */
+  localparam [5:0] IDLE_CNT_ADDR = 6'h3c;            /* Fase 8b follow-up */
 
   /* Fase 7c PWDATA investigation: hold the Access phase open for this many
    * extra PCLK cycles before committing, instead of on the very first
@@ -525,6 +532,9 @@ module apb3_mpeg2fpga_bridge (
   wire is_scfifo_dbg = (apb_addr_r >= SCFIFO_DBG0_ADDR) && (apb_addr_r <= SCFIFO_DBG7_ADDR);
   wire [2:0] scfifo_dbg_idx = apb_addr_r[2:0] - SCFIFO_DBG0_ADDR[2:0];   /* 0..7 */
   wire is_write_service_cnt = (apb_addr_r == WRITE_SERVICE_CNT_ADDR);
+  wire is_fwd_service_cnt = (apb_addr_r == FWD_SERVICE_CNT_ADDR);
+  wire is_bwd_service_cnt = (apb_addr_r == BWD_SERVICE_CNT_ADDR);
+  wire is_idle_cnt = (apb_addr_r == IDLE_CNT_ADDR);
   wire is_core_enable = (apb_addr_r == CORE_ENABLE_ADDR);
 
   always @(posedge core_clk or negedge core_rst_n) begin
@@ -647,6 +657,18 @@ module apb3_mpeg2fpga_bridge (
             end else if (is_write_service_cnt) begin
               if (!apb_write_r)
                 rdata_hold <= write_service_cnt;
+              core_state <= C_DONE;
+            end else if (is_fwd_service_cnt) begin
+              if (!apb_write_r)
+                rdata_hold <= fwd_service_cnt;
+              core_state <= C_DONE;
+            end else if (is_bwd_service_cnt) begin
+              if (!apb_write_r)
+                rdata_hold <= bwd_service_cnt;
+              core_state <= C_DONE;
+            end else if (is_idle_cnt) begin
+              if (!apb_write_r)
+                rdata_hold <= idle_cnt;
               core_state <= C_DONE;
             end else if (is_dbg_last_write_addr_from_fifo) begin
               if (!apb_write_r)

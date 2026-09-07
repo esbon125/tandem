@@ -54,7 +54,7 @@ module framestore_request(rst, clk,
                   tag_wr_dta, tag_wr_en, tag_wr_almost_full,
                   vbuf_wr_addr, vbuf_rd_addr,
                   disp_service_cnt, vbr_service_cnt, vbr_starved_cnt,
-                  write_service_cnt,
+                  write_service_cnt, fwd_service_cnt, bwd_service_cnt, idle_cnt,
                   arbiter_flags, dbg_last_mem_req_wr_addr
                   );
 
@@ -271,22 +271,51 @@ module framestore_request(rst, clk,
     if (~rst) vbr_starved_cnt <= 32'b0;
     else if (do_vbr && (next != STATE_VBR)) vbr_starved_cnt <= vbr_starved_cnt + 32'd1;
 
-  /* 2026-09-07 (Fase 8b, write pipelining): disp/vbr/fwd/bwd (the read
-   * side) are already covered between this module's own counters above and
-   * mem2axi_bridge.v's mem_res_valid_cnt -- profiling against the real
-   * decoder (docs/bringup 41) found those add up to a small slice of the
-   * cycle budget even after read pipelining, with most cycles unaccounted
-   * for. The write side (STATE_VBW/STATE_RECON/STATE_OSD -- incoming stream
-   * bytes, reconstructed macroblocks, and OSD overlay writes) had no counter
-   * at all, sticky or otherwise, to test that against. One combined counter
-   * rather than three: the question this answers is "how much of the
-   * remainder is writes at all", not which write consumer dominates. */
+  /* 2026-09-07 (Fase 8b, write pipelining): disp/vbr were already covered
+   * above, but the write side (STATE_VBW/STATE_RECON/STATE_OSD -- incoming
+   * stream bytes, reconstructed macroblocks, and OSD overlay writes) had no
+   * counter at all, sticky or otherwise. mem2axi_bridge.v's
+   * mem_res_valid_cnt covers read *responses* (disp+vbr+fwd+bwd combined),
+   * but not this arbiter's own *service* time for any of them -- fwd/bwd
+   * were never actually instrumented here despite an earlier comment
+   * claiming otherwise; see the fwd/bwd counters just below, added once
+   * that gap actually mattered. One combined write counter rather than
+   * three: the question it answers is "how much of the remainder is writes
+   * at all", not which write consumer dominates. */
   output reg [31:0] write_service_cnt;
 
   always @(posedge clk)
     if (~rst) write_service_cnt <= 32'b0;
     else if ((state == STATE_VBW) || (state == STATE_RECON) || (state == STATE_OSD))
       write_service_cnt <= write_service_cnt + 32'd1;
+
+  /* 2026-09-07 (Fase 8b follow-up): with disp+vbr+write_service ~11% of
+   * cycles and mem_res_valid_cnt (read responses, all consumers combined)
+   * ~11%, ~75-80% of cycles were still unaccounted for after both
+   * pipelining fixes -- see docs/bringup 41/42. The arbiter's states are
+   * one-hot and mutually exclusive, so whatever that remainder is must be
+   * STATE_FWD/STATE_BWD (motion-compensation reference reads -- their
+   * *responses* are already in mem_res_valid_cnt, but never their own
+   * arbiter service time) or genuine STATE_IDLE (nothing ready to
+   * service). idle_cnt settles which, directly, instead of inferring it by
+   * subtracting from an already-estimated cycle total (wall clock * the
+   * known 108 MHz core clock, since there is still no software-readable
+   * free-running cycle counter) and hoping rounding didn't matter. */
+  output reg [31:0] fwd_service_cnt;
+  output reg [31:0] bwd_service_cnt;
+  output reg [31:0] idle_cnt;
+
+  always @(posedge clk)
+    if (~rst) fwd_service_cnt <= 32'b0;
+    else if (state == STATE_FWD) fwd_service_cnt <= fwd_service_cnt + 32'd1;
+
+  always @(posedge clk)
+    if (~rst) bwd_service_cnt <= 32'b0;
+    else if (state == STATE_BWD) bwd_service_cnt <= bwd_service_cnt + 32'd1;
+
+  always @(posedge clk)
+    if (~rst) idle_cnt <= 32'b0;
+    else if (state == STATE_IDLE) idle_cnt <= idle_cnt + 32'd1;
 
   /* Fase 7a debug (2026-08-22): live snapshot register -- declared here,
    * driven further down (after vbuf_holdoff's own declaration, which Icarus

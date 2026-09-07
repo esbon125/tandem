@@ -377,6 +377,9 @@ module mpeg2fpga_apb_peripheral (
   wire [31:0]  vbr_service_cnt_internal;
   wire [31:0]  vbr_starved_cnt_internal;
   wire [31:0]  write_service_cnt_internal;
+  wire [31:0]  fwd_service_cnt_internal;
+  wire [31:0]  bwd_service_cnt_internal;
+  wire [31:0]  idle_cnt_internal;
   wire [31:0]  arbiter_flags_internal;
   wire [31:0]  mem_res_valid_cnt_internal;
   wire [21:0]  dbg_last_write_addr_from_fifo_internal;
@@ -466,6 +469,9 @@ module mpeg2fpga_apb_peripheral (
       .vbr_service_cnt(vbr_service_cnt_internal),
       .vbr_starved_cnt(vbr_starved_cnt_internal),
       .write_service_cnt(write_service_cnt_internal),
+      .fwd_service_cnt(fwd_service_cnt_internal),
+      .bwd_service_cnt(bwd_service_cnt_internal),
+      .idle_cnt(idle_cnt_internal),
       .arbiter_flags(arbiter_flags_combined),
       .mem_res_valid_cnt(mem_res_valid_cnt_internal),
 
@@ -553,6 +559,9 @@ module mpeg2fpga_apb_peripheral (
       .vbr_service_cnt(vbr_service_cnt_internal),
       .vbr_starved_cnt(vbr_starved_cnt_internal),
       .write_service_cnt(write_service_cnt_internal),
+      .fwd_service_cnt(fwd_service_cnt_internal),
+      .bwd_service_cnt(bwd_service_cnt_internal),
+      .idle_cnt(idle_cnt_internal),
       .arbiter_flags(arbiter_flags_internal),
       .mem_res_valid_cnt(mem_res_valid_cnt_internal),
       .dbg_last_mem_req_wr_addr(dbg_last_mem_req_wr_addr_internal),
