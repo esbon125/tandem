@@ -36,6 +36,20 @@ def main():
     control = decoder_control.open_control()
     print("backend:", control.backend)
 
+    # This script drives the decoder directly (not through server.py), so
+    # nothing tracks whether the core has ever been enabled -- right after
+    # a fresh FPGA reprogram it hasn't, core_enable defaults to 0 (see
+    # apb3_mpeg2fpga_bridge.v), and reset=False's flush_vbuf path silently
+    # does nothing useful against a core that was never running (captured
+    # comes back 0, decoder_size [0, 0], no error bit either -- there is
+    # nothing running to report one). One reset=True warm-up decode fixes
+    # it; only pay for that once.
+    warmup = decode_stream.decode(data, on_frame=lambda cap: None,
+                                   control=control, reset=True)
+    if not warmup.get("complete"):
+        print("warm-up decode did not complete -- something is wrong before profiling even starts:", warmup)
+        return
+
     before = control.perf_counters()
     report = decode_stream.decode(data, on_frame=lambda cap: None,
                                    control=control, reset=False)
