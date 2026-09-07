@@ -1,0 +1,16 @@
+# mpeg2fpga raw framestore dump
+source hardware
+stream tek60.bits
+horizontal_size 704
+vertical_size 480
+display_horizontal_size 0
+display_vertical_size 0
+mb_width 44
+mb_height 30
+frame_rate_code 4
+status_sticky 0x000e
+settled 1
+base_word_address 0
+word_count 1572864
+word_bytes 8
+byteorder little
