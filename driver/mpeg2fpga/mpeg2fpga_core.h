@@ -148,6 +148,22 @@ struct mpeg2fpga_geometry {
  *	alongside the other three, which cover the read side fairly well
  *	between them and mem_res_valid_cnt above; the write side had no
  *	counter at all before this, sticky or otherwise.
+ * @fwd_service_cnt: cycles the arbiter spent servicing a forward
+ *	motion-compensation reference read (STATE_FWD). Added once
+ *	disp+vbr+write_service+mem_res_valid_cnt left ~75-80% of cycles
+ *	unaccounted for even after both read and write pipelining -- the
+ *	arbiter's states are one-hot and mutually exclusive, so the remainder
+ *	has to be fwd/bwd service time (their read *responses* were already
+ *	in mem_res_valid_cnt, but never their own arbiter service time) or
+ *	genuine idle time.
+ * @bwd_service_cnt: same as @fwd_service_cnt, for STATE_BWD (backward
+ *	motion-compensation reference reads).
+ * @idle_cnt: cycles the arbiter had nothing ready to service (STATE_IDLE).
+ *	Measured directly rather than inferred by subtracting the other
+ *	counters from an already-estimated cycle total (wall clock * the
+ *	known 108 MHz core clock -- there is still no software-readable
+ *	free-running cycle counter), so it settles the fwd/bwd-vs-idle
+ *	question without compounding that estimate's own rounding error.
  */
 struct mpeg2fpga_perf_counters {
 	u32 disp_service_cnt;
@@ -155,6 +171,9 @@ struct mpeg2fpga_perf_counters {
 	u32 vbr_starved_cnt;
 	u32 mem_res_valid_cnt;
 	u32 write_service_cnt;
+	u32 fwd_service_cnt;
+	u32 bwd_service_cnt;
+	u32 idle_cnt;
 };
 
 void mpeg2fpga_core_init(struct mpeg2fpga_core *core,

@@ -468,10 +468,11 @@ static ssize_t perf_counters_show(struct device *dev,
 	 * one decode reads this twice and takes the delta.
 	 */
 	return sysfs_emit(buf,
-		"disp_service_cnt %u\nvbr_service_cnt %u\nvbr_starved_cnt %u\nmem_res_valid_cnt %u\nwrite_service_cnt %u\n",
+		"disp_service_cnt %u\nvbr_service_cnt %u\nvbr_starved_cnt %u\nmem_res_valid_cnt %u\nwrite_service_cnt %u\nfwd_service_cnt %u\nbwd_service_cnt %u\nidle_cnt %u\n",
 		perf.disp_service_cnt, perf.vbr_service_cnt,
 		perf.vbr_starved_cnt, perf.mem_res_valid_cnt,
-		perf.write_service_cnt);
+		perf.write_service_cnt, perf.fwd_service_cnt,
+		perf.bwd_service_cnt, perf.idle_cnt);
 }
 static DEVICE_ATTR_RO(perf_counters);
 

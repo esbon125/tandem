@@ -139,6 +139,9 @@
 #define MPEG2FPGA_B_MEM_RES_VALID_CNT	0x1c	/* ro: memory responses returned */
 #define MPEG2FPGA_B_CORE_ENABLE		0x20	/* rw: bit 0 releases the core from reset */
 #define MPEG2FPGA_B_WRITE_SERVICE_CNT	0x39	/* ro: cycles arbiter served a write (vbuf/recon/osd) -- Fase 8b */
+#define MPEG2FPGA_B_FWD_SERVICE_CNT	0x3a	/* ro: cycles arbiter served a forward motion-comp read -- Fase 8b follow-up */
+#define MPEG2FPGA_B_BWD_SERVICE_CNT	0x3b	/* ro: cycles arbiter served a backward motion-comp read -- Fase 8b follow-up */
+#define MPEG2FPGA_B_IDLE_CNT		0x3c	/* ro: cycles the arbiter had nothing ready to service -- Fase 8b follow-up */
 
 /* dma ctrl (0x13, write-only) */
 #define MPEG2FPGA_DMA_CTRL_START	BIT(0)

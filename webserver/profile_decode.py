@@ -53,12 +53,30 @@ def main():
           (total_cycles, CORE_CLK_HZ // 1_000_000))
     print()
     print("%-20s %12s %10s" % ("counter", "delta", "% of window"))
+    deltas = {}
     for key in ("disp_service_cnt", "vbr_service_cnt", "vbr_starved_cnt",
-                "mem_res_valid_cnt", "write_service_cnt"):
+                "mem_res_valid_cnt", "write_service_cnt",
+                "fwd_service_cnt", "bwd_service_cnt", "idle_cnt"):
         # 32-bit free-running counters: handle a wraparound between reads.
         delta = (after[key] - before[key]) & 0xFFFFFFFF
+        deltas[key] = delta
         pct = 100.0 * delta / total_cycles if total_cycles else 0.0
         print("%-20s %12d %9.1f%%" % (key, delta, pct))
+
+    # The arbiter's states (DISP/VBR/VBW+RECON+OSD/FWD/BWD/IDLE) are one-hot
+    # and mutually exclusive -- their service-time counters should sum to
+    # very close to the estimated total_cycles above (INIT/CLEAR/REFRESH are
+    # negligible in steady state). mem_res_valid_cnt/vbr_starved_cnt are
+    # deliberately excluded: they are not arbiter *states*, so they are not
+    # part of this partition and can overlap with it. This is also a sanity
+    # check on the wall-clock cycle estimate itself, not just the counters.
+    state_sum = (deltas["disp_service_cnt"] + deltas["vbr_service_cnt"] +
+                 deltas["write_service_cnt"] + deltas["fwd_service_cnt"] +
+                 deltas["bwd_service_cnt"] + deltas["idle_cnt"])
+    pct = 100.0 * state_sum / total_cycles if total_cycles else 0.0
+    print()
+    print("sum of arbiter-state counters: %d (%.1f%% of estimated total -- should be close to 100%%)" %
+          (state_sum, pct))
 
 
 if __name__ == "__main__":

@@ -323,6 +323,9 @@ static void mpeg2fpga_core_test_perf_counters(struct kunit *test)
 	ctx->fake.read_regs[MPEG2FPGA_B_VBR_STARVED_CNT] = 333;
 	ctx->fake.read_regs[MPEG2FPGA_B_MEM_RES_VALID_CNT] = 444;
 	ctx->fake.read_regs[MPEG2FPGA_B_WRITE_SERVICE_CNT] = 555;
+	ctx->fake.read_regs[MPEG2FPGA_B_FWD_SERVICE_CNT] = 666;
+	ctx->fake.read_regs[MPEG2FPGA_B_BWD_SERVICE_CNT] = 777;
+	ctx->fake.read_regs[MPEG2FPGA_B_IDLE_CNT] = 888;
 
 	mpeg2fpga_core_get_perf_counters(&ctx->core, &perf);
 
@@ -331,6 +334,9 @@ static void mpeg2fpga_core_test_perf_counters(struct kunit *test)
 	KUNIT_EXPECT_EQ(test, perf.vbr_starved_cnt, 333u);
 	KUNIT_EXPECT_EQ(test, perf.mem_res_valid_cnt, 444u);
 	KUNIT_EXPECT_EQ(test, perf.write_service_cnt, 555u);
+	KUNIT_EXPECT_EQ(test, perf.fwd_service_cnt, 666u);
+	KUNIT_EXPECT_EQ(test, perf.bwd_service_cnt, 777u);
+	KUNIT_EXPECT_EQ(test, perf.idle_cnt, 888u);
 }
 
 static void mpeg2fpga_core_test_frame_rate_table(struct kunit *test)
