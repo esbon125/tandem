@@ -128,6 +128,7 @@ module apb3_mpeg2fpga_bridge (
     vld_en_cnt, vld_stall_rld_cnt, vld_stall_motcomp_cnt,
     fwd_addr_empty_cnt, fwd_dta_stall_cnt, bwd_addr_empty_cnt, bwd_dta_stall_cnt,
     mem_req_almost_full_cnt, tag_almost_full_cnt,
+    predict_err_almost_full_cnt, rld_stall_predict_err_cnt,
     arbiter_flags, mem_res_valid_cnt,
 
     /* Fase 7a debug (2026-08-23): mem2axi_bridge.v's own view of the last
@@ -223,6 +224,8 @@ module apb3_mpeg2fpga_bridge (
   input       [31:0]bwd_dta_stall_cnt;  /* cycles ~bwd_rd_addr_empty && bwd_wr_dta_almost_full -- Fase 8d */
   input       [31:0]mem_req_almost_full_cnt; /* cycles mem_req_wr_almost_full -- Fase 8e */
   input       [31:0]tag_almost_full_cnt;     /* cycles tag_wr_almost_full -- Fase 8e */
+  input       [31:0]predict_err_almost_full_cnt; /* cycles idct_fifo_almost_full (predict_err_fifo prog_full) -- Fase 9b */
+  input       [31:0]rld_stall_predict_err_cnt;   /* cycles ~vld_en && rld_wr_almost_full && idct_fifo_almost_full -- Fase 9b */
 
   /* Fase 7a debug (2026-08-22): live snapshot -- bits[10:0]=state (one-hot),
    * [11]=do_vbr, [12]=do_disp, [13]=vbuf_empty, [14]=vbr_rd_almost_empty,
@@ -319,7 +322,18 @@ module apb3_mpeg2fpga_bridge (
   localparam [5:0] BWD_DTA_STALL_CNT_ADDR  = 6'h34;  /* Fase 8d, relocated Fase 8f */
   localparam [5:0] MEM_REQ_ALMOST_FULL_CNT_ADDR = 6'h35; /* Fase 8e, relocated Fase 8f */
   localparam [5:0] TAG_ALMOST_FULL_CNT_ADDR     = 6'h36; /* Fase 8e, relocated Fase 8f */
-  localparam [5:0] SCFIFO_DBG0_ADDR = 6'h37, SCFIFO_DBG1_ADDR = 6'h38;
+  /* 2026-09-08 (Fase 9b): 0x37-0x38 were SCFIFO_DBG's last two words (the
+   * low 64 of xfifo_sc's 256-bit debug bundle, already reduced from 8 words
+   * to 2 in Fase 8f). That bug (xfifo_sc RAM port sharing) is RESOLVED, and
+   * this session hasn't needed the remaining two words either -- reclaiming
+   * them completes that retirement and gives the two registers Fase 9b's
+   * predict_err_fifo/rld-stall correlation counters need, still inside the
+   * peripheral's real 0x00-0x3f window (see the Fase 8f comment above for
+   * why addresses beyond that never reach this bridge at all).
+   * vbuf_read_fifo_dbg's plumbing stays wired upstream unused, same
+   * reasoning as Fase 8f. */
+  localparam [5:0] PREDICT_ERR_ALMOST_FULL_CNT_ADDR = 6'h37; /* Fase 9b */
+  localparam [5:0] RLD_STALL_PREDICT_ERR_CNT_ADDR   = 6'h38; /* Fase 9b */
   localparam [5:0] WRITE_SERVICE_CNT_ADDR = 6'h39;   /* Fase 8b */
   localparam [5:0] FWD_SERVICE_CNT_ADDR = 6'h3a;     /* Fase 8b follow-up */
   localparam [5:0] BWD_SERVICE_CNT_ADDR = 6'h3b;     /* Fase 8b follow-up */
@@ -573,8 +587,8 @@ module apb3_mpeg2fpga_bridge (
   wire is_memres_hi = (apb_addr_r == MEMRES_HI_ADDR);
   wire is_vbrwr_lo  = (apb_addr_r == VBRWR_LO_ADDR);
   wire is_vbrwr_hi  = (apb_addr_r == VBRWR_HI_ADDR);
-  wire is_scfifo_dbg = (apb_addr_r >= SCFIFO_DBG0_ADDR) && (apb_addr_r <= SCFIFO_DBG1_ADDR);
-  wire [2:0] scfifo_dbg_idx = apb_addr_r[2:0] - SCFIFO_DBG0_ADDR[2:0];   /* 0..1 -- Fase 8f shrank this from 0..7, see localparam comment */
+  wire is_predict_err_almost_full_cnt = (apb_addr_r == PREDICT_ERR_ALMOST_FULL_CNT_ADDR);
+  wire is_rld_stall_predict_err_cnt = (apb_addr_r == RLD_STALL_PREDICT_ERR_CNT_ADDR);
   wire is_write_service_cnt = (apb_addr_r == WRITE_SERVICE_CNT_ADDR);
   wire is_fwd_service_cnt = (apb_addr_r == FWD_SERVICE_CNT_ADDR);
   wire is_bwd_service_cnt = (apb_addr_r == BWD_SERVICE_CNT_ADDR);
@@ -805,9 +819,13 @@ module apb3_mpeg2fpga_bridge (
             end else if (is_vbrwr_hi) begin
               if (!apb_write_r) rdata_hold <= dbg_first_vbr_wr[63:32];
               core_state <= C_DONE;
-            end else if (is_scfifo_dbg) begin
+            end else if (is_predict_err_almost_full_cnt) begin
               if (!apb_write_r)
-                rdata_hold <= vbuf_read_fifo_dbg[{scfifo_dbg_idx, 5'b0} +: 32];
+                rdata_hold <= predict_err_almost_full_cnt;
+              core_state <= C_DONE;
+            end else if (is_rld_stall_predict_err_cnt) begin
+              if (!apb_write_r)
+                rdata_hold <= rld_stall_predict_err_cnt;
               core_state <= C_DONE;
             end else if (is_core_enable) begin
               if (apb_write_r) core_enable_r <= apb_wdata_r[0];

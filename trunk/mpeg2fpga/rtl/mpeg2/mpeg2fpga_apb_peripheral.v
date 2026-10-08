@@ -383,6 +383,8 @@ module mpeg2fpga_apb_peripheral (
   wire [31:0]  vld_en_cnt_internal;
   wire [31:0]  vld_stall_rld_cnt_internal;
   wire [31:0]  vld_stall_motcomp_cnt_internal;
+  wire [31:0]  predict_err_almost_full_cnt_internal;
+  wire [31:0]  rld_stall_predict_err_cnt_internal;
   wire [31:0]  fwd_addr_empty_cnt_internal;
   wire [31:0]  fwd_dta_stall_cnt_internal;
   wire [31:0]  bwd_addr_empty_cnt_internal;
@@ -484,6 +486,8 @@ module mpeg2fpga_apb_peripheral (
       .vld_en_cnt(vld_en_cnt_internal),
       .vld_stall_rld_cnt(vld_stall_rld_cnt_internal),
       .vld_stall_motcomp_cnt(vld_stall_motcomp_cnt_internal),
+      .predict_err_almost_full_cnt(predict_err_almost_full_cnt_internal),
+      .rld_stall_predict_err_cnt(rld_stall_predict_err_cnt_internal),
       .fwd_addr_empty_cnt(fwd_addr_empty_cnt_internal),
       .fwd_dta_stall_cnt(fwd_dta_stall_cnt_internal),
       .bwd_addr_empty_cnt(bwd_addr_empty_cnt_internal),
@@ -583,6 +587,8 @@ module mpeg2fpga_apb_peripheral (
       .vld_en_cnt(vld_en_cnt_internal),
       .vld_stall_rld_cnt(vld_stall_rld_cnt_internal),
       .vld_stall_motcomp_cnt(vld_stall_motcomp_cnt_internal),
+      .predict_err_almost_full_cnt(predict_err_almost_full_cnt_internal),
+      .rld_stall_predict_err_cnt(rld_stall_predict_err_cnt_internal),
       .fwd_addr_empty_cnt(fwd_addr_empty_cnt_internal),
       .fwd_dta_stall_cnt(fwd_dta_stall_cnt_internal),
       .bwd_addr_empty_cnt(bwd_addr_empty_cnt_internal),

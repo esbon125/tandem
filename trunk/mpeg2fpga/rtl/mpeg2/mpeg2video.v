@@ -64,6 +64,7 @@ module mpeg2video(clk, mem_clk, dot_clk,
              fwd_addr_empty_cnt, fwd_dta_stall_cnt, bwd_addr_empty_cnt, bwd_dta_stall_cnt,
              mem_req_almost_full_cnt, tag_almost_full_cnt, arbiter_flags,
              vld_en_cnt, vld_stall_rld_cnt, vld_stall_motcomp_cnt,               // clocked with clk; Fase 8c debug
+             predict_err_almost_full_cnt, rld_stall_predict_err_cnt,           // clocked with clk; Fase 9b debug
              mem_res_valid_cnt, dbg_last_mem_req_wr_addr, vld_dbg, getbits_dbg,
              dbg_first_mem_res, dbg_first_vbr_wr, vbuf_read_fifo_dbg,                                                              // clocked with clk; Fase 7a debug
              dbg_mem_req_wr_push_cnt, dbg_mem_req_rd_pop_cnt                                                                    // push_cnt clocked with clk, pop_cnt with mem_clk
@@ -89,6 +90,7 @@ module mpeg2video(ref_clk, clk_out, mem_clk_out, mem_rst_out, core_rst_out,
              fwd_addr_empty_cnt, fwd_dta_stall_cnt, bwd_addr_empty_cnt, bwd_dta_stall_cnt,
              mem_req_almost_full_cnt, tag_almost_full_cnt, arbiter_flags,
              vld_en_cnt, vld_stall_rld_cnt, vld_stall_motcomp_cnt,               // clocked with clk; Fase 8c debug
+             predict_err_almost_full_cnt, rld_stall_predict_err_cnt,           // clocked with clk; Fase 9b debug
              mem_res_valid_cnt, dbg_last_mem_req_wr_addr, vld_dbg, getbits_dbg,
              dbg_first_mem_res, dbg_first_vbr_wr, vbuf_read_fifo_dbg,                                                              // clocked with clk; Fase 7a debug
              dbg_mem_req_wr_push_cnt, dbg_mem_req_rd_pop_cnt                                                                    // push_cnt clocked with clk, pop_cnt with mem_clk
@@ -707,6 +709,42 @@ always @(posedge dot_clk)
   always @(posedge clk)
     if (~sync_rst) vld_stall_motcomp_cnt <= 32'b0;
     else if (~vld_en && motcomp_busy) vld_stall_motcomp_cnt <= vld_stall_motcomp_cnt + 32'd1;
+
+  /* 2026-09-08 (Fase 9b): Fase 9a's fifo_size.v change (MEMTAG_THRESHOLD)
+   * cut tag_almost_full_cnt from ~77% to ~66% on real hardware but left fps
+   * unchanged and vld_stall_rld_cnt/vld_stall_motcomp_cnt roughly where
+   * they were (~37%/~38% combined ~75%, same order as before the fix) --
+   * i.e. the memory-arbiter plumbing had headroom to spare all along, and
+   * relieving it didn't help, pointing the remaining investigation squarely
+   * downstream of the arbiter, into the reconstruction pipeline itself.
+   * rld_wr_almost_full (already measured by vld_stall_rld_cnt) is rld_fifo's
+   * own almost-full flag -- the queue VLD writes run/length coefficients
+   * into and RLD drains -- and rld.v's own module port list already wires
+   * idct_fifo_almost_full (predict_err_fifo's prog_full, from idct.v,
+   * declared as the `idct_fifo_almost_full` wire below) directly into rld
+   * as an input. That is: RLD already deliberately stalls draining
+   * rld_fifo whenever predict_err_fifo (motcomp_recon's input) is nearly
+   * full -- a backpressure chain that was already built into the design,
+   * just never instrumented. If idct_fifo_almost_full is asserted for most
+   * of vld_stall_rld_cnt's own window, the true bottleneck is motcomp_recon
+   * not draining predict_err_fifo fast enough (its own header comment's
+   * claim, just not for the memory-feed-rate reason originally assumed --
+   * today's fifo/tag measurements already ruled that out). If it mostly
+   * isn't, rld_wr_almost_full has some OTHER cause -- rld/iquant/idct's own
+   * multi-cycle-per-coefficient processing latency, independent of
+   * anything downstream -- which would point the next investigation at
+   * rld.v/iquant.v/idct.v's own per-symbol cycle counts instead of at
+   * motcomp_recon at all. */
+  output reg [31:0] predict_err_almost_full_cnt;
+  output reg [31:0] rld_stall_predict_err_cnt;
+
+  always @(posedge clk)
+    if (~sync_rst) predict_err_almost_full_cnt <= 32'b0;
+    else if (idct_fifo_almost_full) predict_err_almost_full_cnt <= predict_err_almost_full_cnt + 32'd1;
+
+  always @(posedge clk)
+    if (~sync_rst) rld_stall_predict_err_cnt <= 32'b0;
+    else if (~vld_en && rld_wr_almost_full && idct_fifo_almost_full) rld_stall_predict_err_cnt <= rld_stall_predict_err_cnt + 32'd1;
 
   /* 2026-08-27 clock/reset liveness debug: dbg_mem_req_rd_pop_cnt reads 0
    * on real hardware even with both mem_req_rd_en root causes fixed and
