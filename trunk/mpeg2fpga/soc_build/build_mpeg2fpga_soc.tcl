@@ -300,11 +300,15 @@ if {[file exists $build_id_copy]} {
         set text [read $fp]
         close $fp
         set stamp [format "32'h%X%s" [expr {$git_dirty > 0 ? 8 : 0}] $git_hash]
-        regsub {`define MPEG2FPGA_BUILD_GIT[ \t]+[^\n]*} $text "`define MPEG2FPGA_BUILD_GIT     $stamp" text
-        set fp [open $build_id_copy w]
-        puts -nonewline $fp $text
-        close $fp
-        puts "build_id: stamped $stamp into $build_id_copy"
+        regsub {`define MPEG2FPGA_BUILD_GIT[ \t]+[^\n]*} $text "`define MPEG2FPGA_BUILD_GIT     $stamp" stamped
+        # only write on a real change: touching a source between steps can
+        # make Libero consider synthesis out of date
+        if {$stamped ne $text} {
+            set fp [open $build_id_copy w]
+            puts -nonewline $fp $stamped
+            close $fp
+        }
+        puts "build_id: $stamp in $build_id_copy"
     }
 }
 
