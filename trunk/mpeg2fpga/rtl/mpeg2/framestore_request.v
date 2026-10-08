@@ -55,6 +55,8 @@ module framestore_request(rst, clk,
                   vbuf_wr_addr, vbuf_rd_addr,
                   disp_service_cnt, vbr_service_cnt, vbr_starved_cnt,
                   write_service_cnt, fwd_service_cnt, bwd_service_cnt, idle_cnt,
+                  fwd_addr_empty_cnt, fwd_dta_stall_cnt, bwd_addr_empty_cnt, bwd_dta_stall_cnt,
+                  mem_req_almost_full_cnt, tag_almost_full_cnt,
                   arbiter_flags, dbg_last_mem_req_wr_addr
                   );
 
@@ -316,6 +318,70 @@ module framestore_request(rst, clk,
   always @(posedge clk)
     if (~rst) idle_cnt <= 32'b0;
     else if (state == STATE_IDLE) idle_cnt <= idle_cnt + 32'd1;
+
+  /* 2026-09-07 (Fase 8d): vld_stall breakdown (Fase 8c, mpeg2video.v) found
+   * rld backpressure (42.9%) and motcomp_busy (33.1%) dominate VLD stalls,
+   * and motcomp_recon.v's own header comment says it's "limited by how fast
+   * the memory subsystem can feed it with pixels" -- but that could mean
+   * two very different things with two very different fixes: (a) fwd/bwd
+   * address generation (motcomp_addrgen.v/mem_addr.v, upstream of this
+   * arbiter entirely) isn't producing reference addresses fast enough, so
+   * this arbiter's do_fwd/do_bwd simply have nothing to service
+   * (fwd_rd_addr_empty/bwd_rd_addr_empty), or (b) addresses ARE queued but
+   * the fwd/bwd data fifo is nearly full (fwd_wr_dta_almost_full/
+   * bwd_wr_dta_almost_full) because the consumer (motcomp_recon) isn't
+   * draining it -- which given mem2axi_bridge's own RESP_DEPTH=4 read
+   * pipelining should mean the round trip itself is not the limiter, and
+   * this would just be motcomp_busy's own backpressure showing up one hop
+   * earlier. do_fwd/do_bwd already gate on exactly these two terms, so
+   * exposing each separately (not just their combined effect on
+   * fwd_service_cnt) directly distinguishes "nothing to fetch" from
+   * "can't keep up with what's fetched". */
+  output reg [31:0] fwd_addr_empty_cnt;
+  output reg [31:0] fwd_dta_stall_cnt;
+  output reg [31:0] bwd_addr_empty_cnt;
+  output reg [31:0] bwd_dta_stall_cnt;
+
+  always @(posedge clk)
+    if (~rst) fwd_addr_empty_cnt <= 32'b0;
+    else if (fwd_rd_addr_empty) fwd_addr_empty_cnt <= fwd_addr_empty_cnt + 32'd1;
+
+  always @(posedge clk)
+    if (~rst) fwd_dta_stall_cnt <= 32'b0;
+    else if (~fwd_rd_addr_empty && fwd_wr_dta_almost_full) fwd_dta_stall_cnt <= fwd_dta_stall_cnt + 32'd1;
+
+  always @(posedge clk)
+    if (~rst) bwd_addr_empty_cnt <= 32'b0;
+    else if (bwd_rd_addr_empty) bwd_addr_empty_cnt <= bwd_addr_empty_cnt + 32'd1;
+
+  always @(posedge clk)
+    if (~rst) bwd_dta_stall_cnt <= 32'b0;
+    else if (~bwd_rd_addr_empty && bwd_wr_dta_almost_full) bwd_dta_stall_cnt <= bwd_dta_stall_cnt + 32'd1;
+
+  /* 2026-09-08 (Fase 8e): fwd_addr_empty_cnt/fwd_dta_stall_cnt above both
+   * came back exactly 0 on real hardware over a full decode -- do_fwd's
+   * first two AND terms (~fwd_rd_addr_empty, ~fwd_wr_dta_almost_full) are
+   * essentially always true, yet fwd_service_cnt is still only ~1% and the
+   * arbiter sits in STATE_IDLE 93.7% of the time. do_fwd/do_disp/do_vbr all
+   * share two more AND terms this file never measured directly:
+   * mem_req_wr_almost_full and tag_wr_almost_full (this arbiter's own
+   * outgoing queues toward mem2axi_bridge/the tag-routing fifo). If one of
+   * those is asserted almost all the time, it would explain idle_cnt's
+   * 93.7% directly -- and would reverse Fase 8b's "arbiter has 90% memory
+   * headroom" reading, since it would mean the arbiter is CONSTANTLY
+   * blocked waiting on the memory side, not idle for lack of work. Measured
+   * unconditionally (not gated on do_fwd's other terms) since these two
+   * signals gate nearly every request type, not just fwd. */
+  output reg [31:0] mem_req_almost_full_cnt;
+  output reg [31:0] tag_almost_full_cnt;
+
+  always @(posedge clk)
+    if (~rst) mem_req_almost_full_cnt <= 32'b0;
+    else if (mem_req_wr_almost_full) mem_req_almost_full_cnt <= mem_req_almost_full_cnt + 32'd1;
+
+  always @(posedge clk)
+    if (~rst) tag_almost_full_cnt <= 32'b0;
+    else if (tag_wr_almost_full) tag_almost_full_cnt <= tag_almost_full_cnt + 32'd1;
 
   /* Fase 7a debug (2026-08-22): live snapshot register -- declared here,
    * driven further down (after vbuf_holdoff's own declaration, which Icarus

@@ -380,6 +380,15 @@ module mpeg2fpga_apb_peripheral (
   wire [31:0]  fwd_service_cnt_internal;
   wire [31:0]  bwd_service_cnt_internal;
   wire [31:0]  idle_cnt_internal;
+  wire [31:0]  vld_en_cnt_internal;
+  wire [31:0]  vld_stall_rld_cnt_internal;
+  wire [31:0]  vld_stall_motcomp_cnt_internal;
+  wire [31:0]  fwd_addr_empty_cnt_internal;
+  wire [31:0]  fwd_dta_stall_cnt_internal;
+  wire [31:0]  bwd_addr_empty_cnt_internal;
+  wire [31:0]  bwd_dta_stall_cnt_internal;
+  wire [31:0]  mem_req_almost_full_cnt_internal;
+  wire [31:0]  tag_almost_full_cnt_internal;
   wire [31:0]  arbiter_flags_internal;
   wire [31:0]  mem_res_valid_cnt_internal;
   wire [21:0]  dbg_last_write_addr_from_fifo_internal;
@@ -472,6 +481,15 @@ module mpeg2fpga_apb_peripheral (
       .fwd_service_cnt(fwd_service_cnt_internal),
       .bwd_service_cnt(bwd_service_cnt_internal),
       .idle_cnt(idle_cnt_internal),
+      .vld_en_cnt(vld_en_cnt_internal),
+      .vld_stall_rld_cnt(vld_stall_rld_cnt_internal),
+      .vld_stall_motcomp_cnt(vld_stall_motcomp_cnt_internal),
+      .fwd_addr_empty_cnt(fwd_addr_empty_cnt_internal),
+      .fwd_dta_stall_cnt(fwd_dta_stall_cnt_internal),
+      .bwd_addr_empty_cnt(bwd_addr_empty_cnt_internal),
+      .bwd_dta_stall_cnt(bwd_dta_stall_cnt_internal),
+      .mem_req_almost_full_cnt(mem_req_almost_full_cnt_internal),
+      .tag_almost_full_cnt(tag_almost_full_cnt_internal),
       .arbiter_flags(arbiter_flags_combined),
       .mem_res_valid_cnt(mem_res_valid_cnt_internal),
 
@@ -562,6 +580,15 @@ module mpeg2fpga_apb_peripheral (
       .fwd_service_cnt(fwd_service_cnt_internal),
       .bwd_service_cnt(bwd_service_cnt_internal),
       .idle_cnt(idle_cnt_internal),
+      .vld_en_cnt(vld_en_cnt_internal),
+      .vld_stall_rld_cnt(vld_stall_rld_cnt_internal),
+      .vld_stall_motcomp_cnt(vld_stall_motcomp_cnt_internal),
+      .fwd_addr_empty_cnt(fwd_addr_empty_cnt_internal),
+      .fwd_dta_stall_cnt(fwd_dta_stall_cnt_internal),
+      .bwd_addr_empty_cnt(bwd_addr_empty_cnt_internal),
+      .bwd_dta_stall_cnt(bwd_dta_stall_cnt_internal),
+      .mem_req_almost_full_cnt(mem_req_almost_full_cnt_internal),
+      .tag_almost_full_cnt(tag_almost_full_cnt_internal),
       .arbiter_flags(arbiter_flags_internal),
       .mem_res_valid_cnt(mem_res_valid_cnt_internal),
       .dbg_last_mem_req_wr_addr(dbg_last_mem_req_wr_addr_internal),

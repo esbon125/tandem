@@ -60,7 +60,10 @@ module mpeg2video(clk, mem_clk, dot_clk,
              testpoint_dip, testpoint_dip_en, testpoint,
              vbuf_wr_addr, vbuf_rd_addr,                                                                                        // clocked with clk; Fase 7a debug
              disp_service_cnt, vbr_service_cnt, vbr_starved_cnt, write_service_cnt,               // clocked with clk; Fase 7a/8b debug
-             fwd_service_cnt, bwd_service_cnt, idle_cnt, arbiter_flags,
+             fwd_service_cnt, bwd_service_cnt, idle_cnt,
+             fwd_addr_empty_cnt, fwd_dta_stall_cnt, bwd_addr_empty_cnt, bwd_dta_stall_cnt,
+             mem_req_almost_full_cnt, tag_almost_full_cnt, arbiter_flags,
+             vld_en_cnt, vld_stall_rld_cnt, vld_stall_motcomp_cnt,               // clocked with clk; Fase 8c debug
              mem_res_valid_cnt, dbg_last_mem_req_wr_addr, vld_dbg, getbits_dbg,
              dbg_first_mem_res, dbg_first_vbr_wr, vbuf_read_fifo_dbg,                                                              // clocked with clk; Fase 7a debug
              dbg_mem_req_wr_push_cnt, dbg_mem_req_rd_pop_cnt                                                                    // push_cnt clocked with clk, pop_cnt with mem_clk
@@ -82,7 +85,10 @@ module mpeg2video(ref_clk, clk_out, mem_clk_out, mem_rst_out, core_rst_out,
              testpoint_dip, testpoint_dip_en, testpoint,
              vbuf_wr_addr, vbuf_rd_addr,                                                                                        // clocked with clk; Fase 7a debug
              disp_service_cnt, vbr_service_cnt, vbr_starved_cnt, write_service_cnt,               // clocked with clk; Fase 7a/8b debug
-             fwd_service_cnt, bwd_service_cnt, idle_cnt, arbiter_flags,
+             fwd_service_cnt, bwd_service_cnt, idle_cnt,
+             fwd_addr_empty_cnt, fwd_dta_stall_cnt, bwd_addr_empty_cnt, bwd_dta_stall_cnt,
+             mem_req_almost_full_cnt, tag_almost_full_cnt, arbiter_flags,
+             vld_en_cnt, vld_stall_rld_cnt, vld_stall_motcomp_cnt,               // clocked with clk; Fase 8c debug
              mem_res_valid_cnt, dbg_last_mem_req_wr_addr, vld_dbg, getbits_dbg,
              dbg_first_mem_res, dbg_first_vbr_wr, vbuf_read_fifo_dbg,                                                              // clocked with clk; Fase 7a debug
              dbg_mem_req_wr_push_cnt, dbg_mem_req_rd_pop_cnt                                                                    // push_cnt clocked with clk, pop_cnt with mem_clk
@@ -180,6 +186,12 @@ module mpeg2video(ref_clk, clk_out, mem_clk_out, mem_rst_out, core_rst_out,
   output      [31:0]fwd_service_cnt;
   output      [31:0]bwd_service_cnt;
   output      [31:0]idle_cnt;
+  output      [31:0]fwd_addr_empty_cnt;
+  output      [31:0]fwd_dta_stall_cnt;
+  output      [31:0]bwd_addr_empty_cnt;
+  output      [31:0]bwd_dta_stall_cnt;
+  output      [31:0]mem_req_almost_full_cnt;
+  output      [31:0]tag_almost_full_cnt;
   output      [31:0]arbiter_flags;
   output      [31:0]mem_res_valid_cnt;
   output      [21:0]dbg_last_mem_req_wr_addr;
@@ -659,6 +671,42 @@ always @(posedge mem_clk)
 
 always @(posedge dot_clk)
     cnt_dot <= cnt_dot + 1;
+
+  /* 2026-09-07 (Fase 8c): docs/bringup 43 found the memory arbiter idle 90%
+   * of the time after both read and write pipelining -- the bottleneck
+   * moved upstream, into this module's own compute pipeline. getbits.v's
+   * vld_en is the single signal gating whether the VLD may advance at all:
+   *   vld_en = (next==STATE_READY) && ~wait_state && ~rld_wr_almost_full
+   *            && ~mvec_wr_almost_full && ~motcomp_busy
+   * -- i.e. VLD stalls for one of four reasons: getbits itself not ready
+   * (bitstream/alignment side, already known small from vbr_starved_cnt),
+   * the rld/iquant/idct reconstruction chain backed up, the motion-vector
+   * queue to motcomp backed up, or motcomp itself busy (its own input fifo
+   * full -- meaning ITS reconstruction, not memory: fwd/bwd reference reads
+   * are already known small, ~3% combined, from mem_res_valid_cnt/
+   * fwd_service_cnt/bwd_service_cnt). Only 3 APB debug addresses remain
+   * (0x3d-0x3f, PADDR/apb_addr_r is 6 bits -- see apb3_mpeg2fpga_bridge.v),
+   * so this measures VLD's own active fraction plus the two most
+   * architecturally likely culprits (reconstruction backpressure, motcomp
+   * busy) rather than a complete breakdown; mvec_wr_almost_full and the
+   * getbits/wait_state case are left to be inferred as whatever remainder
+   * these three don't account for, same wall-clock-relative-estimate
+   * caveat as every other counter this session. */
+  output reg [31:0] vld_en_cnt;
+  output reg [31:0] vld_stall_rld_cnt;
+  output reg [31:0] vld_stall_motcomp_cnt;
+
+  always @(posedge clk)
+    if (~sync_rst) vld_en_cnt <= 32'b0;
+    else if (vld_en) vld_en_cnt <= vld_en_cnt + 32'd1;
+
+  always @(posedge clk)
+    if (~sync_rst) vld_stall_rld_cnt <= 32'b0;
+    else if (~vld_en && rld_wr_almost_full) vld_stall_rld_cnt <= vld_stall_rld_cnt + 32'd1;
+
+  always @(posedge clk)
+    if (~sync_rst) vld_stall_motcomp_cnt <= 32'b0;
+    else if (~vld_en && motcomp_busy) vld_stall_motcomp_cnt <= vld_stall_motcomp_cnt + 32'd1;
 
   /* 2026-08-27 clock/reset liveness debug: dbg_mem_req_rd_pop_cnt reads 0
    * on real hardware even with both mem_req_rd_en root causes fixed and
@@ -1525,6 +1573,12 @@ always @(posedge dot_clk)
     .fwd_service_cnt(fwd_service_cnt),
     .bwd_service_cnt(bwd_service_cnt),
     .idle_cnt(idle_cnt),
+    .fwd_addr_empty_cnt(fwd_addr_empty_cnt),
+    .fwd_dta_stall_cnt(fwd_dta_stall_cnt),
+    .bwd_addr_empty_cnt(bwd_addr_empty_cnt),
+    .bwd_dta_stall_cnt(bwd_dta_stall_cnt),
+    .mem_req_almost_full_cnt(mem_req_almost_full_cnt),
+    .tag_almost_full_cnt(tag_almost_full_cnt),
     .arbiter_flags(arbiter_flags_framestore),
     .mem_res_valid_cnt(mem_res_valid_cnt),
     .dbg_last_mem_req_wr_addr(dbg_last_mem_req_wr_addr),

@@ -142,6 +142,8 @@ module framestore(rst, clk, mem_clk, mem_rst,
                   vbuf_wr_addr, vbuf_rd_addr,
                   disp_service_cnt, vbr_service_cnt, vbr_starved_cnt,
                   write_service_cnt, fwd_service_cnt, bwd_service_cnt, idle_cnt,
+                  fwd_addr_empty_cnt, fwd_dta_stall_cnt, bwd_addr_empty_cnt, bwd_dta_stall_cnt,
+                  mem_req_almost_full_cnt, tag_almost_full_cnt,
                   arbiter_flags, mem_res_valid_cnt, dbg_last_mem_req_wr_addr,
                   dbg_mem_req_wr_push_cnt, dbg_mem_req_rd_pop_cnt
                   );
@@ -251,6 +253,12 @@ module framestore(rst, clk, mem_clk, mem_rst,
   output      [31:0]fwd_service_cnt;
   output      [31:0]bwd_service_cnt;
   output      [31:0]idle_cnt;
+  output      [31:0]fwd_addr_empty_cnt;
+  output      [31:0]fwd_dta_stall_cnt;
+  output      [31:0]bwd_addr_empty_cnt;
+  output      [31:0]bwd_dta_stall_cnt;
+  output      [31:0]mem_req_almost_full_cnt;
+  output      [31:0]tag_almost_full_cnt;
   output      [31:0]arbiter_flags;
   output      [31:0]mem_res_valid_cnt;
   output      [21:0]dbg_last_mem_req_wr_addr;
@@ -393,6 +401,12 @@ module framestore(rst, clk, mem_clk, mem_rst,
     .fwd_service_cnt(fwd_service_cnt),
     .bwd_service_cnt(bwd_service_cnt),
     .idle_cnt(idle_cnt),
+    .fwd_addr_empty_cnt(fwd_addr_empty_cnt),
+    .fwd_dta_stall_cnt(fwd_dta_stall_cnt),
+    .bwd_addr_empty_cnt(bwd_addr_empty_cnt),
+    .bwd_dta_stall_cnt(bwd_dta_stall_cnt),
+    .mem_req_almost_full_cnt(mem_req_almost_full_cnt),
+    .tag_almost_full_cnt(tag_almost_full_cnt),
     .arbiter_flags(arbiter_flags),
     .dbg_last_mem_req_wr_addr(dbg_last_mem_req_wr_addr)
     );
