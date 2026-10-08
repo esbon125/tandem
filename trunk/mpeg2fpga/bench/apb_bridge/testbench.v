@@ -12,6 +12,7 @@
  */
 
 `include "timescale.v"
+`include "build_id.v"
 
 /* PCLK at 50 MHz (typical fabric/APB clock) */
 `define PCLK_PERIOD 20.0
@@ -74,6 +75,13 @@ module testbench ();
   reg [255:0] vbuf_read_fifo_dbg;
   reg   [7:0] dbg_mem_req_rd_pop_cnt;
   wire        core_enable;
+  reg  [31:0] fwd_addr_empty_cnt, fwd_dta_stall_cnt, bwd_addr_empty_cnt, bwd_dta_stall_cnt;
+  reg  [31:0] mem_req_almost_full_cnt, tag_almost_full_cnt;
+  reg  [31:0] predict_err_almost_full_cnt, rld_stall_predict_err_cnt;
+  wire        dma_no_pad;
+  reg         picture_out;
+  reg   [2:0] picture_out_frame;
+  wire        picture_irq;
 
   integer     errors;
   integer     checks;
@@ -87,7 +95,13 @@ module testbench ();
       .reg_addr(reg_addr), .reg_wr_en(reg_wr_en), .reg_dta_in(reg_dta_in),
       .reg_rd_en(reg_rd_en), .reg_dta_out(reg_dta_out),
       .busy(busy), .stream_data(stream_data), .stream_valid(stream_valid),
-      .dma_start(dma_start), .dma_addr(dma_addr), .dma_len(dma_len),
+      .dma_start(dma_start), .dma_addr(dma_addr), .dma_len(dma_len), .dma_no_pad(dma_no_pad),
+      .picture_out(picture_out), .picture_out_frame(picture_out_frame), .picture_irq(picture_irq),
+      .fwd_addr_empty_cnt(fwd_addr_empty_cnt), .fwd_dta_stall_cnt(fwd_dta_stall_cnt),
+      .bwd_addr_empty_cnt(bwd_addr_empty_cnt), .bwd_dta_stall_cnt(bwd_dta_stall_cnt),
+      .mem_req_almost_full_cnt(mem_req_almost_full_cnt), .tag_almost_full_cnt(tag_almost_full_cnt),
+      .predict_err_almost_full_cnt(predict_err_almost_full_cnt),
+      .rld_stall_predict_err_cnt(rld_stall_predict_err_cnt),
       .dma_busy(dma_busy), .dma_done(dma_done), .dma_bytes_done(dma_bytes_done),
       .vbuf_wr_addr(vbuf_wr_addr), .vbuf_rd_addr(vbuf_rd_addr),
       .disp_service_cnt(disp_service_cnt), .vbr_service_cnt(vbr_service_cnt),
@@ -176,7 +190,26 @@ module testbench ();
     dbg_first_vbr_wr  = 64'hEEEE5555_FFFF6666;
     getbits_dbg = {32'h55550005, 32'h44440004, 32'h33330003, 32'h22220002, 32'h11110001, 32'h00000000};
     dbg_mem_req_rd_pop_cnt = 8'b0;
+    fwd_addr_empty_cnt = 32'h31310031;  fwd_dta_stall_cnt = 32'h32320032;
+    bwd_addr_empty_cnt = 32'h33330033;  bwd_dta_stall_cnt = 32'h34340034;
+    mem_req_almost_full_cnt = 32'h35350035;  tag_almost_full_cnt = 32'h36360036;
+    predict_err_almost_full_cnt = 32'h37370037;  rld_stall_predict_err_cnt = 32'h38380038;
+    picture_out = 1'b0;
+    picture_out_frame = 3'd0;
   end
+
+  /* one picture_out pulse, the way mpeg2video.v's tap produces it */
+  task pulse_picture;
+    input [2:0] frame;
+    begin
+      @(posedge core_clk);
+      picture_out       <= 1'b1;
+      picture_out_frame <= frame;
+      @(posedge core_clk);
+      picture_out       <= 1'b0;
+      repeat (2) @(posedge core_clk);
+    end
+  endtask
 
   /* APB3 master BFM: one full write or read transfer, polling PREADY.
    * The #1 after every @(posedge PCLK) avoids a race against the DUT's own
@@ -640,43 +673,71 @@ module testbench ();
     apb_transfer(1'b0, 6'h2a, 32'b0, rdata);
     check_eq("GB_DBG5 returns getbits_dbg word 5", rdata, 32'h55550005);
 
-    /* 2026-09-05: the three read-return-path probes (0x2b-0x30), each a
-     * 64-bit word split low/high. dbg_first_rdata crosses mem_clk->core_clk
-     * through a 2-FF synchroniser, so give it a few core_clk cycles to
-     * propagate before reading -- the other two are core_clk already. */
-    repeat (8) @(posedge core_clk);
+    /* 2026-10-08: 0x2b-0x2e were the first-beat read-return probes
+     * (RDATA/MEMRES); now BUILD_VERSION, BUILD_GIT, PIC_IRQ and a reserved
+     * word. 0x2f/0x30 (first vbuf_read_fifo word) are unchanged. */
     apb_transfer(1'b0, 6'h2b, 32'b0, rdata);
-    check_eq("first AXI RDATA low word", rdata, 32'hBBBB2222);
+    check_eq("BUILD_VERSION is build_id.v's placeholder", rdata, `MPEG2FPGA_BUILD_VERSION);
     apb_transfer(1'b0, 6'h2c, 32'b0, rdata);
-    check_eq("first AXI RDATA high word", rdata, 32'hAAAA1111);
-    apb_transfer(1'b0, 6'h2d, 32'b0, rdata);
-    check_eq("first mem_response word low", rdata, 32'hDDDD4444);
+    check_eq("BUILD_GIT is build_id.v's placeholder", rdata, `MPEG2FPGA_BUILD_GIT);
     apb_transfer(1'b0, 6'h2e, 32'b0, rdata);
-    check_eq("first mem_response word high", rdata, 32'hCCCC3333);
+    check_eq("0x2e is reserved and reads 0 (not aliased to regfile 0xe)", rdata, 32'h0);
     apb_transfer(1'b0, 6'h2f, 32'b0, rdata);
     check_eq("first vbuf_read_fifo word low", rdata, 32'hFFFF6666);
     apb_transfer(1'b0, 6'h30, 32'b0, rdata);
     check_eq("first vbuf_read_fifo word high", rdata, 32'hEEEE5555);
 
-    /* 2026-09-05: xfifo_sc's internals for vbuf_read_fifo (0x31-0x38), eight
-     * words behind an indexed part-select whose index relies on 3-bit
-     * wraparound at 0x38 -- check all eight, not just the ends. */
+    /* PIC_IRQ: [0] pending [1] enable [2] overrun [6:4] frame [31:16] count */
+    apb_transfer(1'b0, 6'h2d, 32'b0, rdata);
+    check_eq("PIC_IRQ after reset: all clear", rdata, 32'h0);
+    pulse_picture(3'd2);
+    apb_transfer(1'b0, 6'h2d, 32'b0, rdata);
+    check_eq("PIC_IRQ: picture while disabled is pending, frame 2, count 1",
+             rdata, 32'h0001_0021);
+    check_eq("picture_irq stays low while disabled", {31'b0, picture_irq}, 32'h0);
+    apb_transfer(1'b1, 6'h2d, 32'h2, rdata);       /* enable, no clear */
+    @(posedge core_clk);
+    check_eq("picture_irq rises once enabled with a picture pending", {31'b0, picture_irq}, 32'h1);
+    pulse_picture(3'd3);
+    apb_transfer(1'b0, 6'h2d, 32'b0, rdata);
+    check_eq("PIC_IRQ: second picture before ack sets overrun, frame 3, count 2",
+             rdata, 32'h0002_0037);
+    apb_transfer(1'b1, 6'h2d, 32'h3, rdata);       /* clear, keep enabled */
+    apb_transfer(1'b0, 6'h2d, 32'b0, rdata);
+    check_eq("PIC_IRQ: write-1-to-clear drops pending and overrun, keeps enable",
+             rdata, 32'h0002_0032);
+    check_eq("picture_irq low after clear", {31'b0, picture_irq}, 32'h0);
+    pulse_picture(3'd1);
+    check_eq("picture_irq rises on the next picture", {31'b0, picture_irq}, 32'h1);
+    apb_transfer(1'b1, 6'h2d, 32'h1, rdata);       /* clear and disable */
+    apb_transfer(1'b0, 6'h2d, 32'b0, rdata);
+    check_eq("PIC_IRQ: cleared and disabled", rdata, 32'h0003_0010);
+
+    /* DMA_CTRL bit 1 is no_pad, sampled with the start bit */
+    apb_transfer(1'b1, 6'h13, 32'h3, rdata);
+    check_eq("DMA_CTRL 0x3 latches no_pad", {31'b0, dma_no_pad}, 32'h1);
+    apb_transfer(1'b1, 6'h13, 32'h1, rdata);
+    check_eq("DMA_CTRL 0x1 clears no_pad", {31'b0, dma_no_pad}, 32'h0);
+
+    /* 0x31-0x38: Fase 8d/8e/9b counters, which took over SCFIFO_DBG's eight
+     * words (the old checks here still expected SCFIFO_DBG and had been
+     * failing since Fase 8f). */
     apb_transfer(1'b0, 6'h31, 32'b0, rdata);
-    check_eq("SCFIFO_DBG word 0", rdata, 32'h00000000);
+    check_eq("0x31 fwd_addr_empty_cnt", rdata, 32'h31310031);
     apb_transfer(1'b0, 6'h32, 32'b0, rdata);
-    check_eq("SCFIFO_DBG word 1", rdata, 32'h11110001);
+    check_eq("0x32 fwd_dta_stall_cnt", rdata, 32'h32320032);
     apb_transfer(1'b0, 6'h33, 32'b0, rdata);
-    check_eq("SCFIFO_DBG word 2", rdata, 32'h22220002);
+    check_eq("0x33 bwd_addr_empty_cnt", rdata, 32'h33330033);
     apb_transfer(1'b0, 6'h34, 32'b0, rdata);
-    check_eq("SCFIFO_DBG word 3", rdata, 32'h33330003);
+    check_eq("0x34 bwd_dta_stall_cnt", rdata, 32'h34340034);
     apb_transfer(1'b0, 6'h35, 32'b0, rdata);
-    check_eq("SCFIFO_DBG word 4", rdata, 32'h44440004);
+    check_eq("0x35 mem_req_almost_full_cnt", rdata, 32'h35350035);
     apb_transfer(1'b0, 6'h36, 32'b0, rdata);
-    check_eq("SCFIFO_DBG word 5", rdata, 32'h55550005);
+    check_eq("0x36 tag_almost_full_cnt", rdata, 32'h36360036);
     apb_transfer(1'b0, 6'h37, 32'b0, rdata);
-    check_eq("SCFIFO_DBG word 6", rdata, 32'h66660006);
+    check_eq("0x37 predict_err_almost_full_cnt", rdata, 32'h37370037);
     apb_transfer(1'b0, 6'h38, 32'b0, rdata);
-    check_eq("SCFIFO_DBG word 7 (index wraps)", rdata, 32'h77770007);
+    check_eq("0x38 rld_stall_predict_err_cnt", rdata, 32'h38380038);
 
     /* 0x22 must NOT reach the regfile any more. If it fell through, this
      * read would return the fake regfile's REG_RD_SIZE instead. */

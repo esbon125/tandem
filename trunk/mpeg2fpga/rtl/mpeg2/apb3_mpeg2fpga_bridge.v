@@ -96,9 +96,38 @@
  * gated-off core itself is doing, so nothing here can hang waiting on a
  * disabled core -- confirmed by inspection of the C_IDLE/C_READ_WAIT1/
  * C_READ_WAIT2/C_DONE sequence below, none of which waits on any signal
- * that only a running u_mpeg2 could produce. */
+ * that only a running u_mpeg2 could produce.
+ *
+ * 2026-10-08, product registers (protocol v1, api/PROTOCOL-v1.md on
+ * firmware_development). Three words in what was Fase 7a's first-beat debug
+ * (RDATA_LO/HI, MEMRES_LO/HI at 0x2b-0x2e, a resolved investigation that no
+ * software reads any more) -- the window is fixed at 0x00-0x3f, see the
+ * localparam block:
+ *
+ *   0x2b BUILD_VERSION (ro) {major[7:0], minor[7:0], patch[15:0]}
+ *   0x2c BUILD_GIT     (ro) {dirty, 3'b0, git short hash[27:0]}
+ *        Both come from build_id.v, which the Libero build script rewrites
+ *        in the project's own copy of the sources (the tree keeps a
+ *        placeholder), so a bitstream can say which release and commit it
+ *        was built from. The upstream core's version register (regfile
+ *        0x0) is mpeg2fpga's own and never changes between our releases.
+ *   0x2d PIC_IRQ (rw) picture-ready interrupt, see mpeg2video.v's
+ *        picture_out tap. Read: [0] pending, [1] enable, [2] overrun (a
+ *        picture arrived while pending was still set: software missed
+ *        one), [6:4] frame buffer of the latest picture, [31:16] free-
+ *        running picture count. Write: [1] enable, [0] write-1-to-clear
+ *        pending and overrun. picture_irq = pending & enable, ORed into the
+ *        peripheral's single interrupt line by mpeg2fpga_apb_peripheral.v.
+ *        enable resets to 0, so a driver that does not know this register
+ *        never sees it fire.
+ *   0x2e reserved, reads 0.
+ *
+ * And DMA_CTRL (0x13) bit 1, no_pad: start a transfer that is not the last
+ * chunk of its stream -- stream_dma.v skips the sequence_end padding (plan
+ * item 9, chunked streaming). */
 
 `include "timescale.v"
+`include "build_id.v"
 
 module apb3_mpeg2fpga_bridge (
     /* APB3 side: PCLK domain */
@@ -112,8 +141,12 @@ module apb3_mpeg2fpga_bridge (
     busy, stream_data, stream_valid,
 
     /* stream_dma.v side: core_clk domain, no CDC needed (see header) */
-    dma_start, dma_addr, dma_len,
+    dma_start, dma_addr, dma_len, dma_no_pad,
     dma_busy, dma_done, dma_bytes_done,
+
+    /* picture-ready tap from mpeg2video.v and the interrupt it raises,
+     * core_clk domain (see header comment) */
+    picture_out, picture_out_frame, picture_irq,
 
     /* Fase 7a debug (2026-08-21): mpeg2video's circular video buffer
      * addresses, core_clk domain like dma_addr/dma_len above -- read
@@ -201,6 +234,11 @@ module apb3_mpeg2fpga_bridge (
   output reg        dma_start;       /* 1-cycle pulse */
   output      [31:0]dma_addr;
   output      [31:0]dma_len;
+  output reg        dma_no_pad;      /* valid with dma_start: 1 = more chunks follow */
+
+  input             picture_out;       /* 1-cycle pulse: a finished picture went to display */
+  input        [2:0]picture_out_frame; /* its frame buffer */
+  output            picture_irq;       /* level, pending & enable */
   input             dma_busy;
   input             dma_done;        /* 1-cycle pulse */
   input       [31:0]dma_bytes_done;
@@ -289,8 +327,8 @@ module apb3_mpeg2fpga_bridge (
   /* 2026-09-05: three probes splitting the VBUF read return path, each a
    * 64-bit word over two addresses (low, high). See framestore.v and
    * mem2axi_bridge.v for what each captures and docs/bringup 34 for why. */
-  localparam [5:0] RDATA_LO_ADDR   = 6'h2b, RDATA_HI_ADDR   = 6'h2c,
-                   MEMRES_LO_ADDR  = 6'h2d, MEMRES_HI_ADDR  = 6'h2e,
+  localparam [5:0] BUILD_VERSION_ADDR = 6'h2b, BUILD_GIT_ADDR = 6'h2c,   /* 2026-10-08, were RDATA_LO/HI */
+                   PIC_IRQ_ADDR       = 6'h2d,                          /* 2026-10-08, was MEMRES_LO; 0x2e (MEMRES_HI) reserved */
                    VBRWR_LO_ADDR   = 6'h2f, VBRWR_HI_ADDR   = 6'h30;
   /* 2026-09-08 (Fase 8f): this whole 0x00-0x3f range is the peripheral's
    * ENTIRE APB address window -- FIC_3_PERIPHERALS.tcl connects it via a bif
@@ -581,10 +619,13 @@ module apb3_mpeg2fpga_bridge (
   wire is_vld_dbg3 = (apb_addr_r == VLD_DBG3_ADDR);
   wire is_gb_dbg = (apb_addr_r >= GB_DBG0_ADDR) && (apb_addr_r <= GB_DBG5_ADDR);
   wire [2:0] gb_dbg_idx = apb_addr_r[2:0] - GB_DBG0_ADDR[2:0];   /* 0..5 within the bundle */
-  wire is_rdata_lo  = (apb_addr_r == RDATA_LO_ADDR);
-  wire is_rdata_hi  = (apb_addr_r == RDATA_HI_ADDR);
-  wire is_memres_lo = (apb_addr_r == MEMRES_LO_ADDR);
-  wire is_memres_hi = (apb_addr_r == MEMRES_HI_ADDR);
+  wire is_build_version = (apb_addr_r == BUILD_VERSION_ADDR);
+  wire is_build_git     = (apb_addr_r == BUILD_GIT_ADDR);
+  wire is_pic_irq       = (apb_addr_r == PIC_IRQ_ADDR);
+  /* must be decoded here: an undecoded index falls through to the regfile
+   * path below, which only looks at apb_addr_r[3:0] -- 0x2e would read the
+   * core's register 0xe instead of 0 */
+  wire is_reserved_2e   = (apb_addr_r == 6'h2e);
   wire is_vbrwr_lo  = (apb_addr_r == VBRWR_LO_ADDR);
   wire is_vbrwr_hi  = (apb_addr_r == VBRWR_HI_ADDR);
   wire is_predict_err_almost_full_cnt = (apb_addr_r == PREDICT_ERR_ALMOST_FULL_CNT_ADDR);
@@ -604,6 +645,42 @@ module apb3_mpeg2fpga_bridge (
   wire is_tag_almost_full_cnt = (apb_addr_r == TAG_ALMOST_FULL_CNT_ADDR);
   wire is_core_enable = (apb_addr_r == CORE_ENABLE_ADDR);
 
+  /* PIC_IRQ (0x2d), see header comment. Kept out of the big C_IDLE block
+   * because the hardware side (picture_out) must be able to set pending on
+   * any cycle; the APB write is decoded here from the same
+   * req_toggle_sync/req_toggle_seen edge C_IDLE acts on. A picture landing on
+   * the very cycle software clears pending wins: the new picture stays
+   * pending rather than being lost. */
+  reg        pic_pending, pic_irq_en, pic_overrun;
+  reg  [2:0] pic_frame;
+  reg [15:0] pic_count;
+  wire pic_irq_write = (core_state == C_IDLE) && (req_toggle_sync != req_toggle_seen)
+                       && is_pic_irq && apb_write_r;
+
+  always @(posedge core_clk or negedge core_rst_n) begin
+    if (!core_rst_n) begin
+      pic_pending <= 1'b0;
+      pic_irq_en  <= 1'b0;
+      pic_overrun <= 1'b0;
+      pic_frame   <= 3'd0;
+      pic_count   <= 16'd0;
+    end else begin
+      if (pic_irq_write) pic_irq_en <= apb_wdata_r[1];
+      if (picture_out) begin
+        pic_frame   <= picture_out_frame;
+        pic_count   <= pic_count + 16'd1;
+        pic_pending <= 1'b1;
+        /* a clear on this same cycle acknowledged everything before it */
+        pic_overrun <= (pic_irq_write && apb_wdata_r[0]) ? 1'b0 : (pic_overrun | pic_pending);
+      end else if (pic_irq_write && apb_wdata_r[0]) begin
+        pic_pending <= 1'b0;
+        pic_overrun <= 1'b0;
+      end
+    end
+  end
+
+  assign picture_irq = pic_pending & pic_irq_en;
+
   always @(posedge core_clk or negedge core_rst_n) begin
     if (!core_rst_n) begin
       core_state      <= C_IDLE;
@@ -618,6 +695,7 @@ module apb3_mpeg2fpga_bridge (
       dma_addr_r      <= 32'b0;
       dma_len_r       <= 32'b0;
       dma_start       <= 1'b0;
+      dma_no_pad      <= 1'b0;
       dma_done_sticky <= 1'b0;
       pwdata_sticky_meta <= 32'b0;
       pwdata_sticky_sync <= 32'b0;
@@ -674,6 +752,7 @@ module apb3_mpeg2fpga_bridge (
             end else if (is_dma_ctrl) begin
               if (apb_write_r && apb_wdata_r[0] && !dma_busy) begin
                 dma_start       <= 1'b1;
+                dma_no_pad      <= apb_wdata_r[1];
                 dma_done_sticky <= 1'b0;
               end
               core_state <= C_DONE;
@@ -801,17 +880,19 @@ module apb3_mpeg2fpga_bridge (
               if (!apb_write_r)
                 rdata_hold <= getbits_dbg[{gb_dbg_idx, 5'b0} +: 32];
               core_state <= C_DONE;
-            end else if (is_rdata_lo) begin
-              if (!apb_write_r) rdata_hold <= dbg_first_rdata_sync[31:0];
+            end else if (is_build_version) begin
+              if (!apb_write_r) rdata_hold <= `MPEG2FPGA_BUILD_VERSION;
               core_state <= C_DONE;
-            end else if (is_rdata_hi) begin
-              if (!apb_write_r) rdata_hold <= dbg_first_rdata_sync[63:32];
+            end else if (is_build_git) begin
+              if (!apb_write_r) rdata_hold <= `MPEG2FPGA_BUILD_GIT;
               core_state <= C_DONE;
-            end else if (is_memres_lo) begin
-              if (!apb_write_r) rdata_hold <= dbg_first_mem_res[31:0];
+            end else if (is_reserved_2e) begin
+              if (!apb_write_r) rdata_hold <= 32'b0;
               core_state <= C_DONE;
-            end else if (is_memres_hi) begin
-              if (!apb_write_r) rdata_hold <= dbg_first_mem_res[63:32];
+            end else if (is_pic_irq) begin
+              /* the write side lives in the picture-irq always block below */
+              if (!apb_write_r)
+                rdata_hold <= {pic_count, 9'b0, pic_frame, 1'b0, pic_overrun, pic_irq_en, pic_pending};
               core_state <= C_DONE;
             end else if (is_vbrwr_lo) begin
               if (!apb_write_r) rdata_hold <= dbg_first_vbr_wr[31:0];

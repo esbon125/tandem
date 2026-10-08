@@ -72,7 +72,7 @@ module testbench_wedge ();
 
   stream_dma #(.STAGING_BASE(38'h0), .BURST_BEATS(5'd16)) dut (
       .clk(clk), .rst_n(dut_rst_n), .watchdog_rst(dut_watchdog_rst),
-      .start(start), .addr(addr), .len(len),
+      .start(start), .addr(addr), .len(len), .no_pad(1'b0),
       .busy(busy), .done(done), .bytes_done(bytes_done),
       .mpeg_busy(mpeg_busy),
       .stream_data(stream_data), .stream_valid(stream_valid),

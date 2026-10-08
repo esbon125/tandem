@@ -67,7 +67,8 @@ module mpeg2video(clk, mem_clk, dot_clk,
              predict_err_almost_full_cnt, rld_stall_predict_err_cnt,           // clocked with clk; Fase 9b debug
              mem_res_valid_cnt, dbg_last_mem_req_wr_addr, vld_dbg, getbits_dbg,
              dbg_first_mem_res, dbg_first_vbr_wr, vbuf_read_fifo_dbg,                                                              // clocked with clk; Fase 7a debug
-             dbg_mem_req_wr_push_cnt, dbg_mem_req_rd_pop_cnt                                                                    // push_cnt clocked with clk, pop_cnt with mem_clk
+             dbg_mem_req_wr_push_cnt, dbg_mem_req_rd_pop_cnt,                                                                   // push_cnt clocked with clk, pop_cnt with mem_clk
+             picture_out, picture_out_frame                                                                                      // clocked with clk; 2026-10-08 picture-ready tap
 	     );
 
   input            clk;                     // clock. Typically a multiple of 27 Mhz as MPEG2 timestamps have a 27 Mhz resolution.
@@ -93,7 +94,8 @@ module mpeg2video(ref_clk, clk_out, mem_clk_out, mem_rst_out, core_rst_out,
              predict_err_almost_full_cnt, rld_stall_predict_err_cnt,           // clocked with clk; Fase 9b debug
              mem_res_valid_cnt, dbg_last_mem_req_wr_addr, vld_dbg, getbits_dbg,
              dbg_first_mem_res, dbg_first_vbr_wr, vbuf_read_fifo_dbg,                                                              // clocked with clk; Fase 7a debug
-             dbg_mem_req_wr_push_cnt, dbg_mem_req_rd_pop_cnt                                                                    // push_cnt clocked with clk, pop_cnt with mem_clk
+             dbg_mem_req_wr_push_cnt, dbg_mem_req_rd_pop_cnt,                                                                   // push_cnt clocked with clk, pop_cnt with mem_clk
+             picture_out, picture_out_frame                                                                                      // clocked with clk; 2026-10-08 picture-ready tap
 	     );
 
   input            ref_clk;
@@ -745,6 +747,42 @@ always @(posedge dot_clk)
   always @(posedge clk)
     if (~sync_rst) rld_stall_predict_err_cnt <= 32'b0;
     else if (~vld_en && rld_wr_almost_full && idct_fifo_almost_full) rld_stall_predict_err_cnt <= rld_stall_predict_err_cnt + 32'd1;
+
+  /* 2026-10-08: picture-ready tap, read-only. picture_out pulses for one clk
+   * cycle when motcomp_picbuf hands a finished frame to the display path,
+   * i.e. on the rising edge of output_frame_valid; picture_out_frame is the
+   * frame store buffer (0..3) that holds it. That hand-off already happens in
+   * display order (motcomp_picbuf reorders I/P against B), which is exactly
+   * the order software wants frames in. Forced frames (source_select 4..7,
+   * trick mode "show buffer N") raise output_frame_valid too and are not
+   * decoded pictures, so they are masked out.
+   *
+   * This exists because none of the core's own interrupts mean "a picture is
+   * in the frame store": picture_hdr fires at the VLD before reconstruction,
+   * and frame_end is the display's vertical sync (doc/mpeg2fpga.txt 1.9).
+   * apb3_mpeg2fpga_bridge.v turns the pulse into a maskable interrupt. Only
+   * wires are read here; nothing in motcomp/resample changes. */
+  output reg       picture_out;
+  output reg  [2:0]picture_out_frame;
+  reg              output_frame_valid_d;
+
+  always @(posedge clk)
+    if (~sync_rst) output_frame_valid_d <= 1'b0;
+    else output_frame_valid_d <= output_frame_valid;
+
+  always @(posedge clk)
+    if (~sync_rst) begin
+      picture_out       <= 1'b0;
+      picture_out_frame <= 3'd0;
+    end else begin
+      picture_out       <= output_frame_valid && ~output_frame_valid_d && (source_select == 3'd0);
+      picture_out_frame <= output_frame;
+    end
+
+`ifdef __IVERILOG__
+  always @(posedge clk)
+    if (picture_out) $display("%m\tpicture_out: frame buffer %0d at %0t", picture_out_frame, $time);
+`endif
 
   /* 2026-08-27 clock/reset liveness debug: dbg_mem_req_rd_pop_cnt reads 0
    * on real hardware even with both mem_req_rd_en root causes fixed and
