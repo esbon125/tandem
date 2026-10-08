@@ -70,7 +70,11 @@ def main():
     deltas = {}
     for key in ("disp_service_cnt", "vbr_service_cnt", "vbr_starved_cnt",
                 "mem_res_valid_cnt", "write_service_cnt",
-                "fwd_service_cnt", "bwd_service_cnt", "idle_cnt"):
+                "fwd_service_cnt", "bwd_service_cnt", "idle_cnt",
+                "vld_en_cnt", "vld_stall_rld_cnt", "vld_stall_motcomp_cnt",
+                "fwd_addr_empty_cnt", "fwd_dta_stall_cnt",
+                "bwd_addr_empty_cnt", "bwd_dta_stall_cnt",
+                "mem_req_almost_full_cnt", "tag_almost_full_cnt"):
         # 32-bit free-running counters: handle a wraparound between reads.
         delta = (after[key] - before[key]) & 0xFFFFFFFF
         deltas[key] = delta

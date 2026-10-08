@@ -138,10 +138,26 @@
 #define MPEG2FPGA_B_ARBITER_FLAGS	0x1b	/* ro */
 #define MPEG2FPGA_B_MEM_RES_VALID_CNT	0x1c	/* ro: memory responses returned */
 #define MPEG2FPGA_B_CORE_ENABLE		0x20	/* rw: bit 0 releases the core from reset */
+/* 0x31-0x36: Fase 8d/8e debug counters, reusing SCFIFO_DBG's old eight
+ * words (that xfifo_sc RAM port-sharing bug is RESOLVED) -- see
+ * apb3_mpeg2fpga_bridge.v's Fase 8f header comment for why these are NOT at
+ * 0x40+: the peripheral's real APB window is fixed at 0x00-0x3f by
+ * FIC_3_PERIPHERALS.tcl's bif pin and both mpeg2fpga*.dts overlays, and an
+ * earlier attempt to put them at 0x40-0x45 read back silent zero on real
+ * hardware because those addresses never reach this bridge at all. */
+#define MPEG2FPGA_B_FWD_ADDR_EMPTY_CNT	0x31	/* ro: cycles the fwd reference-read address fifo was empty -- Fase 8d */
+#define MPEG2FPGA_B_FWD_DTA_STALL_CNT	0x32	/* ro: cycles a queued fwd address existed but the return data fifo was almost full -- Fase 8d */
+#define MPEG2FPGA_B_BWD_ADDR_EMPTY_CNT	0x33	/* ro: cycles the bwd reference-read address fifo was empty -- Fase 8d */
+#define MPEG2FPGA_B_BWD_DTA_STALL_CNT	0x34	/* ro: cycles a queued bwd address existed but the return data fifo was almost full -- Fase 8d */
+#define MPEG2FPGA_B_MEM_REQ_ALMOST_FULL_CNT 0x35 /* ro: cycles mem_req_wr_almost_full (arbiter's own outgoing queue to mem2axi_bridge) -- Fase 8e */
+#define MPEG2FPGA_B_TAG_ALMOST_FULL_CNT 0x36	/* ro: cycles tag_wr_almost_full (arbiter's own tag-routing queue) -- Fase 8e */
 #define MPEG2FPGA_B_WRITE_SERVICE_CNT	0x39	/* ro: cycles arbiter served a write (vbuf/recon/osd) -- Fase 8b */
 #define MPEG2FPGA_B_FWD_SERVICE_CNT	0x3a	/* ro: cycles arbiter served a forward motion-comp read -- Fase 8b follow-up */
 #define MPEG2FPGA_B_BWD_SERVICE_CNT	0x3b	/* ro: cycles arbiter served a backward motion-comp read -- Fase 8b follow-up */
 #define MPEG2FPGA_B_IDLE_CNT		0x3c	/* ro: cycles the arbiter had nothing ready to service -- Fase 8b follow-up */
+#define MPEG2FPGA_B_VLD_EN_CNT		0x3d	/* ro: cycles vld_en (VLD actively decoding) -- Fase 8c */
+#define MPEG2FPGA_B_VLD_STALL_RLD_CNT	0x3e	/* ro: cycles VLD stalled by rld/iquant/idct backpressure -- Fase 8c */
+#define MPEG2FPGA_B_VLD_STALL_MOTCOMP_CNT 0x3f	/* ro: cycles VLD stalled by motcomp busy -- Fase 8c */
 
 /* dma ctrl (0x13, write-only) */
 #define MPEG2FPGA_DMA_CTRL_START	BIT(0)

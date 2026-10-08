@@ -254,6 +254,15 @@ void mpeg2fpga_core_get_perf_counters(struct mpeg2fpga_core *core,
 	perf->fwd_service_cnt = mpeg2fpga_core_read(core, MPEG2FPGA_B_FWD_SERVICE_CNT);
 	perf->bwd_service_cnt = mpeg2fpga_core_read(core, MPEG2FPGA_B_BWD_SERVICE_CNT);
 	perf->idle_cnt = mpeg2fpga_core_read(core, MPEG2FPGA_B_IDLE_CNT);
+	perf->vld_en_cnt = mpeg2fpga_core_read(core, MPEG2FPGA_B_VLD_EN_CNT);
+	perf->vld_stall_rld_cnt = mpeg2fpga_core_read(core, MPEG2FPGA_B_VLD_STALL_RLD_CNT);
+	perf->vld_stall_motcomp_cnt = mpeg2fpga_core_read(core, MPEG2FPGA_B_VLD_STALL_MOTCOMP_CNT);
+	perf->fwd_addr_empty_cnt = mpeg2fpga_core_read(core, MPEG2FPGA_B_FWD_ADDR_EMPTY_CNT);
+	perf->fwd_dta_stall_cnt = mpeg2fpga_core_read(core, MPEG2FPGA_B_FWD_DTA_STALL_CNT);
+	perf->bwd_addr_empty_cnt = mpeg2fpga_core_read(core, MPEG2FPGA_B_BWD_ADDR_EMPTY_CNT);
+	perf->bwd_dta_stall_cnt = mpeg2fpga_core_read(core, MPEG2FPGA_B_BWD_DTA_STALL_CNT);
+	perf->mem_req_almost_full_cnt = mpeg2fpga_core_read(core, MPEG2FPGA_B_MEM_REQ_ALMOST_FULL_CNT);
+	perf->tag_almost_full_cnt = mpeg2fpga_core_read(core, MPEG2FPGA_B_TAG_ALMOST_FULL_CNT);
 }
 
 /* Read-modify-write MPEG2FPGA_W_TRICK_MODE against its shadow. */

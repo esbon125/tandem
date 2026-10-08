@@ -164,6 +164,52 @@ struct mpeg2fpga_geometry {
  *	known 108 MHz core clock -- there is still no software-readable
  *	free-running cycle counter), so it settles the fwd/bwd-vs-idle
  *	question without compounding that estimate's own rounding error.
+ * @vld_en_cnt: cycles getbits.v's vld_en is asserted, i.e. the VLD is
+ *	actually allowed to advance. Added once idle_cnt confirmed the
+ *	memory arbiter has plenty of headroom (docs/bringup 43) -- the
+ *	bottleneck moved upstream into this module's own compute pipeline,
+ *	which vld_en gates: `vld_en = ready && ~wait_state &&
+ *	~rld_wr_almost_full && ~mvec_wr_almost_full && ~motcomp_busy`.
+ * @vld_stall_rld_cnt: cycles VLD was stalled specifically because
+ *	rld_wr_almost_full (the rld/iquant/idct reconstruction chain backed
+ *	up) -- one of vld_en's four stall reasons.
+ * @vld_stall_motcomp_cnt: cycles VLD was stalled specifically because
+ *	motcomp_busy (motcomp's own input fifo full -- its reconstruction,
+ *	not memory: fwd/bwd reference reads are already known small).
+ *	mvec_wr_almost_full and the getbits/wait_state stall reason are left
+ *	to be inferred as whatever remainder these two plus @vld_en_cnt
+ *	don't account for.
+ * @fwd_addr_empty_cnt: cycles framestore_request.v's do_fwd had nothing to
+ *	service because the fwd reference-read address fifo was empty --
+ *	i.e. motcomp_addrgen.v/mem_addr.v (upstream of the memory arbiter
+ *	entirely) hadn't queued a forward-reference read yet. Added
+ *	(Fase 8d) to split @vld_stall_motcomp_cnt's "motcomp busy" finding
+ *	into two very different possible causes with two very different
+ *	fixes: address generation not keeping up (this counter), versus the
+ *	fetch pipeline not draining once addresses are queued
+ *	(@fwd_dta_stall_cnt below).
+ * @fwd_dta_stall_cnt: cycles a fwd address WAS queued (fifo non-empty) but
+ *	the arbiter withheld service anyway because the fwd return-data fifo
+ *	was almost full -- i.e. the consumer (motcomp_recon) isn't draining
+ *	fetched reference pixels fast enough.
+ * @bwd_addr_empty_cnt: same as @fwd_addr_empty_cnt, for STATE_BWD.
+ * @bwd_dta_stall_cnt: same as @fwd_dta_stall_cnt, for STATE_BWD.
+ * @mem_req_almost_full_cnt: cycles mem_req_wr_almost_full is asserted --
+ *	the arbiter's own outgoing queue toward mem2axi_bridge is nearly
+ *	full. Added (Fase 8e) after @fwd_addr_empty_cnt/@fwd_dta_stall_cnt
+ *	both came back exactly 0 on real hardware: do_fwd's first two AND
+ *	terms are essentially always satisfied, yet fwd is serviced only
+ *	~1% of the time and the arbiter sits idle ~94% of the time. This
+ *	and @tag_almost_full_cnt are the two remaining AND terms do_fwd (and
+ *	nearly every other request type) shares -- if either is asserted
+ *	almost all the time, it directly explains @idle_cnt and reverses the
+ *	Fase 8b reading that idle time meant memory headroom.
+ * @tag_almost_full_cnt: cycles tag_wr_almost_full is asserted -- the
+ *	arbiter's own tag-routing queue (mem_tag_fifo) is nearly full.
+ *	Measured on real hardware at 76.9%% of all cycles during a full
+ *	decode, dwarfing @mem_req_almost_full_cnt's 0.8%% -- mem_tag_fifo's
+ *	early-warning threshold (not mem_request_fifo's, not any data fifo,
+ *	not memory latency) was what actually gated nearly every read.
  */
 struct mpeg2fpga_perf_counters {
 	u32 disp_service_cnt;
@@ -174,6 +220,15 @@ struct mpeg2fpga_perf_counters {
 	u32 fwd_service_cnt;
 	u32 bwd_service_cnt;
 	u32 idle_cnt;
+	u32 vld_en_cnt;
+	u32 vld_stall_rld_cnt;
+	u32 vld_stall_motcomp_cnt;
+	u32 fwd_addr_empty_cnt;
+	u32 fwd_dta_stall_cnt;
+	u32 bwd_addr_empty_cnt;
+	u32 bwd_dta_stall_cnt;
+	u32 mem_req_almost_full_cnt;
+	u32 tag_almost_full_cnt;
 };
 
 void mpeg2fpga_core_init(struct mpeg2fpga_core *core,

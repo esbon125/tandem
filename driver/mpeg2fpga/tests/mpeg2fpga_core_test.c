@@ -326,6 +326,15 @@ static void mpeg2fpga_core_test_perf_counters(struct kunit *test)
 	ctx->fake.read_regs[MPEG2FPGA_B_FWD_SERVICE_CNT] = 666;
 	ctx->fake.read_regs[MPEG2FPGA_B_BWD_SERVICE_CNT] = 777;
 	ctx->fake.read_regs[MPEG2FPGA_B_IDLE_CNT] = 888;
+	ctx->fake.read_regs[MPEG2FPGA_B_VLD_EN_CNT] = 999;
+	ctx->fake.read_regs[MPEG2FPGA_B_VLD_STALL_RLD_CNT] = 1010;
+	ctx->fake.read_regs[MPEG2FPGA_B_VLD_STALL_MOTCOMP_CNT] = 1111;
+	ctx->fake.read_regs[MPEG2FPGA_B_FWD_ADDR_EMPTY_CNT] = 1212;
+	ctx->fake.read_regs[MPEG2FPGA_B_FWD_DTA_STALL_CNT] = 1313;
+	ctx->fake.read_regs[MPEG2FPGA_B_BWD_ADDR_EMPTY_CNT] = 1414;
+	ctx->fake.read_regs[MPEG2FPGA_B_BWD_DTA_STALL_CNT] = 1515;
+	ctx->fake.read_regs[MPEG2FPGA_B_MEM_REQ_ALMOST_FULL_CNT] = 1616;
+	ctx->fake.read_regs[MPEG2FPGA_B_TAG_ALMOST_FULL_CNT] = 1717;
 
 	mpeg2fpga_core_get_perf_counters(&ctx->core, &perf);
 
@@ -337,6 +346,15 @@ static void mpeg2fpga_core_test_perf_counters(struct kunit *test)
 	KUNIT_EXPECT_EQ(test, perf.fwd_service_cnt, 666u);
 	KUNIT_EXPECT_EQ(test, perf.bwd_service_cnt, 777u);
 	KUNIT_EXPECT_EQ(test, perf.idle_cnt, 888u);
+	KUNIT_EXPECT_EQ(test, perf.vld_en_cnt, 999u);
+	KUNIT_EXPECT_EQ(test, perf.vld_stall_rld_cnt, 1010u);
+	KUNIT_EXPECT_EQ(test, perf.vld_stall_motcomp_cnt, 1111u);
+	KUNIT_EXPECT_EQ(test, perf.fwd_addr_empty_cnt, 1212u);
+	KUNIT_EXPECT_EQ(test, perf.fwd_dta_stall_cnt, 1313u);
+	KUNIT_EXPECT_EQ(test, perf.bwd_addr_empty_cnt, 1414u);
+	KUNIT_EXPECT_EQ(test, perf.bwd_dta_stall_cnt, 1515u);
+	KUNIT_EXPECT_EQ(test, perf.mem_req_almost_full_cnt, 1616u);
+	KUNIT_EXPECT_EQ(test, perf.tag_almost_full_cnt, 1717u);
 }
 
 static void mpeg2fpga_core_test_frame_rate_table(struct kunit *test)

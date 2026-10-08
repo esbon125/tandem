@@ -468,11 +468,16 @@ static ssize_t perf_counters_show(struct device *dev,
 	 * one decode reads this twice and takes the delta.
 	 */
 	return sysfs_emit(buf,
-		"disp_service_cnt %u\nvbr_service_cnt %u\nvbr_starved_cnt %u\nmem_res_valid_cnt %u\nwrite_service_cnt %u\nfwd_service_cnt %u\nbwd_service_cnt %u\nidle_cnt %u\n",
+		"disp_service_cnt %u\nvbr_service_cnt %u\nvbr_starved_cnt %u\nmem_res_valid_cnt %u\nwrite_service_cnt %u\nfwd_service_cnt %u\nbwd_service_cnt %u\nidle_cnt %u\nvld_en_cnt %u\nvld_stall_rld_cnt %u\nvld_stall_motcomp_cnt %u\nfwd_addr_empty_cnt %u\nfwd_dta_stall_cnt %u\nbwd_addr_empty_cnt %u\nbwd_dta_stall_cnt %u\nmem_req_almost_full_cnt %u\ntag_almost_full_cnt %u\n",
 		perf.disp_service_cnt, perf.vbr_service_cnt,
 		perf.vbr_starved_cnt, perf.mem_res_valid_cnt,
 		perf.write_service_cnt, perf.fwd_service_cnt,
-		perf.bwd_service_cnt, perf.idle_cnt);
+		perf.bwd_service_cnt, perf.idle_cnt,
+		perf.vld_en_cnt, perf.vld_stall_rld_cnt,
+		perf.vld_stall_motcomp_cnt, perf.fwd_addr_empty_cnt,
+		perf.fwd_dta_stall_cnt, perf.bwd_addr_empty_cnt,
+		perf.bwd_dta_stall_cnt, perf.mem_req_almost_full_cnt,
+		perf.tag_almost_full_cnt);
 }
 static DEVICE_ATTR_RO(perf_counters);
 
