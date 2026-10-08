@@ -11,3 +11,4 @@ script_support/components/MSS/
 # same reasoning as the job/digest ignores above, just a whole directory of
 # them; see docs/bringup (docs branch) for the writeup, not these logs.
 backups/
+power_reports/
