@@ -138,7 +138,7 @@
 #define MPEG2FPGA_B_ARBITER_FLAGS	0x1b	/* ro */
 #define MPEG2FPGA_B_MEM_RES_VALID_CNT	0x1c	/* ro: memory responses returned */
 #define MPEG2FPGA_B_CORE_ENABLE		0x20	/* rw: bit 0 releases the core from reset */
-/* 0x31-0x36: Fase 8d/8e debug counters, reusing SCFIFO_DBG's old eight
+/* 0x31-0x38: Fase 8d/8e/9b debug counters, reusing SCFIFO_DBG's old eight
  * words (that xfifo_sc RAM port-sharing bug is RESOLVED) -- see
  * apb3_mpeg2fpga_bridge.v's Fase 8f header comment for why these are NOT at
  * 0x40+: the peripheral's real APB window is fixed at 0x00-0x3f by
@@ -151,6 +151,8 @@
 #define MPEG2FPGA_B_BWD_DTA_STALL_CNT	0x34	/* ro: cycles a queued bwd address existed but the return data fifo was almost full -- Fase 8d */
 #define MPEG2FPGA_B_MEM_REQ_ALMOST_FULL_CNT 0x35 /* ro: cycles mem_req_wr_almost_full (arbiter's own outgoing queue to mem2axi_bridge) -- Fase 8e */
 #define MPEG2FPGA_B_TAG_ALMOST_FULL_CNT 0x36	/* ro: cycles tag_wr_almost_full (arbiter's own tag-routing queue) -- Fase 8e */
+#define MPEG2FPGA_B_PREDICT_ERR_ALMOST_FULL_CNT 0x37 /* ro: cycles idct_fifo_almost_full (predict_err_fifo prog_full) -- Fase 9b */
+#define MPEG2FPGA_B_RLD_STALL_PREDICT_ERR_CNT 0x38 /* ro: cycles ~vld_en && rld_wr_almost_full && idct_fifo_almost_full -- Fase 9b */
 #define MPEG2FPGA_B_WRITE_SERVICE_CNT	0x39	/* ro: cycles arbiter served a write (vbuf/recon/osd) -- Fase 8b */
 #define MPEG2FPGA_B_FWD_SERVICE_CNT	0x3a	/* ro: cycles arbiter served a forward motion-comp read -- Fase 8b follow-up */
 #define MPEG2FPGA_B_BWD_SERVICE_CNT	0x3b	/* ro: cycles arbiter served a backward motion-comp read -- Fase 8b follow-up */

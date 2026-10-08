@@ -74,7 +74,8 @@ def main():
                 "vld_en_cnt", "vld_stall_rld_cnt", "vld_stall_motcomp_cnt",
                 "fwd_addr_empty_cnt", "fwd_dta_stall_cnt",
                 "bwd_addr_empty_cnt", "bwd_dta_stall_cnt",
-                "mem_req_almost_full_cnt", "tag_almost_full_cnt"):
+                "mem_req_almost_full_cnt", "tag_almost_full_cnt",
+                "predict_err_almost_full_cnt", "rld_stall_predict_err_cnt"):
         # 32-bit free-running counters: handle a wraparound between reads.
         delta = (after[key] - before[key]) & 0xFFFFFFFF
         deltas[key] = delta
@@ -95,6 +96,17 @@ def main():
     print()
     print("sum of arbiter-state counters: %d (%.1f%% of estimated total -- should be close to 100%%)" %
           (state_sum, pct))
+
+    # Fase 9b: what fraction of vld_stall_rld_cnt's own window coincides with
+    # predict_err_fifo also being nearly full -- high means rld_wr_almost_full
+    # is caused by motcomp_recon backpressure, low means rld/iquant/idct's
+    # own throughput is the limiter, independent of motcomp_recon.
+    rld_stall = deltas["vld_stall_rld_cnt"]
+    overlap = deltas["rld_stall_predict_err_cnt"]
+    overlap_pct = 100.0 * overlap / rld_stall if rld_stall else 0.0
+    print()
+    print("rld_stall_predict_err_cnt / vld_stall_rld_cnt: %d / %d (%.1f%% -- fraction of the rld stall explained by predict_err_fifo backpressure)" %
+          (overlap, rld_stall, overlap_pct))
 
 
 if __name__ == "__main__":

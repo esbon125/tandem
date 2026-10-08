@@ -263,6 +263,8 @@ void mpeg2fpga_core_get_perf_counters(struct mpeg2fpga_core *core,
 	perf->bwd_dta_stall_cnt = mpeg2fpga_core_read(core, MPEG2FPGA_B_BWD_DTA_STALL_CNT);
 	perf->mem_req_almost_full_cnt = mpeg2fpga_core_read(core, MPEG2FPGA_B_MEM_REQ_ALMOST_FULL_CNT);
 	perf->tag_almost_full_cnt = mpeg2fpga_core_read(core, MPEG2FPGA_B_TAG_ALMOST_FULL_CNT);
+	perf->predict_err_almost_full_cnt = mpeg2fpga_core_read(core, MPEG2FPGA_B_PREDICT_ERR_ALMOST_FULL_CNT);
+	perf->rld_stall_predict_err_cnt = mpeg2fpga_core_read(core, MPEG2FPGA_B_RLD_STALL_PREDICT_ERR_CNT);
 }
 
 /* Read-modify-write MPEG2FPGA_W_TRICK_MODE against its shadow. */

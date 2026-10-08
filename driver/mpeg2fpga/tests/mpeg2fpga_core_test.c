@@ -335,6 +335,8 @@ static void mpeg2fpga_core_test_perf_counters(struct kunit *test)
 	ctx->fake.read_regs[MPEG2FPGA_B_BWD_DTA_STALL_CNT] = 1515;
 	ctx->fake.read_regs[MPEG2FPGA_B_MEM_REQ_ALMOST_FULL_CNT] = 1616;
 	ctx->fake.read_regs[MPEG2FPGA_B_TAG_ALMOST_FULL_CNT] = 1717;
+	ctx->fake.read_regs[MPEG2FPGA_B_PREDICT_ERR_ALMOST_FULL_CNT] = 1818;
+	ctx->fake.read_regs[MPEG2FPGA_B_RLD_STALL_PREDICT_ERR_CNT] = 1919;
 
 	mpeg2fpga_core_get_perf_counters(&ctx->core, &perf);
 
@@ -355,6 +357,8 @@ static void mpeg2fpga_core_test_perf_counters(struct kunit *test)
 	KUNIT_EXPECT_EQ(test, perf.bwd_dta_stall_cnt, 1515u);
 	KUNIT_EXPECT_EQ(test, perf.mem_req_almost_full_cnt, 1616u);
 	KUNIT_EXPECT_EQ(test, perf.tag_almost_full_cnt, 1717u);
+	KUNIT_EXPECT_EQ(test, perf.predict_err_almost_full_cnt, 1818u);
+	KUNIT_EXPECT_EQ(test, perf.rld_stall_predict_err_cnt, 1919u);
 }
 
 static void mpeg2fpga_core_test_frame_rate_table(struct kunit *test)

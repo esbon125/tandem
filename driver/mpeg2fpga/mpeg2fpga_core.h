@@ -210,6 +210,31 @@ struct mpeg2fpga_geometry {
  *	decode, dwarfing @mem_req_almost_full_cnt's 0.8%% -- mem_tag_fifo's
  *	early-warning threshold (not mem_request_fifo's, not any data fifo,
  *	not memory latency) was what actually gated nearly every read.
+ *	Fase 9a raised MEMTAG_THRESHOLD in response (fifo_size.v), which cut
+ *	this to ~66%% on real hardware but did not change fps or
+ *	@vld_stall_rld_cnt/@vld_stall_motcomp_cnt's combined share --
+ *	i.e. the arbiter had headroom to spare all along, and relieving it
+ *	didn't help; see @predict_err_almost_full_cnt for where that pointed
+ *	next.
+ * @predict_err_almost_full_cnt: cycles idct_fifo_almost_full is asserted --
+ *	predict_err_fifo (idct.v's output, motcomp_recon's input) is nearly
+ *	full. Added (Fase 9b) after Fase 9a's fix moved @tag_almost_full_cnt
+ *	without moving fps, pointing the investigation downstream of the
+ *	memory arbiter entirely, into the reconstruction pipeline. rld.v
+ *	already wires idct_fifo_almost_full into its own internal stall
+ *	logic (independently of this driver); this just exposes that
+ *	existing signal for correlation against @vld_stall_rld_cnt.
+ * @rld_stall_predict_err_cnt: cycles ~vld_en && rld_wr_almost_full &&
+ *	idct_fifo_almost_full -- the overlap between @vld_stall_rld_cnt (VLD
+ *	stalled because rld_fifo is nearly full) and predict_err_fifo also
+ *	being nearly full at the same moment. Measured on real hardware at
+ *	78.4%% of @vld_stall_rld_cnt's own window -- i.e. rld_wr_almost_full
+ *	is itself mostly caused by motcomp_recon not draining
+ *	predict_err_fifo fast enough, not by rld/iquant/idct's own
+ *	processing throughput. Combined with @vld_stall_motcomp_cnt (motcomp
+ *	busy directly), this places the real bottleneck inside
+ *	motcomp_recon.v/motcomp.v's own reconstruction rate, not memory --
+ *	the memory arbiter's own counters above all show ample headroom.
  */
 struct mpeg2fpga_perf_counters {
 	u32 disp_service_cnt;
@@ -229,6 +254,8 @@ struct mpeg2fpga_perf_counters {
 	u32 bwd_dta_stall_cnt;
 	u32 mem_req_almost_full_cnt;
 	u32 tag_almost_full_cnt;
+	u32 predict_err_almost_full_cnt;
+	u32 rld_stall_predict_err_cnt;
 };
 
 void mpeg2fpga_core_init(struct mpeg2fpga_core *core,
