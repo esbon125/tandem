@@ -201,10 +201,69 @@ parameter
 /*
  * mem_tag_fifo. 3 bits wide.
  * Memory subsystem. Queues tags of read commands sent to the memory controller.
+ *
+ * 2026-09-08 (Fase 9a): MEMTAG_THRESHOLD used to just reuse MEM_THRESHOLD
+ * (=16) unchanged, the same constant MEMREQ_THRESHOLD uses for
+ * mem_request_fifo. But mem_request_fifo is MEMREQ_DEPTH=6 (64 entries) --
+ * twice as deep as mem_tag_fifo's own MEMTAG_DEPTH=5 (32 entries) -- so the
+ * same "16 free slots" reservation is a much more conservative fraction of
+ * capacity here: tag_wr_almost_full tripped at 16/32 occupancy (50% full),
+ * vs. mem_req_wr_almost_full tripping at 48/64 (75% full) for the fifo the
+ * constant was actually sized for.
+ *
+ * This mattered in practice, not just on paper: Fase 8c-8f (docs/bringup,
+ * hardware_development) instrumented framestore_request.v's arbiter on
+ * real hardware decoding tek60.bits and found tag_wr_almost_full asserted
+ * 76.9% of all core_clk cycles during a full decode, dwarfing
+ * mem_req_wr_almost_full's own 0.8% -- i.e. mem_tag_fifo's early-warning
+ * threshold, not mem_request_fifo's, not the fwd/bwd/disp/vbr address or
+ * data fifos (all comfortably underused per the same instrumentation), and
+ * not memory latency itself (a core-clock bump from 108 to 162 MHz changed
+ * nothing, ruling out a cycle-count-bound limit), was the thing actually
+ * gating do_disp/do_vbr/do_fwd/do_bwd nearly every cycle the arbiter sat
+ * idle. tag_wr_almost_full gates every read request type, so this single
+ * early trip point explains why the arbiter measured ~94% idle despite
+ * fwd/bwd address queues rarely being empty and their data fifos rarely
+ * being full.
+ *
+ * Fix: give mem_tag_fifo the same proportional margin OSD_THRESHOLD above
+ * already uses successfully for another 32-entry (2**5) fifo in this same
+ * file -- 8 free slots reserved (75% occupancy trip point) instead of 16
+ * (50%), letting up to 24 requests be in flight before backpressuring
+ * instead of 16.
+ *
+ * Why this is safe: per this file's own header comment above (and
+ * doc/mpeg2fpga.txt sec. 2.2.1), the number of memory requests ever "in
+ * flight" is bounded by mem_tag_fifo's DEPTH (2**MEMTAG_DEPTH = 32), not by
+ * its THRESHOLD -- the threshold only controls how early the early-warning
+ * fires, not the hard worst-case bound a downstream data fifo must
+ * tolerate. That worst case was already being planned for at the full
+ * 32-entry bound (DTA_THRESHOLD=64 for fwd/bwd/disp satisfies this file's
+ * own "always choose DTA_THRESHOLD > 2**MEMTAG_DEPTH" rule with a 2x
+ * margin: 64 > 32), so raising MEMTAG_THRESHOLD -- without touching
+ * MEMTAG_DEPTH -- changes nothing about that invariant: it still holds
+ * exactly as before. mem_request_fifo's own, separate almost-full gate
+ * (MEMREQ_THRESHOLD, unchanged) continues to protect it independently of
+ * this change, and mem_response_fifo's threshold (64 of 128, i.e. 64 free
+ * slots reserved) has ample headroom against the new worst case of 24
+ * outstanding tags (still well under mem_tag_fifo's own 32-entry hard
+ * limit). vbr's own reader depth/threshold were not independently
+ * re-verified here, but vbr's measured share of arbitration in the same
+ * hardware run was negligible (vbr_service_cnt 0.1%, vbr_starved_cnt 0.9%)
+ * -- it is not the binding constraint this change is targeting.
+ *
+ * Expected effect: more requests allowed in flight before the arbiter
+ * backpressures every reader, which should reduce idle_cnt and increase
+ * fwd_service_cnt/bwd_service_cnt/disp_service_cnt's share of cycles.
+ * Whether that actually moves the needle on decode fps (vs. shifting the
+ * bottleneck elsewhere, e.g. back to vld_stall_motcomp_cnt/
+ * vld_stall_rld_cnt) is exactly what needs to be re-measured on real
+ * hardware after this change -- see profile_decode.py's tag_almost_full_cnt/
+ * idle_cnt/fps output.
  */
 
   MEMTAG_DEPTH      = 9'd5,
-  MEMTAG_THRESHOLD  = MEM_THRESHOLD,
+  MEMTAG_THRESHOLD  = 9'd8, /* was MEM_THRESHOLD (16) -- see comment above */
 
 /*
  * mem_response_fifo. 64 bits wide.
