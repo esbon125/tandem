@@ -288,8 +288,12 @@ project_settings -abort_flow_on_sdc_errors {FALSE}
 # when cutting a release). Dirty = uncommitted changes to tracked files under
 # trunk/mpeg2fpga (untracked files ignored): such a bitstream is not
 # reproducible from its hash and says so.
+# Only when synthesizing: that is the step that reads it. Stamping on a later
+# step (PLACEROUTE, EXPORT_FPE...) after new commits would rewrite the copy
+# with a hash the netlist was not built from, and could make Libero consider
+# synthesis out of date.
 set build_id_copy "$project_dir/hdl/build_id.v"
-if {[file exists $build_id_copy]} {
+if {[info exists SYNTHESIZE] && [file exists $build_id_copy]} {
     if {[catch {
         set git_hash [string trim [exec git -C $local_dir rev-parse --short=7 HEAD]]
         set git_dirty [string length [string trim [exec git -C $local_dir/.. status --porcelain --untracked-files=no -- .]]]
