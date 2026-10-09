@@ -1,39 +1,45 @@
 name: Release
 
-# Manual, deliberate release process. Never triggered by a push or a tag --
-# merging three long-lived branches into master and publishing a GitHub
-# Release is not something that should ever happen as a side effect.
+# Manual, deliberate release process: Actions -> Release -> Run workflow, with
+# the version (vX.Y.Z, or vX.Y.Z-rcN). Never triggered by a push or a tag.
 #
-# What this does, in order:
-#   1. Records the current HEAD of docs, hardware_development and
-#      firmware_development (each keeps existing afterward -- this never
-#      deletes or closes a branch).
-#   2. Merges each of those three commits into master with --no-ff. Any
-#      conflict aborts the whole run before anything is pushed; conflicts
-#      are for a human to resolve (locally or via a PR), not for this
-#      workflow to guess at.
-#   3. Tags each branch's recorded HEAD as <version>-<branch>, and the
-#      resulting master commit as <version>.
-#   4. Pushes master and the four tags, then publishes a GitHub Release
-#      for <version>.
+#   qualify   (self-hosted runner wired to the board: labels self-hosted,
+#             linux, mpeg2fpga-board -- GitHub's runners cannot reach it)
+#             release/qualify.sh on firmware_development + hardware_development:
+#             hardware regression, end-to-end check through the daemon and the
+#             client library, and only then the Python library, user guide,
+#             board bundle and the prebuilt bitstream. Records the exact
+#             commits it qualified.
+#   release   (GitHub runner) only if qualify passed. Merges those exact
+#             commits of docs, hardware_development and firmware_development
+#             into master (--no-ff; any conflict aborts before anything is
+#             pushed), tags each branch head as <version>-<branch> and master
+#             as <version>, pushes, and publishes the GitHub Release with the
+#             qualified artifacts attached.
 #
-# Test/sanity suites per branch type (docs build, hardware sim + on-board
-# sanity, firmware driver build + KUnit + on-board sanity) are intentionally
-# not part of this workflow yet -- this is the git/release mechanics only.
+# This file lives in firmware_development and in master and must be the same
+# in both: every release merges firmware_development into master.
 #
 # Uses the RELEASE_PAT repository secret (a personal access token, `repo`
-# scope) rather than the default GITHUB_TOKEN, for two reasons: commits and
-# tags are authored with the identity configured below regardless of which
-# token pushes them, but the GitHub Release *object* itself is recorded as
-# created by whichever account's credentials called the API -- the default
-# GITHUB_TOKEN would show that as the github-actions bot, not a person.
+# scope) rather than the default GITHUB_TOKEN: commits and tags carry the
+# identity configured below either way, but the GitHub Release object is
+# recorded as created by whoever's credentials call the API -- GITHUB_TOKEN
+# would show the github-actions bot, not a person.
+#
+# Repository variables: MPEG2FPGA_BOARD (ssh target, e.g. root@192.168.18.5),
+# MPEG2FPGA_STREAMS_DIR (conformance streams on the runner machine). See
+# release/README.md on firmware_development.
 
 on:
   workflow_dispatch:
     inputs:
       version:
-        description: "Release tag, e.g. v0.0.1"
+        description: "Release tag, e.g. v0.1.0 (or v0.1.0-rc1)"
         required: true
+        type: string
+      fps_floor:
+        description: "End-to-end fps floor (empty: release/manifest.json)"
+        required: false
         type: string
 
 concurrency:
@@ -41,25 +47,89 @@ concurrency:
   cancel-in-progress: false
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
+  qualify:
+    runs-on: [self-hosted, linux, mpeg2fpga-board]
+    timeout-minutes: 90
+    env:
+      VERSION: ${{ inputs.version }}
+    outputs:
+      docs: ${{ steps.heads.outputs.docs }}
+      hardware_development: ${{ steps.heads.outputs.hardware_development }}
+      firmware_development: ${{ steps.heads.outputs.firmware_development }}
+    steps:
+      - name: Validate version input
+        run: |
+          set -euo pipefail
+          if [[ ! "$VERSION" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-rc[0-9]+)?$ ]]; then
+            echo "::error::version must look like vX.Y.Z or vX.Y.Z-rcN, got: '$VERSION'"
+            exit 1
+          fi
+          if git ls-remote --tags "https://github.com/${{ github.repository }}" | grep -q "refs/tags/$VERSION$"; then
+            echo "::error::tag $VERSION already exists"
+            exit 1
+          fi
+
+      - uses: actions/checkout@v4
+        with:
+          ref: firmware_development
+          path: fw
+
+      - uses: actions/checkout@v4      # tools/regress, framecmp, the reference decoder
+        with:
+          ref: hardware_development
+          path: hw
+
+      - name: Record the commits being qualified
+        id: heads
+        run: |
+          set -euo pipefail
+          {
+            echo "firmware_development=$(git -C fw rev-parse HEAD)"
+            echo "hardware_development=$(git -C hw rev-parse HEAD)"
+            echo "docs=$(git ls-remote "https://github.com/${{ github.repository }}" refs/heads/docs | cut -f1)"
+          } | tee -a "$GITHUB_OUTPUT"
+
+      - name: Qualify on the board and build the artifacts
+        env:
+          HW_TREE: ${{ github.workspace }}/hw
+          STREAMS_DIR: ${{ vars.MPEG2FPGA_STREAMS_DIR }}
+          BOARD: ${{ vars.MPEG2FPGA_BOARD }}
+          FPS_FLOOR: ${{ inputs.fps_floor }}
+        run: |
+          [ -n "$BOARD" ] || unset BOARD
+          [ -n "$FPS_FLOOR" ] || unset FPS_FLOOR
+          fw/release/qualify.sh "${VERSION#v}"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-${{ inputs.version }}
+          path: fw/release/dist/
+          if-no-files-found: error
+
+      - uses: actions/upload-artifact@v4   # the regression report, when it failed
+        if: failure()
+        with:
+          name: qualification-failure-${{ inputs.version }}
+          path: fw/release/dist/
+          if-no-files-found: ignore
+
   release:
+    needs: qualify
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     env:
       GH_TOKEN: ${{ secrets.RELEASE_PAT }}
       RELEASE_GIT_NAME: Esteban Bustamante
       RELEASE_GIT_EMAIL: ebustamante896@gmail.com
       VERSION: ${{ inputs.version }}
+      DOCS_SHA: ${{ needs.qualify.outputs.docs }}
+      HW_SHA: ${{ needs.qualify.outputs.hardware_development }}
+      FW_SHA: ${{ needs.qualify.outputs.firmware_development }}
     steps:
-      - name: Validate version input
-        run: |
-          set -euo pipefail
-          if [[ ! "$VERSION" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-            echo "::error::version must look like vX.Y.Z, got: '$VERSION'"
-            exit 1
-          fi
-
       - name: Check RELEASE_PAT is set
         run: |
           if [ -z "$GH_TOKEN" ]; then
@@ -72,21 +142,37 @@ jobs:
           ref: master
           fetch-depth: 0
           token: ${{ secrets.RELEASE_PAT }}
+          path: repo
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-${{ inputs.version }}
+          path: dist
+
+      - name: Verify the qualified artifacts
+        run: |
+          set -euo pipefail
+          cd "dist/${VERSION#v}"
+          sha256sum -c SHA256SUMS
 
       - name: Configure git identity
+        working-directory: repo
         run: |
           git config user.name "$RELEASE_GIT_NAME"
           git config user.email "$RELEASE_GIT_EMAIL"
 
       - name: Fetch the three working branches
+        working-directory: repo
         run: |
           git fetch origin \
             docs:refs/remotes/origin/docs \
             hardware_development:refs/remotes/origin/hardware_development \
             firmware_development:refs/remotes/origin/firmware_development \
             --no-tags
+          git fetch origin --tags
 
       - name: Refuse to run if this version already exists
+        working-directory: repo
         run: |
           set -euo pipefail
           for tag in "$VERSION" "$VERSION-docs" "$VERSION-hardware_development" "$VERSION-firmware_development"; do
@@ -100,23 +186,10 @@ jobs:
             exit 1
           fi
 
-      - name: Record each branch's current HEAD
-        id: heads
-        run: |
-          {
-            echo "docs=$(git rev-parse origin/docs)"
-            echo "hardware_development=$(git rev-parse origin/hardware_development)"
-            echo "firmware_development=$(git rev-parse origin/firmware_development)"
-          } >> "$GITHUB_OUTPUT"
-
-      - name: Merge the three working branches into master
-        env:
-          DOCS_SHA: ${{ steps.heads.outputs.docs }}
-          HW_SHA: ${{ steps.heads.outputs.hardware_development }}
-          FW_SHA: ${{ steps.heads.outputs.firmware_development }}
+      - name: Merge the qualified commits into master
+        working-directory: repo
         run: |
           set -euo pipefail
-
           merge_or_fail() {
             local sha="$1" label="$2"
             if ! git merge --no-ff --no-edit -m "Merge $label ($sha) for release $VERSION" "$sha"; then
@@ -125,16 +198,12 @@ jobs:
               exit 1
             fi
           }
-
           merge_or_fail "$DOCS_SHA" "docs"
           merge_or_fail "$HW_SHA" "hardware_development"
           merge_or_fail "$FW_SHA" "firmware_development"
 
       - name: Tag each branch head and the release commit
-        env:
-          DOCS_SHA: ${{ steps.heads.outputs.docs }}
-          HW_SHA: ${{ steps.heads.outputs.hardware_development }}
-          FW_SHA: ${{ steps.heads.outputs.firmware_development }}
+        working-directory: repo
         run: |
           set -euo pipefail
           git tag -a "$VERSION-docs" "$DOCS_SHA" -m "$VERSION"
@@ -143,6 +212,7 @@ jobs:
           git tag -a "$VERSION" HEAD -m "$VERSION"
 
       - name: Push master and the release tags
+        working-directory: repo
         run: |
           set -euo pipefail
           git push origin master
@@ -153,22 +223,24 @@ jobs:
             "refs/tags/$VERSION-firmware_development"
 
       - name: Publish the GitHub Release
-        env:
-          DOCS_SHA: ${{ steps.heads.outputs.docs }}
-          HW_SHA: ${{ steps.heads.outputs.hardware_development }}
-          FW_SHA: ${{ steps.heads.outputs.firmware_development }}
+        working-directory: repo
         run: |
           set -euo pipefail
-          notes="$(cat <<EOF
-          Merges the three working branches into \`master\` at this release point. Each branch keeps existing and keeps being developed independently.
-
-          | branch | tag | commit |
-          |---|---|---|
-          | docs | \`$VERSION-docs\` | \`$DOCS_SHA\` |
-          | hardware_development | \`$VERSION-hardware_development\` | \`$HW_SHA\` |
-          | firmware_development | \`$VERSION-firmware_development\` | \`$FW_SHA\` |
-          EOF
-          )"
-          gh release create "$VERSION" \
-            --title "$VERSION" \
-            --notes "$notes"
+          d="../dist/${VERSION#v}"
+          {
+            cat "$d/release-notes.md"
+            echo
+            echo "## Branches"
+            echo
+            echo "Merged into \`master\` at this release point. Each branch keeps existing and keeps being developed independently."
+            echo
+            echo "| branch | tag | commit |"
+            echo "|---|---|---|"
+            echo "| docs | \`$VERSION-docs\` | \`$DOCS_SHA\` |"
+            echo "| hardware_development | \`$VERSION-hardware_development\` | \`$HW_SHA\` |"
+            echo "| firmware_development | \`$VERSION-firmware_development\` | \`$FW_SHA\` |"
+          } > ../notes.md
+          prerelease=""
+          [[ "$VERSION" == *-rc* ]] && prerelease="--prerelease"
+          gh release create "$VERSION" "$d"/* \
+            --title "mpeg2fpga $VERSION" --notes-file ../notes.md $prerelease

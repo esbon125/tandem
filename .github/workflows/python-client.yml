@@ -1,0 +1,30 @@
+# Python client (api/python): unit tests on every change. Releases are not
+# made here: the library ships inside the product release (release.yml), built
+# by api/python/build_release.sh only after the hardware qualified.
+name: python-client
+
+on:
+  push:
+    paths: ["api/**", ".github/workflows/python-client.yml"]
+  pull_request:
+    paths: ["api/**", ".github/workflows/python-client.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        # oldest supported, and what the board runs
+        python: ["3.9", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - name: unit tests (fake device, no hardware)
+        working-directory: api/python
+        run: python -m unittest discover -s tests -v
