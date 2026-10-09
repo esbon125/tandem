@@ -1,0 +1,29 @@
+% Title page, shared by both languages (strings from mpeg2fpga-style.sty).
+\begin{titlepage}
+\begin{tikzpicture}[remember picture, overlay]
+  \fill[m2navy] (current page.north west) rectangle ([yshift=-118mm]current page.north east);
+  \fill[m2amber] ([yshift=-118mm]current page.north west) rectangle ([yshift=-121mm]current page.north east);
+  % a macroblock grid, the decoder's unit of work
+  \begin{scope}[shift={([xshift=-78mm, yshift=-18mm]current page.north east)}]
+    \foreach \i in {0,...,7} \foreach \j in {0,...,5} {
+      \pgfmathsetmacro{\o}{0.08 + 0.11*mod(\i*3+\j*5, 7)}
+      \fill[m2teal, opacity=\o] (\i*8mm, -\j*8mm) rectangle ++(7mm, -7mm);
+    }
+    \draw[m2amber, line width=1.2pt] (3*8mm, -2*8mm) rectangle ++(15mm, -15mm);
+  \end{scope}
+  \node[anchor=north west, text=white, font=\sffamily\bfseries\fontsize{40}{44}\selectfont]
+    at ([xshift=24mm, yshift=-52mm]current page.north west) {mpeg2fpga};
+  \node[anchor=north west, text=white!85!m2teal, font=\sffamily\Large]
+    at ([xshift=25mm, yshift=-72mm]current page.north west)
+    {\ugsubtitle};
+  \node[anchor=north west, text=m2amber, font=\sffamily\large\bfseries]
+    at ([xshift=25mm, yshift=-88mm]current page.north west) {\ugguide};
+  \node[anchor=north west, font=\sffamily, text=m2grey, align=left]
+    at ([xshift=25mm, yshift=-140mm]current page.north west)
+    {\textbf{\color{m2navy}\ugversionword{} \productversion}\\[2pt] \productdate};
+  \node[anchor=south west, font=\sffamily\small, text=m2grey, align=left, text width=150mm]
+    at ([xshift=25mm, yshift=24mm]current page.south west)
+    {Esteban Bustamante\\ \ugauthorline\\[6pt]
+     \scriptsize \ugcorenote};
+\end{tikzpicture}
+\end{titlepage}

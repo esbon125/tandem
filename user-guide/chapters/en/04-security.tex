@@ -1,0 +1,81 @@
+\chapter{Network and security}\label{cap:security}
+
+Security comes in three layers, each against a different risk. On a trusted
+local network the first one is enough, and it costs nothing; the others allow
+the same device to be exposed on a public network without changing the
+protocol.
+
+\begin{center}
+\begin{tikzpicture}[node distance=4mm]
+  \node[blk, minimum width=44mm, fill=m2teal!8] (t) {\textbf{Token}\\\scriptsize who are you?};
+  \node[blk, minimum width=44mm, right=of t, fill=m2blue!8] (s) {\textbf{TLS}\\\scriptsize is anyone listening?};
+  \node[blk, minimum width=44mm, right=of s, fill=m2amber!12] (h) {\textbf{Defences}\\\scriptsize can you be knocked over?};
+  \node[lbl, below=1mm of t] {always · no cost};
+  \node[lbl, below=1mm of s] {optional · $\sim$1 core};
+  \node[lbl, below=1mm of h] {always · no cost};
+\end{tikzpicture}
+\end{center}
+
+\section{Access token}
+
+Every request except \ep{GET}{/v1/health} must carry the token:
+
+\begin{lstlisting}[language=shell]
+curl -H "Authorization: Bearer $(cat token)" http://192.168.18.5:8080/v1/device
+\end{lstlisting}
+
+\begin{itemize}
+  \item It is a random 256-bit secret, generated at first installation, in
+    \cmd{/etc/mpeg2fpgad/token} (readable only by the service and root).
+  \item It is compared in constant time, so that timing the response gives
+    nothing away.
+  \item To rotate it:
+    \cmd{ssh root@board python3 -m mpeg2fpgad -{}-rotate-token}, then restart
+    the service.
+\end{itemize}
+
+\begin{advertencia}[Warning]
+Without TLS the token travels unencrypted: anyone who can observe the
+network's traffic can copy it. On a trusted network that is acceptable; on a
+public one it is not.
+\end{advertencia}
+
+\section{TLS}
+
+With \cmd{-{}-tls} the service serves HTTPS on port 8443 with a self-signed
+certificate generated on the board. The client trusts the certificate's
+\emph{fingerprint}, obtained over a secure channel, rather than a certificate
+authority:
+
+\begin{lstlisting}[language=shell]
+ssh root@board python3 -m mpeg2fpgad --show-fingerprint
+sha256:3f9a...
+\end{lstlisting}
+
+\begin{lstlisting}[language=Python]
+dev = Device("192.168.18.5", token=token, tls_fingerprint="sha256:3f9a...")
+\end{lstlisting}
+
+If the fingerprint does not match, the library refuses to connect
+(\cmd{FingerprintMismatch}): that is what stops a third party from
+impersonating the device.
+
+The cost of TLS is measured in the specifications chapter. For a public
+deployment with more throughput, the alternative is to terminate TLS on a
+machine in front of the device (a \emph{reverse proxy}) and keep the board on
+a private network.
+
+\section{Basic defences}
+
+\begin{itemize}
+  \item The service runs as an unprivileged user, with the file system
+    read-only, and is given access only to the decoder files it uses.
+  \item Ten wrong tokens in a row from one address block it for 60 seconds
+    (response 429).
+  \item At most 8 simultaneous connections; a connection that sends nothing
+    for 30 seconds is closed.
+  \item The diagnostic endpoints are off unless \cmd{-{}-debug} is given.
+  \item The clip only reaches the decoder: nothing the client sends is used
+    as a file name or a command. A malformed clip may decode badly, but it
+    does not affect the device.
+\end{itemize}

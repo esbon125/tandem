@@ -1,5 +1,5 @@
 # mpeg2fpga user guide.
-#   make                      -> build/mpeg2fpga-user-guide.pdf
+#   make                      -> build/mpeg2fpga-user-guide{,-en}.pdf (Spanish, English)
 #   make VERSION=1.2.0        -> stamped with that release version (CI does this)
 # Uses Tectonic (a self-contained XeTeX), fetched once into .tools/ at a pinned
 # version and checksum; it downloads the TeX packages it needs on first use.
@@ -10,15 +10,22 @@ TECTONIC = .tools/tectonic
 VERSION ?= dev+g$(shell git rev-parse --short HEAD 2>/dev/null || echo unknown)
 DATE ?= $(shell date +%Y-%m-%d)
 
-PDF = build/mpeg2fpga-user-guide.pdf
-SRC = mpeg2fpga-user-guide.tex mpeg2fpga-style.sty $(wildcard chapters/*.tex)
+PDFS = build/mpeg2fpga-user-guide.pdf build/mpeg2fpga-user-guide-en.pdf
+COMMON = mpeg2fpga-style.sty titlepage.tex $(TECTONIC)
 
-all: $(PDF)
+all: $(PDFS)
 
-$(PDF): $(SRC) $(TECTONIC) FORCE
+version.tex: FORCE
+	@printf '\\newcommand{\\productversion}{\\detokenize{%s}}\n\\newcommand{\\productdate}{%s}\n' '$(VERSION)' '$(DATE)' > $@
+
+build/mpeg2fpga-user-guide.pdf: mpeg2fpga-user-guide.tex $(wildcard chapters/es/*.tex) $(COMMON) version.tex
 	@mkdir -p build
-	@printf '\\newcommand{\\productversion}{\\detokenize{%s}}\n\\newcommand{\\productdate}{%s}\n' '$(VERSION)' '$(DATE)' > version.tex
-	$(TECTONIC) -X compile --outdir build mpeg2fpga-user-guide.tex
+	$(TECTONIC) -X compile --outdir build $<
+	@echo "built $@ (version $(VERSION))"
+
+build/mpeg2fpga-user-guide-en.pdf: mpeg2fpga-user-guide-en.tex $(wildcard chapters/en/*.tex) $(COMMON) version.tex
+	@mkdir -p build
+	$(TECTONIC) -X compile --outdir build $<
 	@echo "built $@ (version $(VERSION))"
 
 $(TECTONIC):

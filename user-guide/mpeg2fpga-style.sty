@@ -3,6 +3,25 @@
 \NeedsTeXFormat{LaTeX2e}
 \ProvidesPackage{mpeg2fpga-style}[2026/10/08 mpeg2fpga user guide style]
 
+% ---- language: \usepackage[es]{...} or \usepackage[en]{...} -------------------------
+\newcommand{\ug@babel}{spanish, es-noshorthands}
+\newcommand{\ugguide}{Guía de usuario}
+\newcommand{\ugsubtitle}{Decodificador MPEG-2 en PolarFire SoC}
+\newcommand{\ugversionword}{Versión}
+\newcommand{\ugauthorline}{Proyecto final de Ingeniería}
+\newcommand{\ugcorenote}{Núcleo decodificador basado en mpeg2fpga, de Koen De
+  Vleeschauwer (licencia tipo BSD). Ver el apéndice de licencias.}
+\DeclareOption{es}{}
+\DeclareOption{en}{%
+  \renewcommand{\ug@babel}{english}%
+  \renewcommand{\ugguide}{User guide}%
+  \renewcommand{\ugsubtitle}{MPEG-2 decoder on PolarFire SoC}%
+  \renewcommand{\ugversionword}{Version}%
+  \renewcommand{\ugauthorline}{Final engineering project}%
+  \renewcommand{\ugcorenote}{Decoder core based on mpeg2fpga by Koen De
+    Vleeschauwer (BSD-style licence). See the licences appendix.}}
+\ProcessOptions\relax
+
 % ---- fonts and language ----------------------------------------------------
 \RequirePackage{fontspec}
 \setmainfont{texgyrepagella}[Extension=.otf, UprightFont=*-regular,
@@ -10,7 +29,7 @@
 \setsansfont{texgyreheros}[Extension=.otf, UprightFont=*-regular,
   BoldFont=*-bold, ItalicFont=*-italic, BoldItalicFont=*-bolditalic]
 \setmonofont{lmmono10}[Extension=.otf, UprightFont=*-regular, Scale=1.02]
-\RequirePackage[spanish, es-noshorthands]{babel}
+\expandafter\RequirePackage\expandafter[\ug@babel]{babel}
 \RequirePackage{microtype}
 
 % ---- page ------------------------------------------------------------------------
@@ -38,7 +57,7 @@
      \fill[m2blue] ([yshift=-46mm]current page.north west) rectangle
        ([xshift=7mm, yshift=-92mm]current page.north west);
    \end{tikzpicture}%
-   \large\scshape\color{m2teal}Capítulo~\thechapter}
+   \large\scshape\color{m2teal}\chaptertitlename~\thechapter}
   {2pt}
   {\bfseries\Huge}
   [\vspace{4pt}{\color{m2amber}\titlerule[1.4pt]}]
@@ -54,7 +73,7 @@
 \renewcommand{\chaptermark}[1]{\markboth{#1}{}}
 \fancyhead[LE,RO]{\sffamily\small\color{m2grey}\leftmark}
 \fancyhead[RE,LO]{\sffamily\small\color{m2blue}\textbf{mpeg2fpga}\,\textcolor{m2grey}{·
-  Guía de usuario · \productversion}}
+  \ugguide{} · \productversion}}
 \fancyfoot[C]{\sffamily\small\color{m2grey}\thepage\ \textcolor{m2grey!60}{/ \pageref*{LastPage}}}
 \renewcommand{\headrule}{{\color{m2amber}\hrule height 0.6pt}}
 \renewcommand{\headrulewidth}{0.6pt}
@@ -102,6 +121,6 @@
 
 % ---- links ------------------------------------------------------------------------------
 \RequirePackage[hidelinks]{hyperref}
-\hypersetup{pdftitle={mpeg2fpga - Guía de usuario}, pdfauthor={Esteban Bustamante}}
+\hypersetup{pdftitle={mpeg2fpga - \ugguide}, pdfauthor={Esteban Bustamante}}
 \RequirePackage{bookmark}
 \endinput

@@ -1,0 +1,82 @@
+\chapter{Introduction}
+
+\textbf{mpeg2fpga} is an MPEG-2 video decoder (ISO/IEC 13818-2) implemented in
+the FPGA of a PolarFire SoC and offered as a network service. A client sends it
+a clip over Ethernet and receives the decoded frames as they come out, in
+planar YUV 4:2:0 (I420), in display order.
+
+Decoding happens entirely in hardware. The SoC's RISC-V processors only
+manage: they receive the clip, hand it to the decoder over DMA, read each
+finished frame and send it to the client.
+
+\section{What a release includes}
+
+\begin{dato}
+\begin{tabularx}{\linewidth}{@{}l X@{}}
+\textbf{Device} & PolarFire SoC Discovery Kit board with the decoder
+  bitstream programmed. The FPGA is flash-based: it keeps its configuration
+  without power or external memory. \\[3pt]
+\textbf{Board software} & Linux driver (\cmd{mpeg2fpga.ko}), the
+  \cmd{mpeg2fpgad} service and its native frame converter. \\[3pt]
+\textbf{Client library} & Python package \cmd{mpeg2fpga} (wheel), with no
+  dependencies outside the standard library. \\[3pt]
+\textbf{Protocol} & Specification of network protocol v1, the contract
+  between the device and any client. \\[3pt]
+\textbf{Documentation} & This guide and the release notes, with the
+  conformance and performance report.
+\end{tabularx}
+\end{dato}
+
+\section{Architecture}
+
+\begin{center}
+\begin{tikzpicture}[font=\sffamily\small,
+    box/.style={blk, minimum width=31mm, minimum height=12mm},
+    hbox/.style={hw, minimum width=31mm, minimum height=12mm}]
+  % top row: software
+  \node[box] (app) at (0,0) {\textbf{Application}\\[-1pt]\scriptsize \texttt{mpeg2fpga} library};
+  \node[box] (d)   at (6.6,0) {\textbf{mpeg2fpgad}\\[-1pt]\scriptsize service, protocol v1};
+  \node[box] (drv) at (11.2,0) {\textbf{Driver}\\[-1pt]\scriptsize \texttt{mpeg2fpga.ko}};
+  % bottom row: FPGA
+  \node[hbox] (fs)  at (2.0,-3.4) {\textbf{Frame store}\\[-1pt]\scriptsize DDR, 4 buffers};
+  \node[hbox] (dec) at (6.6,-3.4) {\textbf{Decoder}\\[-1pt]\scriptsize MPEG-2};
+  \node[hbox] (dma) at (11.2,-3.4) {\textbf{Input DMA}\\[-1pt]\scriptsize \texttt{stream\_dma}};
+  % data path
+  \draw[arr] ([yshift=2.5mm]app.east) -- node[above, lbl]{clip (HTTP)} ([yshift=2.5mm]d.west);
+  \draw[arr] ([yshift=-2.5mm]d.west) -- node[below, lbl]{I420 frames} ([yshift=-2.5mm]app.east);
+  \draw[arr] (d) -- node[above, lbl]{sysfs} (drv);
+  \draw[arr] (drv) -- node[right, lbl]{clip chunks} (dma);
+  \draw[arr] (dma) -- (dec);
+  \draw[arr] (dec) -- node[above, lbl]{frames} (fs);
+  % control path
+  \draw[arr, dashed, color=m2teal] (dec.north east) to[bend right=12]
+    node[pos=0.55, right=1mm, lbl, align=left]{IRQ:\\frame ready} (drv.south west);
+  \draw[arr, dashed, color=m2teal] (fs.north) |- node[pos=0.3, left, lbl]{read} ([yshift=-6mm]d.south west) -- ([xshift=-8mm]d.south);
+  \begin{scope}[on background layer]
+    \node[draw=m2grey!60, dashed, rounded corners=4pt, fit=(d)(drv)(fs)(dma), inner sep=4mm] (soc) {};
+    \node[lbl, anchor=south east] at (soc.north east) {PolarFire SoC};
+    \node[lbl, anchor=south west] at ([yshift=6mm]app.north west) {Client PC};
+  \end{scope}
+\end{tikzpicture}
+\end{center}
+
+\begin{itemize}
+  \item The \textbf{clip goes up} over HTTP. The service splits it into
+    chunks and the driver hands them to the DMA, which feeds the decoder.
+  \item When the decoder finishes a frame, an \textbf{interrupt} tells the
+    driver which frame store buffer holds it, and the driver passes that on
+    to the service. The service reads it at once, before the decoder reuses
+    the buffer.
+  \item The frame is converted to I420 and \textbf{comes down} to the client
+    on the same connection, while the rest of the clip is still going up.
+\end{itemize}
+
+Upload and download happen at the same time, with flow control in both
+directions: there is no limit on clip length and the memory used on the board
+is fixed.
+
+\section{Conventions in this guide}
+
+Commands run on the user's PC have no prefix; commands run on the board are
+prefixed with \cmd{ssh root@board}. In the examples the board's address is
+\cmd{192.168.18.5}.

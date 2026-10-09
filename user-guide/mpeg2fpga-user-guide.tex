@@ -1,56 +1,26 @@
-% mpeg2fpga -- Guía de usuario.  Compilar con `make` (ver README.md).
+% mpeg2fpga -- Guía de usuario. Build with `make` (see README.md).
 \documentclass[11pt, a4paper, twoside, openany]{report}
-\input{version}                 % \productversion, \productdate: generado por make
-\usepackage{mpeg2fpga-style}
+\input{version}                 % \productversion, \productdate: written by make
+\usepackage[es]{mpeg2fpga-style}
 
 \begin{document}
-
-% ======================================================================== portada
-\begin{titlepage}
-\begin{tikzpicture}[remember picture, overlay]
-  \fill[m2navy] (current page.north west) rectangle ([yshift=-118mm]current page.north east);
-  \fill[m2amber] ([yshift=-118mm]current page.north west) rectangle ([yshift=-121mm]current page.north east);
-  % a macroblock grid, the decoder's unit of work
-  \begin{scope}[shift={([xshift=-78mm, yshift=-18mm]current page.north east)}]
-    \foreach \i in {0,...,7} \foreach \j in {0,...,5} {
-      \pgfmathsetmacro{\o}{0.08 + 0.11*mod(\i*3+\j*5, 7)}
-      \fill[m2teal, opacity=\o] (\i*8mm, -\j*8mm) rectangle ++(7mm, -7mm);
-    }
-    \draw[m2amber, line width=1.2pt] (3*8mm, -2*8mm) rectangle ++(15mm, -15mm);
-  \end{scope}
-  \node[anchor=north west, text=white, font=\sffamily\bfseries\fontsize{40}{44}\selectfont]
-    at ([xshift=24mm, yshift=-52mm]current page.north west) {mpeg2fpga};
-  \node[anchor=north west, text=white!85!m2teal, font=\sffamily\Large]
-    at ([xshift=25mm, yshift=-72mm]current page.north west)
-    {Decodificador MPEG-2 en PolarFire SoC};
-  \node[anchor=north west, text=m2amber, font=\sffamily\large\bfseries]
-    at ([xshift=25mm, yshift=-88mm]current page.north west) {Guía de usuario};
-  \node[anchor=north west, font=\sffamily, text=m2grey, align=left]
-    at ([xshift=25mm, yshift=-140mm]current page.north west)
-    {\textbf{\color{m2navy}Versión \productversion}\\[2pt] \productdate};
-  \node[anchor=south west, font=\sffamily\small, text=m2grey, align=left, text width=150mm]
-    at ([xshift=25mm, yshift=24mm]current page.south west)
-    {Esteban Bustamante\\ Proyecto final de Ingeniería\\[6pt]
-     \scriptsize Núcleo decodificador basado en mpeg2fpga, de Koen De Vleeschauwer
-     (licencia tipo BSD). Ver el apéndice de licencias.};
-\end{tikzpicture}
-\end{titlepage}
+\input{titlepage}
 
 \pagenumbering{roman}
 \tableofcontents
 \clearpage
 \pagenumbering{arabic}
 
-\input{chapters/01-introduccion}
-\input{chapters/02-especificaciones}
-\input{chapters/03-instalacion}
-\input{chapters/04-seguridad}
-\input{chapters/05-uso}
-\input{chapters/06-protocolo}
-\input{chapters/07-operacion}
-\input{chapters/08-actualizaciones}
-\input{chapters/09-limitaciones}
+\input{chapters/es/01-introduccion}
+\input{chapters/es/02-especificaciones}
+\input{chapters/es/03-instalacion}
+\input{chapters/es/04-seguridad}
+\input{chapters/es/05-uso}
+\input{chapters/es/06-protocolo}
+\input{chapters/es/07-operacion}
+\input{chapters/es/08-actualizaciones}
+\input{chapters/es/09-limitaciones}
 \appendix
-\input{chapters/a-licencias}
+\input{chapters/es/a-licencias}
 
 \end{document}
