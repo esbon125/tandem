@@ -1,0 +1,107 @@
+% mpeg2fpga-style.sty -- look and feel of the mpeg2fpga user guide.
+% Compiled with Tectonic (XeTeX): fonts are loaded by file name.
+\NeedsTeXFormat{LaTeX2e}
+\ProvidesPackage{mpeg2fpga-style}[2026/10/08 mpeg2fpga user guide style]
+
+% ---- fonts and language ----------------------------------------------------
+\RequirePackage{fontspec}
+\setmainfont{texgyrepagella}[Extension=.otf, UprightFont=*-regular,
+  BoldFont=*-bold, ItalicFont=*-italic, BoldItalicFont=*-bolditalic]
+\setsansfont{texgyreheros}[Extension=.otf, UprightFont=*-regular,
+  BoldFont=*-bold, ItalicFont=*-italic, BoldItalicFont=*-bolditalic]
+\setmonofont{lmmono10}[Extension=.otf, UprightFont=*-regular, Scale=1.02]
+\RequirePackage[spanish, es-noshorthands]{babel}
+\RequirePackage{microtype}
+
+% ---- page ------------------------------------------------------------------------
+\RequirePackage[a4paper, top=28mm, bottom=28mm, inner=27mm, outer=24mm,
+  headheight=15pt, headsep=10mm]{geometry}
+\RequirePackage{xcolor}
+\definecolor{m2navy}{HTML}{14213D}
+\definecolor{m2blue}{HTML}{1D4E89}
+\definecolor{m2teal}{HTML}{0F7173}
+\definecolor{m2amber}{HTML}{E09F3E}
+\definecolor{m2red}{HTML}{9E2A2B}
+\definecolor{m2grey}{HTML}{5C6B73}
+\definecolor{m2paper}{HTML}{F4F6F8}
+
+\RequirePackage{graphicx, booktabs, tabularx, array, enumitem, lastpage, needspace}
+\setlist{itemsep=2pt, topsep=4pt}
+\setlength{\parskip}{4pt}
+\setlength{\parindent}{0pt}
+
+% ---- headings ---------------------------------------------------------------------
+\RequirePackage{titlesec}
+\titleformat{\chapter}[display]
+  {\sffamily\color{m2navy}}
+  {\begin{tikzpicture}[remember picture, overlay]
+     \fill[m2blue] ([yshift=-46mm]current page.north west) rectangle
+       ([xshift=7mm, yshift=-92mm]current page.north west);
+   \end{tikzpicture}%
+   \large\scshape\color{m2teal}Capítulo~\thechapter}
+  {2pt}
+  {\bfseries\Huge}
+  [\vspace{4pt}{\color{m2amber}\titlerule[1.4pt]}]
+\titlespacing*{\chapter}{0pt}{-8mm}{10mm}
+\titleformat{\section}{\sffamily\Large\bfseries\color{m2blue}}{\thesection}{0.8em}{}
+\titleformat{\subsection}{\sffamily\large\bfseries\color{m2navy}}{\thesubsection}{0.7em}{}
+\titleformat{\paragraph}[runin]{\sffamily\bfseries\color{m2teal}}{}{0pt}{}[.]
+
+% ---- header / footer --------------------------------------------------------------
+\RequirePackage{fancyhdr}
+\pagestyle{fancy}
+\fancyhf{}
+\renewcommand{\chaptermark}[1]{\markboth{#1}{}}
+\fancyhead[LE,RO]{\sffamily\small\color{m2grey}\leftmark}
+\fancyhead[RE,LO]{\sffamily\small\color{m2blue}\textbf{mpeg2fpga}\,\textcolor{m2grey}{·
+  Guía de usuario · \productversion}}
+\fancyfoot[C]{\sffamily\small\color{m2grey}\thepage\ \textcolor{m2grey!60}{/ \pageref*{LastPage}}}
+\renewcommand{\headrule}{{\color{m2amber}\hrule height 0.6pt}}
+\renewcommand{\headrulewidth}{0.6pt}
+\fancypagestyle{plain}{\fancyhf{}%
+  \fancyfoot[C]{\sffamily\small\color{m2grey}\thepage\ \textcolor{m2grey!60}{/ \pageref*{LastPage}}}%
+  \renewcommand{\headrulewidth}{0pt}}
+
+% ---- boxes --------------------------------------------------------------------------
+\RequirePackage[most]{tcolorbox}
+\newtcolorbox{nota}[1][Nota]{enhanced, breakable, colback=m2teal!6, colframe=m2teal,
+  boxrule=0pt, leftrule=3pt, arc=1pt, fonttitle=\sffamily\bfseries\small,
+  coltitle=m2teal, colbacktitle=m2teal!6, title=#1, attach title to upper={\ }}
+\newtcolorbox{advertencia}[1][Atención]{enhanced, breakable, colback=m2amber!10,
+  colframe=m2amber, boxrule=0pt, leftrule=3pt, arc=1pt,
+  fonttitle=\sffamily\bfseries\small, coltitle=m2red, colbacktitle=m2amber!10,
+  title=#1, attach title to upper={\ }}
+\newtcolorbox{dato}{enhanced, colback=m2paper, colframe=m2paper, arc=2pt,
+  boxrule=0pt, left=8pt, right=8pt}
+
+% ---- code -----------------------------------------------------------------------------
+\RequirePackage{listings}
+\lstdefinestyle{m2}{basicstyle=\ttfamily\small, columns=fullflexible,
+  keepspaces=true, breaklines=true, backgroundcolor=\color{m2paper},
+  frame=l, framerule=2pt, rulecolor=\color{m2blue}, xleftmargin=6pt,
+  framexleftmargin=6pt, aboveskip=6pt, belowskip=6pt,
+  keywordstyle=\color{m2blue}\bfseries, commentstyle=\color{m2grey}\itshape,
+  stringstyle=\color{m2teal}, showstringspaces=false, upquote=true,
+  literate={á}{{\'a}}1 {é}{{\'e}}1 {í}{{\'i}}1 {ó}{{\'o}}1 {ú}{{\'u}}1 {ñ}{{\~n}}1}
+\lstset{style=m2}
+\lstdefinelanguage{shell}{morekeywords={ssh,scp,sudo,systemctl,curl,pip,python3,make,cat,journalctl},
+  morecomment=[l]{\#}, morestring=[b]"}
+\newcommand{\cmd}[1]{\texttt{\color{m2navy}#1}}
+\newcommand{\ep}[2]{\texttt{\textcolor{m2teal}{#1}~#2}}
+
+% ---- diagrams ---------------------------------------------------------------------------
+\RequirePackage{tikz}
+\usetikzlibrary{positioning, arrows.meta, shapes.geometric, fit, backgrounds, calc, decorations.pathreplacing}
+\tikzset{
+  blk/.style={draw=m2blue, fill=white, rounded corners=3pt, line width=0.8pt,
+    minimum height=9mm, minimum width=26mm, align=center, font=\sffamily\small},
+  hw/.style={blk, draw=m2teal, fill=m2teal!8},
+  arr/.style={-{Stealth[length=2.6mm]}, line width=0.9pt, color=m2navy},
+  lbl/.style={font=\sffamily\scriptsize, color=m2grey},
+}
+
+% ---- links ------------------------------------------------------------------------------
+\RequirePackage[hidelinks]{hyperref}
+\hypersetup{pdftitle={mpeg2fpga - Guía de usuario}, pdfauthor={Esteban Bustamante}}
+\RequirePackage{bookmark}
+\endinput

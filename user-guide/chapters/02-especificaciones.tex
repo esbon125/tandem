@@ -1,0 +1,84 @@
+\chapter{Especificaciones}
+
+\section{Formatos}
+
+\begin{center}
+\begin{tabularx}{\linewidth}{@{}l X@{}}
+\toprule
+\textbf{Entrada} & Elementary stream de video MPEG-2 (ISO/IEC 13818-2). \\
+\textbf{Perfil} & Main Profile, crominancia 4:2:0. Imágenes \emph{frame} y
+  \emph{field}. \\
+\textbf{Resolución} & Hasta 1920\,×\,1088 según el mapa de memoria; verificada
+  en hardware hasta 720\,×\,576. \\
+\textbf{Salida} & YUV 4:2:0 planar (I420), 8 bits por muestra, en orden de
+  presentación. \\
+\textbf{Largo de clip} & Sin límite (entrada y salida en streaming). \\
+\midrule
+\textbf{No soportado} & MPEG-1; escalabilidad y \emph{data partitioning};
+  4:2:2 y 4:4:4; program/transport streams (el cliente debe extraer el
+  elementary stream de video). \\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+\section{Rendimiento}
+
+Medido sobre el hardware con la herramienta de regresión del proyecto
+(\cmd{tools/regress}), cinco corridas por stream luego de una de
+calentamiento. El \emph{decode rate} cuenta desde el inicio del DMA hasta la
+última escritura en el framestore.
+
+\begin{center}
+\begin{tabular}{@{}l c r r r@{}}
+\toprule
+\textbf{Stream} & \textbf{Resolución} & \textbf{Cuadros} & \textbf{fps} & \textbf{× tiempo real} \\
+\midrule
+tek60          & 704\,×\,480 &  60 & 23.7 & 0.79 \\
+Tek-5-long     & 704\,×\,480 & 150 & 22.8 & 0.76 \\
+mei-2-60f      & 704\,×\,480 &  61 & 21.1 & 0.70 \\
+tcela-7        & 720\,×\,480 &  61 & 19.5 & 0.65 \\
+sony-ct2       & 704\,×\,480 &  24 & 19.6 & 0.65 \\
+nokia6-60      & 720\,×\,576 &  60 & 12.2 & 0.49 \\
+hhi-burst-long & 720\,×\,576 &  46 & 12.9 & 0.52 \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\paragraph{De punta a punta} Desde la PC, con la librería cliente y el
+servicio \cmd{mpeg2fpgad} sin TLS, tek60 se recibe completo a
+\textbf{20\,fps} y Tek-5-long a 19.2\,fps: cerca del 85\,\% de lo que da el
+decodificador solo.
+
+\begin{nota}
+El decodificador es más lento que tiempo real (0.5 a 0.8×). Para clips
+grabados no es un problema: el control de flujo hace que el cliente reciba
+todo, más despacio. Una fuente en vivo que no pueda frenarse, en cambio,
+desbordaría cualquier buffer.
+\end{nota}
+
+\section{TLS}
+
+TLS es opcional porque el cifrado lo hacen los procesadores de la placa, sin
+extensiones criptográficas. Medido de punta a punta en la placa:
+
+\begin{center}
+\begin{tabular}{@{}l r r@{}}
+\toprule
+\textbf{Modo} & \textbf{MB/s} & \textbf{cuadros 704×480/s} \\
+\midrule
+HTTP sin cifrar            & 29.0 & $\sim$57 \\
+TLS 1.2 ChaCha20-Poly1305  &  7.6 & $\sim$15 \\
+TLS 1.2 AES-128-GCM        &  4.5 & $\sim$9 \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+Con TLS la entrega queda limitada a unos 15 cuadros por segundo a 704×480. El
+servicio sólo ofrece ChaCha20, el más rápido en esta CPU.
+
+\section{Conformidad}
+
+El decodificador se verifica contra los streams de conformidad ISO y el
+decodificador de referencia (\cmd{tools/mpeg2dec}). El resultado detallado de
+cada release está en sus notas; las diferencias conocidas se describen en el
+capítulo~\ref{cap:limitaciones}.

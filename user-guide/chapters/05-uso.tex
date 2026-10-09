@@ -1,0 +1,72 @@
+\chapter{Uso}
+
+\section{Librería Python}
+
+\begin{lstlisting}[language=Python]
+from mpeg2fpga import Device
+
+dev = Device("192.168.18.5", token=open("token").read().strip())
+print(dev.info().versions)          # daemon, driver, bitstream, core
+
+result = dev.decode("clip.m2v")     # ruta, bytes o archivo abierto
+with open("clip.yuv", "wb") as out:
+    for frame in result:            # orden de presentación
+        out.write(frame.y)
+        out.write(frame.u)
+        out.write(frame.v)
+print(result.summary.complete, result.summary.frames_sent)
+\end{lstlisting}
+
+El archivo resultante es I420 crudo y se puede ver, por ejemplo, con
+\cmd{ffplay -f rawvideo -pixel\_format yuv420p -video\_size 704x480 clip.yuv}.
+
+\paragraph{Cada cuadro} \cmd{frame.y}, \cmd{frame.u} y \cmd{frame.v} son los
+tres planos; \cmd{frame.width}, \cmd{frame.height},
+\cmd{frame.display\_index}, \cmd{frame.decode\_index} y
+\cmd{frame.picture\_type} (\cmd{"I"}, \cmd{"P"} o \cmd{"B"}) lo describen.
+Con numpy instalado, \cmd{frame.to\_numpy()} devuelve los tres planos como
+arreglos.
+
+\paragraph{Control de flujo} El clip sube mientras se itera el resultado. Si
+la aplicación se detiene entre cuadros, la subida y el decodificador también
+se detienen, sin perder nada.
+
+\paragraph{Errores}
+\begin{center}
+\begin{tabularx}{\linewidth}{@{}l X@{}}
+\toprule
+\textbf{Excepción} & \textbf{Significado} \\
+\midrule
+\cmd{Unauthorized} & token ausente o incorrecto \\
+\cmd{DeviceBusy} & otro decode en curso; \cmd{.retry\_after} sugiere cuándo reintentar \\
+\cmd{TooManyAttempts} & demasiados tokens incorrectos; esperar \\
+\cmd{BadRequest} & el cuerpo no parece video MPEG-2 \\
+\cmd{DecoderUnavailable} & el hardware no responde; probar \cmd{dev.reset()} \\
+\cmd{DecodeIncomplete} & se cortó la conexión antes del final \\
+\cmd{FingerprintMismatch} & el certificado TLS no es el esperado \\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+\section{Desde la línea de comandos}
+
+El protocolo es HTTP, así que alcanza con \cmd{curl}:
+
+\begin{lstlisting}[language=shell]
+curl -H "Authorization: Bearer $(cat token)" -H "Content-Type: application/octet-stream" \
+     -T clip.m2v -X POST http://192.168.18.5:8080/v1/decode -o frames.bin
+\end{lstlisting}
+
+\cmd{frames.bin} contiene los registros binarios del protocolo
+(capítulo~\ref{cap:protocolo}).
+
+\section{Demo web}
+
+\cmd{demo/demo\_server.py} es una aplicación de ejemplo construida sobre la
+librería: sube un clip desde el navegador y lo reproduce a medida que llegan
+los cuadros, con un resumen del decode. Corre en la PC:
+
+\begin{lstlisting}[language=shell]
+python3 demo/demo_server.py --device 192.168.18.5 --token-file token
+# abrir http://localhost:8000
+\end{lstlisting}

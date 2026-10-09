@@ -17,3 +17,5 @@
 !daemon/**
 !demo
 !demo/**
+!user-guide
+!user-guide/**

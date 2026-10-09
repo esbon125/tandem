@@ -1,0 +1,84 @@
+\chapter{Protocolo de red v1}\label{cap:protocolo}
+
+Resumen del protocolo; la especificación completa está en
+\cmd{PROTOCOL-v1.md}, incluida en cada release. Cualquier cliente que la
+implemente funciona con el dispositivo, en cualquier lenguaje.
+
+\section{Transporte}
+
+HTTP/1.1 sobre TCP, puerto 8080 (8443 con TLS). Control y estado en JSON; los
+cuadros en un stream binario propio. Todas las rutas llevan el prefijo
+\cmd{/v1}: dentro de v1 sólo se agregan campos y endpoints, nunca se quitan.
+
+\section{Endpoints}
+
+\begin{center}
+\begin{tabularx}{\linewidth}{@{}l X@{}}
+\toprule
+\ep{GET}{/v1/health} & disponible sin token; \cmd{\{"ok": true\}} \\
+\ep{GET}{/v1/device} & versiones (servicio, driver, bitstream, núcleo), capacidades, límites, TLS \\
+\ep{GET}{/v1/status} & estado (\cmd{idle}, \cmd{decoding}, \cmd{error}), decode en curso, última secuencia \\
+\ep{POST}{/v1/decode} & el clip en el cuerpo; la respuesta es el stream de cuadros \\
+\ep{POST}{/v1/reset} & recuperación: resetea el núcleo y aborta el decode en curso \\
+\ep{*}{/v1/debug/...} & diagnóstico, sólo con \cmd{-{}-debug}, sin garantía de compatibilidad \\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+Un decode a la vez: un segundo \ep{POST}{/v1/decode} recibe 409 mientras el
+primero corre. Los demás endpoints responden siempre.
+
+\section{El stream de cuadros}
+
+Una sucesión de registros, enteros \emph{little-endian}:
+
+\begin{center}
+\begin{tikzpicture}[x=11.5mm, font=\sffamily\scriptsize,
+    f/.style={draw=#1, fill=#1!10, minimum height=9mm, anchor=west, inner sep=1pt, align=center}]
+  % row 1: the 12-byte header every record starts with, one unit per byte
+  \foreach \x/\w/\t in {0/4/{magic\\\texttt{"M2FR"}}, 4/1/tipo, 5/1/flags,
+                         6/2/{header\\\_len}, 8/4/{payload\_len}}
+    \node[f=m2blue, minimum width=\w*11.5mm] at (\x, 0) {\t};
+  \foreach \b in {0,4,5,6,8,12} \node[lbl, below] at (\b, -0.48) {\b};
+  \draw[decorate, decoration={brace, amplitude=4pt}, m2grey]
+    (0, 0.55) -- node[above=4pt, lbl]{header común: 12 bytes} (12, 0.55);
+  % row 2: what follows
+  \node[f=m2teal, minimum width=5*11.5mm] at (0, -1.7)
+    {campos del tipo\\FRAME: 20 bytes · END: ninguno};
+  \node[f=m2amber, minimum width=7*11.5mm] at (5, -1.7)
+    {payload\\FRAME: cuadro I420 · END: resumen JSON};
+  \draw[decorate, decoration={brace, mirror, amplitude=4pt}, m2grey]
+    (0, -2.25) -- node[below=4pt, lbl]{\texttt{header\_len} $-$ 12} (5, -2.25);
+  \draw[decorate, decoration={brace, mirror, amplitude=4pt}, m2grey]
+    (5, -2.25) -- node[below=4pt, lbl]{\texttt{payload\_len}} (12, -2.25);
+\end{tikzpicture}
+\end{center}
+
+\begin{itemize}
+  \item \textbf{FRAME} (tipo 1): índice de presentación, índice de decodificación,
+    ancho, alto, tipo de imagen y estructura; el payload es el cuadro en I420.
+  \item \textbf{END} (tipo 2): último registro, con un resumen en JSON:
+    cuadros enviados, si el decode quedó completo, bits de error del
+    decodificador y tiempos por etapa.
+\end{itemize}
+
+Un cliente debe usar \cmd{header\_len} y \cmd{payload\_len} y saltear los
+campos y tipos de registro que no conozca: así crece el protocolo sin romper
+clientes viejos.
+
+\section{Códigos de error}
+
+\begin{center}
+\begin{tabular}{@{}c l l@{}}
+\toprule
+\textbf{HTTP} & \textbf{código} & \textbf{cuándo} \\
+\midrule
+400 & \cmd{bad\_request} & parámetro inválido, o el cuerpo no es MPEG-2 \\
+401 & \cmd{unauthorized} & token ausente o incorrecto \\
+404 & \cmd{not\_found} & ruta desconocida \\
+409 & \cmd{busy} & ya hay un decode en curso \\
+429 & \cmd{too\_many\_attempts} & demasiados tokens incorrectos \\
+503 & \cmd{decoder\_unavailable} & el hardware no responde \\
+\bottomrule
+\end{tabular}
+\end{center}
