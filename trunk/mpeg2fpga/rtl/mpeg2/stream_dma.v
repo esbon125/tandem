@@ -49,6 +49,12 @@
  * its last data beat to S_DONE, and the next transfer's first byte follows
  * the previous one's last byte on stream_data with nothing in between.
  *
+ * addr must be 8-byte aligned (any len is fine): reads are whole 64-bit AXI
+ * beats and emission starts at byte 0 of the first one, so an unaligned
+ * start re-sends the bytes below it. A single transfer from an aligned base
+ * never notices; a chain split at arbitrary offsets does -- found on
+ * hardware, 2026-10-08. The driver rejects unaligned addresses.
+ *
  * mpeg_busy is mpeg2video's own busy output (input FIFO risks overflow),
  * the exact same backpressure signal the manual STREAM_PUSH_ADDR path
  * already respects -- both sources share it, and mpeg2fpga_apb_peripheral.v

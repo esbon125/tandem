@@ -76,7 +76,12 @@ module fake_axi_ddr_ro (
         end
         ARS_WAIT: if (ar_cnt == 0) begin
           m_axi_arready <= 1'b1;
-          cur_addr      <= m_axi_araddr[19:0];
+          /* a 64-bit AXI slave returns whole aligned beats: an unaligned
+           * ARADDR gets the beat containing it, low bytes included. The
+           * byte-exact model this replaced hid a real bug -- chunked DMA
+           * with unaligned chunk starts re-sent bytes on hardware
+           * (2026-10-08) while this testbench passed. */
+          cur_addr      <= {m_axi_araddr[19:3], 3'b000};
           beats_left    <= m_axi_arlen + 8'd1;
           ar_state      <= ARS_DRAIN;
         end else ar_cnt <= ar_cnt - 3'd1;

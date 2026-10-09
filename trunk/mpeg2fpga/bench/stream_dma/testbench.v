@@ -352,14 +352,18 @@ module testbench ();
      * payload, no sequence_end padding ---- */
     preload_ramp(20'd5000, 160);
     reset_capture;
-    run_chunk(32'd5000, 32'd100, 1'b1);
+    run_chunk(32'd5000, 32'd100, 1'b1);   /* odd length is fine; only the start must be aligned */
     check_eq("no_pad_chunk.captured_count", captured_count, 100);
     check_eq("no_pad_chunk.bytes_done", bytes_done, 100);
 
     /* ---- test 8: the next chunk continues the same stream and, being the
-     * last one, is padded once: the two chunks read as one 160-byte stream ---- */
-    run_chunk(32'd5100, 32'd60, 1'b0);
-    check_captured_stream("chained_100b_60b", 5000, 160);
+     * last one, is padded once: the two chunks read as one 160-byte stream.
+     * Chunk starts must be 8-byte aligned (see stream_dma.v), so the first
+     * chunk is 96 bytes, not 100. ---- */
+    reset_capture;
+    run_chunk(32'd5000, 32'd96, 1'b1);
+    run_chunk(32'd5096, 32'd64, 1'b0);
+    check_captured_stream("chained_96b_64b", 5000, 160);
 
     /* ---- test 9: zero-length no_pad transfer is a no-op that still
      * completes (done pulses, nothing emitted) ---- */
