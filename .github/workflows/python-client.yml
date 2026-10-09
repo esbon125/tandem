@@ -3,11 +3,14 @@
 # by api/python/build_release.sh only after the hardware qualified.
 name: python-client
 
+# Triggered by api/ only, not by edits to this file: this workflow also lives
+# in master, where api/ only exists after a release merges firmware_development
+# -- a PR touching just the workflows would otherwise run tests on nothing.
 on:
   push:
-    paths: ["api/**", ".github/workflows/python-client.yml"]
+    paths: ["api/**"]
   pull_request:
-    paths: ["api/**", ".github/workflows/python-client.yml"]
+    paths: ["api/**"]
   workflow_dispatch:
 
 permissions:
