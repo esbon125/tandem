@@ -508,6 +508,133 @@ static void mpeg2fpga_core_test_source_select_preserves_freeze(struct kunit *tes
 	KUNIT_EXPECT_EQ(test, mpeg2fpga_core_get_source_select(&ctx->core), 6);
 }
 
+static void mpeg2fpga_core_test_dma_chunk_sets_no_pad(struct kunit *test)
+{
+	struct mpeg2fpga_core_test_ctx *ctx = test->priv;
+
+	/* a chunk that is not the last must not get stream_dma's
+	 * sequence_end padding, or the decoder sees the sequence end after
+	 * every chunk
+	 */
+	mpeg2fpga_core_dma_start_chunk(&ctx->core, 0x100, 4096, false);
+	KUNIT_EXPECT_EQ(test, ctx->fake.write_regs[MPEG2FPGA_B_DMA_CTRL],
+			MPEG2FPGA_DMA_CTRL_START | MPEG2FPGA_DMA_CTRL_NO_PAD);
+
+	mpeg2fpga_core_dma_start_chunk(&ctx->core, 0x1100, 512, true);
+	KUNIT_EXPECT_EQ(test, ctx->fake.write_regs[MPEG2FPGA_B_DMA_CTRL],
+			MPEG2FPGA_DMA_CTRL_START);
+	KUNIT_EXPECT_EQ(test, ctx->fake.write_regs[MPEG2FPGA_B_DMA_ADDR], 0x1100u);
+	KUNIT_EXPECT_EQ(test, ctx->fake.write_regs[MPEG2FPGA_B_DMA_LEN], 512u);
+}
+
+static void mpeg2fpga_core_test_dma_rejects_unaligned_addr(struct kunit *test)
+{
+	struct mpeg2fpga_core_test_ctx *ctx = test->priv;
+
+	/* stream_dma reads whole 64-bit beats from the start address, so an
+	 * unaligned chunk re-sends the bytes below it -- seen on hardware as
+	 * corrupted pictures at every chunk boundary
+	 */
+	ctx->fake.log_len = 0;
+	KUNIT_EXPECT_EQ(test, mpeg2fpga_core_dma_start_chunk(&ctx->core, 0x1004, 64, false),
+			-EINVAL);
+	KUNIT_EXPECT_EQ(test, fake_write_index(&ctx->fake, MPEG2FPGA_B_DMA_CTRL, 0), -1);
+
+	/* any length is fine, only the start matters */
+	KUNIT_EXPECT_EQ(test, mpeg2fpga_core_dma_start_chunk(&ctx->core, 0x1008, 61, true), 0);
+	KUNIT_EXPECT_GE(test, fake_write_index(&ctx->fake, MPEG2FPGA_B_DMA_CTRL, 0), 0);
+}
+
+static void mpeg2fpga_core_test_build_id(struct kunit *test)
+{
+	struct mpeg2fpga_core_test_ctx *ctx = test->priv;
+	struct mpeg2fpga_build build;
+
+	ctx->fake.read_regs[MPEG2FPGA_B_BUILD_VERSION] = 0x0102000a;
+	ctx->fake.read_regs[MPEG2FPGA_B_BUILD_GIT] = 0x8a2446b6;
+
+	mpeg2fpga_core_get_build(&ctx->core, &build);
+
+	KUNIT_EXPECT_EQ(test, build.major, 1u);
+	KUNIT_EXPECT_EQ(test, build.minor, 2u);
+	KUNIT_EXPECT_EQ(test, build.patch, 10u);
+	KUNIT_EXPECT_EQ(test, build.git_hash, 0x0a2446b6u);
+	KUNIT_EXPECT_TRUE(test, build.dirty);
+
+	ctx->fake.read_regs[MPEG2FPGA_B_BUILD_GIT] = 0x0a2446b6;
+	mpeg2fpga_core_get_build(&ctx->core, &build);
+	KUNIT_EXPECT_FALSE(test, build.dirty);
+}
+
+static void mpeg2fpga_core_test_picture_irq_enable(struct kunit *test)
+{
+	struct mpeg2fpga_core_test_ctx *ctx = test->priv;
+
+	mpeg2fpga_core_set_picture_irq(&ctx->core, true);
+	/* enable, and clear anything left pending from before */
+	KUNIT_EXPECT_EQ(test, ctx->fake.write_regs[MPEG2FPGA_B_PIC_IRQ],
+			MPEG2FPGA_PIC_IRQ_ENABLE | MPEG2FPGA_PIC_IRQ_PENDING);
+	KUNIT_EXPECT_TRUE(test, mpeg2fpga_core_picture_irq_enabled(&ctx->core));
+
+	mpeg2fpga_core_set_picture_irq(&ctx->core, false);
+	KUNIT_EXPECT_EQ(test, ctx->fake.write_regs[MPEG2FPGA_B_PIC_IRQ],
+			MPEG2FPGA_PIC_IRQ_PENDING);
+	KUNIT_EXPECT_FALSE(test, mpeg2fpga_core_picture_irq_enabled(&ctx->core));
+}
+
+static void mpeg2fpga_core_test_picture_ack_nothing_pending(struct kunit *test)
+{
+	struct mpeg2fpga_core_test_ctx *ctx = test->priv;
+	struct mpeg2fpga_picture_event ev;
+
+	mpeg2fpga_core_set_picture_irq(&ctx->core, true);
+	ctx->fake.log_len = 0;
+	/* enabled, count 7, not pending: the shared line was raised by the
+	 * decoder's own STATUS sources, not by a picture
+	 */
+	ctx->fake.read_regs[MPEG2FPGA_B_PIC_IRQ] = (7u << 16) | MPEG2FPGA_PIC_IRQ_ENABLE;
+
+	KUNIT_EXPECT_FALSE(test, mpeg2fpga_core_picture_ack(&ctx->core, &ev));
+	/* and nothing is written: a stray clear could drop a picture that
+	 * lands between the read and the write
+	 */
+	KUNIT_EXPECT_EQ(test, fake_write_index(&ctx->fake, MPEG2FPGA_B_PIC_IRQ, 0), -1);
+}
+
+static void mpeg2fpga_core_test_picture_ack_unpacks_and_clears(struct kunit *test)
+{
+	struct mpeg2fpga_core_test_ctx *ctx = test->priv;
+	struct mpeg2fpga_picture_event ev;
+
+	mpeg2fpga_core_set_picture_irq(&ctx->core, true);
+	/* count 0x1234, frame 3, overrun, enabled, pending */
+	ctx->fake.read_regs[MPEG2FPGA_B_PIC_IRQ] = (0x1234u << 16) | (3u << 4) |
+		MPEG2FPGA_PIC_IRQ_OVERRUN | MPEG2FPGA_PIC_IRQ_ENABLE |
+		MPEG2FPGA_PIC_IRQ_PENDING;
+
+	KUNIT_ASSERT_TRUE(test, mpeg2fpga_core_picture_ack(&ctx->core, &ev));
+	KUNIT_EXPECT_EQ(test, ev.frame, 3u);
+	KUNIT_EXPECT_EQ(test, ev.count, 0x1234u);
+	KUNIT_EXPECT_TRUE(test, ev.overrun);
+	/* write-1-to-clear, keeping the interrupt enabled */
+	KUNIT_EXPECT_EQ(test, ctx->fake.write_regs[MPEG2FPGA_B_PIC_IRQ],
+			MPEG2FPGA_PIC_IRQ_ENABLE | MPEG2FPGA_PIC_IRQ_PENDING);
+}
+
+static void mpeg2fpga_core_test_picture_ack_while_disabled(struct kunit *test)
+{
+	struct mpeg2fpga_core_test_ctx *ctx = test->priv;
+	struct mpeg2fpga_picture_event ev;
+
+	/* nobody listening: pending pictures are not reported, and the ack
+	 * must not turn the interrupt on behind the owner's back
+	 */
+	ctx->fake.read_regs[MPEG2FPGA_B_PIC_IRQ] = (1u << 16) | MPEG2FPGA_PIC_IRQ_PENDING;
+	ctx->fake.log_len = 0;
+	KUNIT_EXPECT_FALSE(test, mpeg2fpga_core_picture_ack(&ctx->core, &ev));
+	KUNIT_EXPECT_EQ(test, fake_write_index(&ctx->fake, MPEG2FPGA_B_PIC_IRQ, 0), -1);
+}
+
 static struct kunit_case mpeg2fpga_core_test_cases[] = {
 	KUNIT_CASE(mpeg2fpga_core_test_init_sets_default_watchdog),
 	KUNIT_CASE(mpeg2fpga_core_test_get_version),
@@ -527,6 +654,13 @@ static struct kunit_case mpeg2fpga_core_test_cases[] = {
 	KUNIT_CASE(mpeg2fpga_core_test_freeze_round_trip),
 	KUNIT_CASE(mpeg2fpga_core_test_flush_vbuf_is_a_strobe),
 	KUNIT_CASE(mpeg2fpga_core_test_source_select_preserves_freeze),
+	KUNIT_CASE(mpeg2fpga_core_test_dma_chunk_sets_no_pad),
+	KUNIT_CASE(mpeg2fpga_core_test_dma_rejects_unaligned_addr),
+	KUNIT_CASE(mpeg2fpga_core_test_build_id),
+	KUNIT_CASE(mpeg2fpga_core_test_picture_irq_enable),
+	KUNIT_CASE(mpeg2fpga_core_test_picture_ack_nothing_pending),
+	KUNIT_CASE(mpeg2fpga_core_test_picture_ack_unpacks_and_clears),
+	KUNIT_CASE(mpeg2fpga_core_test_picture_ack_while_disabled),
 	{}
 };
 

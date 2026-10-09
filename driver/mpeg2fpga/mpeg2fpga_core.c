@@ -4,6 +4,8 @@
  * See mpeg2fpga_core.h and mpeg2fpga_regs.h for the register map.
  */
 
+#include <linux/bitfield.h>
+#include <linux/errno.h>
 #include <linux/bitops.h>
 
 #include "mpeg2fpga_core.h"
@@ -36,6 +38,7 @@ void mpeg2fpga_core_init(struct mpeg2fpga_core *core,
 	 * osd_enable low, watchdog at its documented default interval.
 	 */
 	core->sticky = 0;
+	core->pic_irq_enabled = false;
 	core->stream_shadow = MPEG2FPGA_WATCHDOG_DEFAULT_INTERVAL
 		<< MPEG2FPGA_STREAM_WATCHDOG_INTERVAL_SHIFT;
 	mpeg2fpga_core_write(core, MPEG2FPGA_W_STREAM, core->stream_shadow);
@@ -170,8 +173,23 @@ bool mpeg2fpga_core_is_enabled(struct mpeg2fpga_core *core)
 		  MPEG2FPGA_CORE_ENABLE);
 }
 
-void mpeg2fpga_core_dma_start(struct mpeg2fpga_core *core, u32 addr, u32 len)
+int mpeg2fpga_core_dma_start(struct mpeg2fpga_core *core, u32 addr, u32 len)
 {
+	return mpeg2fpga_core_dma_start_chunk(core, addr, len, true);
+}
+
+/* @last: this chunk ends the stream, so stream_dma appends the
+ * sequence_end_code padding after it; every earlier chunk must go without.
+ * @addr must be 8-byte aligned (-EINVAL otherwise): stream_dma reads whole
+ * 64-bit beats and starts emitting at byte 0 of the first, so an unaligned
+ * chunk re-sends the bytes below it. Any @len is fine.
+ */
+int mpeg2fpga_core_dma_start_chunk(struct mpeg2fpga_core *core, u32 addr,
+				    u32 len, bool last)
+{
+	if (addr & 7)
+		return -EINVAL;
+
 	/* Order is load-bearing: stream_dma.v latches address and length on
 	 * the start pulse, so writing DMA_CTRL first transfers whatever the
 	 * previous transfer left behind.
@@ -179,7 +197,66 @@ void mpeg2fpga_core_dma_start(struct mpeg2fpga_core *core, u32 addr, u32 len)
 	mpeg2fpga_core_write(core, MPEG2FPGA_B_DMA_ADDR, addr);
 	mpeg2fpga_core_write(core, MPEG2FPGA_B_DMA_LEN, len);
 	mpeg2fpga_core_write(core, MPEG2FPGA_B_DMA_CTRL,
-			     MPEG2FPGA_DMA_CTRL_START);
+			     MPEG2FPGA_DMA_CTRL_START |
+			     (last ? 0 : MPEG2FPGA_DMA_CTRL_NO_PAD));
+	return 0;
+}
+
+void mpeg2fpga_core_get_build(struct mpeg2fpga_core *core,
+			       struct mpeg2fpga_build *build)
+{
+	u32 version = mpeg2fpga_core_read(core, MPEG2FPGA_B_BUILD_VERSION);
+	u32 git = mpeg2fpga_core_read(core, MPEG2FPGA_B_BUILD_GIT);
+
+	build->major = FIELD_GET(MPEG2FPGA_BUILD_MAJOR_MASK, version);
+	build->minor = FIELD_GET(MPEG2FPGA_BUILD_MINOR_MASK, version);
+	build->patch = FIELD_GET(MPEG2FPGA_BUILD_PATCH_MASK, version);
+	build->git_hash = FIELD_GET(MPEG2FPGA_BUILD_GIT_HASH_MASK, git);
+	build->dirty = !!(git & MPEG2FPGA_BUILD_GIT_DIRTY);
+}
+
+/* Enabling also clears whatever was pending from before anyone listened,
+ * so the first event a new owner sees is a picture finished after it asked.
+ */
+void mpeg2fpga_core_set_picture_irq(struct mpeg2fpga_core *core, bool enable)
+{
+	core->pic_irq_enabled = enable;
+	mpeg2fpga_core_write(core, MPEG2FPGA_B_PIC_IRQ,
+			     MPEG2FPGA_PIC_IRQ_PENDING |
+			     (enable ? MPEG2FPGA_PIC_IRQ_ENABLE : 0));
+}
+
+bool mpeg2fpga_core_picture_irq_enabled(struct mpeg2fpga_core *core)
+{
+	return core->pic_irq_enabled;
+}
+
+/*
+ * Called from the IRQ handler: the picture interrupt shares its line with the
+ * decoder's STATUS sources, so first find out whether it was ours. Returns
+ * true and fills @ev if a picture was pending, and acknowledges it. Nothing is
+ * written otherwise -- a clear issued when nothing was pending could swallow a
+ * picture that lands between the read and the write.
+ */
+bool mpeg2fpga_core_picture_ack(struct mpeg2fpga_core *core,
+				struct mpeg2fpga_picture_event *ev)
+{
+	u32 val;
+
+	if (!core->pic_irq_enabled)
+		return false;
+
+	val = mpeg2fpga_core_read(core, MPEG2FPGA_B_PIC_IRQ);
+	if (!(val & MPEG2FPGA_PIC_IRQ_PENDING))
+		return false;
+
+	ev->count = FIELD_GET(MPEG2FPGA_PIC_IRQ_COUNT_MASK, val);
+	ev->frame = FIELD_GET(MPEG2FPGA_PIC_IRQ_FRAME_MASK, val);
+	ev->overrun = !!(val & MPEG2FPGA_PIC_IRQ_OVERRUN);
+
+	mpeg2fpga_core_write(core, MPEG2FPGA_B_PIC_IRQ,
+			     MPEG2FPGA_PIC_IRQ_PENDING | MPEG2FPGA_PIC_IRQ_ENABLE);
+	return true;
 }
 
 void mpeg2fpga_core_dma_get_status(struct mpeg2fpga_core *core,

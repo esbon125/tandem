@@ -11,6 +11,12 @@
  */
 
 #include <linux/interrupt.h>
+#include <linux/kfifo.h>
+#include <linux/miscdevice.h>
+#include <linux/poll.h>
+#include <linux/timekeeping.h>
+#include <linux/uaccess.h>
+#include <linux/wait.h>
 #include <linux/io.h>
 #include <linux/module.h>
 #include <linux/of.h>
@@ -20,6 +26,12 @@
 
 #include "mpeg2fpga_core.h"
 #include "mpeg2fpga_regs.h"
+#include "mpeg2fpga_uapi.h"
+
+/* Picture events queued between the IRQ handler and read(). The decoder makes
+ * ~25 pictures a second, so 64 is over two seconds of a reader not reading.
+ */
+#define MPEG2FPGA_EVENT_QUEUE	64
 
 struct mpeg2fpga_platform {
 	void __iomem *base;
@@ -34,6 +46,16 @@ struct mpeg2fpga_platform {
 	 */
 	u32 dma_addr;
 	u32 dma_len;
+
+	/* /dev/mpeg2fpga, see mpeg2fpga_uapi.h. events/event_seq/event_lost
+	 * are protected by @lock like the rest.
+	 */
+	struct miscdevice misc;
+	unsigned long open_bit;
+	wait_queue_head_t event_wait;
+	DECLARE_KFIFO(events, struct mpeg2fpga_event, MPEG2FPGA_EVENT_QUEUE);
+	u32 event_seq;
+	bool event_lost;
 };
 
 static u32 mpeg2fpga_platform_read(void *ctx, unsigned int reg)
@@ -55,6 +77,8 @@ static irqreturn_t mpeg2fpga_platform_irq(int irq, void *dev_id)
 	struct platform_device *pdev = dev_id;
 	struct mpeg2fpga_platform *priv = platform_get_drvdata(pdev);
 	struct mpeg2fpga_status status;
+	struct mpeg2fpga_picture_event pic;
+	bool picture;
 
 	/* Reading the status register also clears it in hardware (doc sec.
 	 * 1.5/1.9), which deasserts the IRQ line -- this read is what
@@ -64,7 +88,30 @@ static irqreturn_t mpeg2fpga_platform_irq(int irq, void *dev_id)
 	 */
 	spin_lock(&priv->lock);
 	mpeg2fpga_core_poll_status(&priv->core, &status);
+	/* the picture interrupt shares the line; acking it is the other half
+	 * of deasserting it
+	 */
+	picture = mpeg2fpga_core_picture_ack(&priv->core, &pic);
+	if (picture) {
+		struct mpeg2fpga_event ev = {
+			.timestamp_ns = ktime_get_ns(),
+			.seq = priv->event_seq++,
+			.hw_count = pic.count,
+			.frame = pic.frame,
+			.flags = (pic.overrun ? MPEG2FPGA_EVENT_OVERRUN : 0) |
+				 (priv->event_lost ? MPEG2FPGA_EVENT_LOST : 0),
+		};
+
+		/* a full queue drops the new event and flags the next one
+		 * that fits, rather than overwriting what the reader has not
+		 * seen yet
+		 */
+		priv->event_lost = !kfifo_put(&priv->events, ev);
+	}
 	spin_unlock(&priv->lock);
+
+	if (picture)
+		wake_up_interruptible(&priv->event_wait);
 
 	if (status.error)
 		dev_warn(&pdev->dev, "bitstream parse error\n");
@@ -79,6 +126,94 @@ static irqreturn_t mpeg2fpga_platform_irq(int irq, void *dev_id)
 
 	return IRQ_HANDLED;
 }
+
+
+/*
+ * /dev/mpeg2fpga: picture-ready events. See mpeg2fpga_uapi.h for the contract.
+ */
+static struct mpeg2fpga_platform *mpeg2fpga_from_file(struct file *file)
+{
+	return container_of(file->private_data, struct mpeg2fpga_platform, misc);
+}
+
+static int mpeg2fpga_open(struct inode *inode, struct file *file)
+{
+	struct mpeg2fpga_platform *priv = mpeg2fpga_from_file(file);
+	unsigned long flags;
+
+	if (test_and_set_bit(0, &priv->open_bit))
+		return -EBUSY;
+
+	spin_lock_irqsave(&priv->lock, flags);
+	kfifo_reset(&priv->events);
+	priv->event_seq = 0;
+	priv->event_lost = false;
+	mpeg2fpga_core_set_picture_irq(&priv->core, true);
+	spin_unlock_irqrestore(&priv->lock, flags);
+
+	return stream_open(inode, file);
+}
+
+static int mpeg2fpga_release(struct inode *inode, struct file *file)
+{
+	struct mpeg2fpga_platform *priv = mpeg2fpga_from_file(file);
+	unsigned long flags;
+
+	spin_lock_irqsave(&priv->lock, flags);
+	mpeg2fpga_core_set_picture_irq(&priv->core, false);
+	spin_unlock_irqrestore(&priv->lock, flags);
+
+	clear_bit(0, &priv->open_bit);
+	return 0;
+}
+
+static ssize_t mpeg2fpga_read(struct file *file, char __user *buf,
+			      size_t count, loff_t *ppos)
+{
+	struct mpeg2fpga_platform *priv = mpeg2fpga_from_file(file);
+	struct mpeg2fpga_event ev[8];
+	unsigned long flags;
+	unsigned int n;
+	int ret;
+
+	if (count < sizeof(ev[0]))
+		return -EINVAL;
+
+	for (;;) {
+		spin_lock_irqsave(&priv->lock, flags);
+		n = kfifo_out(&priv->events, ev,
+			      min_t(size_t, ARRAY_SIZE(ev), count / sizeof(ev[0])));
+		spin_unlock_irqrestore(&priv->lock, flags);
+		if (n)
+			break;
+		if (file->f_flags & O_NONBLOCK)
+			return -EAGAIN;
+		ret = wait_event_interruptible(priv->event_wait,
+					       !kfifo_is_empty(&priv->events));
+		if (ret)
+			return ret;
+	}
+
+	if (copy_to_user(buf, ev, n * sizeof(ev[0])))
+		return -EFAULT;
+	return n * sizeof(ev[0]);
+}
+
+static __poll_t mpeg2fpga_poll(struct file *file, poll_table *wait)
+{
+	struct mpeg2fpga_platform *priv = mpeg2fpga_from_file(file);
+
+	poll_wait(file, &priv->event_wait, wait);
+	return kfifo_is_empty(&priv->events) ? 0 : EPOLLIN | EPOLLRDNORM;
+}
+
+static const struct file_operations mpeg2fpga_fops = {
+	.owner = THIS_MODULE,
+	.open = mpeg2fpga_open,
+	.release = mpeg2fpga_release,
+	.read = mpeg2fpga_read,
+	.poll = mpeg2fpga_poll,
+};
 
 
 /*
@@ -106,6 +241,25 @@ static ssize_t version_show(struct device *dev, struct device_attribute *attr,
 	return sysfs_emit(buf, "0x%04x\n", version);
 }
 static DEVICE_ATTR_RO(version);
+
+/* "major.minor.patch+hash[-dirty]", from our own BUILD_* registers -- the
+ * version attribute above is upstream mpeg2fpga's, the same for every build
+ */
+static ssize_t build_show(struct device *dev, struct device_attribute *attr,
+			  char *buf)
+{
+	struct mpeg2fpga_platform *priv = dev_get_drvdata(dev);
+	struct mpeg2fpga_build build;
+	unsigned long flags;
+
+	spin_lock_irqsave(&priv->lock, flags);
+	mpeg2fpga_core_get_build(&priv->core, &build);
+	spin_unlock_irqrestore(&priv->lock, flags);
+
+	return sysfs_emit(buf, "%u.%u.%u+%07x%s\n", build.major, build.minor,
+			  build.patch, build.git_hash, build.dirty ? "-dirty" : "");
+}
+static DEVICE_ATTR_RO(build);
 
 static ssize_t enable_show(struct device *dev, struct device_attribute *attr,
 			   char *buf)
@@ -224,6 +378,11 @@ static ssize_t dma_addr_store(struct device *dev, struct device_attribute *attr,
 	ret = kstrtou32(buf, 0, &val);
 	if (ret)
 		return ret;
+	/* stream_dma needs 8-byte aligned starts, see mpeg2fpga_core.c;
+	 * refuse here so the error lands on the write that caused it
+	 */
+	if (val & 7)
+		return -EINVAL;
 	priv->dma_addr = val;
 
 	return count;
@@ -280,12 +439,21 @@ static ssize_t dma_start_store(struct device *dev,
 	struct mpeg2fpga_platform *priv = dev_get_drvdata(dev);
 	struct mpeg2fpga_dma_status status;
 	unsigned long flags;
-	bool start;
+	bool start, last = true;
 	int ret;
 
-	ret = kstrtobool(buf, &start);
-	if (ret)
-		return ret;
+	/* "chunk": more chunks of this stream follow, so no sequence_end
+	 * padding after this one. Anything kstrtobool takes as true starts
+	 * the last (or only) chunk, as before.
+	 */
+	if (sysfs_streq(buf, "chunk")) {
+		start = true;
+		last = false;
+	} else {
+		ret = kstrtobool(buf, &start);
+		if (ret)
+			return ret;
+	}
 	if (!start)
 		return count;
 	if (!priv->dma_len)
@@ -297,10 +465,11 @@ static ssize_t dma_start_store(struct device *dev,
 		spin_unlock_irqrestore(&priv->lock, flags);
 		return -EBUSY;
 	}
-	mpeg2fpga_core_dma_start(&priv->core, priv->dma_addr, priv->dma_len);
+	ret = mpeg2fpga_core_dma_start_chunk(&priv->core, priv->dma_addr,
+					     priv->dma_len, last);
 	spin_unlock_irqrestore(&priv->lock, flags);
 
-	return count;
+	return ret ? ret : count;
 }
 static DEVICE_ATTR_WO(dma_start);
 
@@ -484,6 +653,7 @@ static DEVICE_ATTR_RO(perf_counters);
 
 static struct attribute *mpeg2fpga_attrs[] = {
 	&dev_attr_version.attr,
+	&dev_attr_build.attr,
 	&dev_attr_enable.attr,
 	&dev_attr_geometry.attr,
 	&dev_attr_status.attr,
@@ -519,6 +689,8 @@ static int mpeg2fpga_platform_probe(struct platform_device *pdev)
 		return irq;
 
 	spin_lock_init(&priv->lock);
+	init_waitqueue_head(&priv->event_wait);
+	INIT_KFIFO(priv->events);
 
 	priv->ops.read = mpeg2fpga_platform_read;
 	priv->ops.write = mpeg2fpga_platform_write;
@@ -533,9 +705,27 @@ static int mpeg2fpga_platform_probe(struct platform_device *pdev)
 		return ret;
 
 	mpeg2fpga_core_set_irq_mask(&priv->core, MPEG2FPGA_IRQ_ALL);
+	/* a previous load of this module may have left it on */
+	mpeg2fpga_core_set_picture_irq(&priv->core, false);
 
-	dev_info(&pdev->dev, "mpeg2fpga hw version 0x%04x, irq %d\n",
-		 mpeg2fpga_core_get_version(&priv->core), irq);
+	priv->misc.minor = MISC_DYNAMIC_MINOR;
+	priv->misc.name = "mpeg2fpga";
+	priv->misc.fops = &mpeg2fpga_fops;
+	priv->misc.parent = &pdev->dev;
+	ret = misc_register(&priv->misc);
+	if (ret)
+		return ret;
+
+	{
+		struct mpeg2fpga_build build;
+
+		mpeg2fpga_core_get_build(&priv->core, &build);
+		dev_info(&pdev->dev,
+			 "mpeg2fpga build %u.%u.%u+%07x%s (core 0x%04x), irq %d\n",
+			 build.major, build.minor, build.patch, build.git_hash,
+			 build.dirty ? "-dirty" : "",
+			 mpeg2fpga_core_get_version(&priv->core), irq);
+	}
 
 	return 0;
 }
@@ -544,6 +734,8 @@ static void mpeg2fpga_platform_remove(struct platform_device *pdev)
 {
 	struct mpeg2fpga_platform *priv = platform_get_drvdata(pdev);
 
+	misc_deregister(&priv->misc);
+	mpeg2fpga_core_set_picture_irq(&priv->core, false);
 	mpeg2fpga_core_set_irq_mask(&priv->core, 0);
 }
 

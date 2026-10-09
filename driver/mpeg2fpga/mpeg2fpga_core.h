@@ -78,6 +78,40 @@ struct mpeg2fpga_core {
 	 * only one who will ever see those events.
 	 */
 	u32 sticky;
+	/* @pic_irq_enabled: shadow of PIC_IRQ's enable bit, so acking a
+	 * picture (a write to the same register) keeps it as the owner set it
+	 */
+	bool pic_irq_enabled;
+};
+
+/**
+ * struct mpeg2fpga_build - which release and commit the bitstream was built from
+ * @major: release major version
+ * @minor: release minor version
+ * @patch: release patch version
+ * @git_hash: short git hash (7 hex digits), 0 if the build could not tell
+ * @dirty: built with uncommitted changes, so @git_hash does not reproduce it
+ */
+struct mpeg2fpga_build {
+	u8 major;
+	u8 minor;
+	u16 patch;
+	u32 git_hash;
+	bool dirty;
+};
+
+/**
+ * struct mpeg2fpga_picture_event - one finished picture, as the hardware saw it
+ * @count: free-running hardware picture counter (16 bits, wraps); a gap
+ *	between consecutive events means pictures were missed
+ * @frame: frame store buffer (0..3) holding the picture
+ * @overrun: a further picture arrived before this one was acknowledged --
+ *	only the latest is described here
+ */
+struct mpeg2fpga_picture_event {
+	u16 count;
+	u8 frame;
+	bool overrun;
 };
 
 /**
@@ -292,7 +326,17 @@ bool mpeg2fpga_core_is_enabled(struct mpeg2fpga_core *core);
 /* Stream DMA. Writes address and length before the start bit, which is the
  * order stream_dma.v latches them in.
  */
-void mpeg2fpga_core_dma_start(struct mpeg2fpga_core *core, u32 addr, u32 len);
+int mpeg2fpga_core_dma_start(struct mpeg2fpga_core *core, u32 addr, u32 len);
+int mpeg2fpga_core_dma_start_chunk(struct mpeg2fpga_core *core, u32 addr,
+				    u32 len, bool last);
+
+void mpeg2fpga_core_get_build(struct mpeg2fpga_core *core,
+			       struct mpeg2fpga_build *build);
+
+void mpeg2fpga_core_set_picture_irq(struct mpeg2fpga_core *core, bool enable);
+bool mpeg2fpga_core_picture_irq_enabled(struct mpeg2fpga_core *core);
+bool mpeg2fpga_core_picture_ack(struct mpeg2fpga_core *core,
+				struct mpeg2fpga_picture_event *ev);
 void mpeg2fpga_core_dma_get_status(struct mpeg2fpga_core *core,
 				    struct mpeg2fpga_dma_status *status);
 

@@ -119,10 +119,17 @@ class SysfsControl:
         by reading; take the delta of two calls bracketing one decode."""
         return _parse_lines(self._read("perf_counters"))
 
-    def dma_start(self, addr, length):
+    def dma_start(self, addr, length, last=True):
+        """last=False: more chunks of the same stream follow, so stream_dma
+        skips its sequence_end padding (needs a bitstream with DMA_CTRL's
+        no_pad bit, 2026-10-08)."""
         self._write("dma_addr", addr)
         self._write("dma_len", length)
-        self._write("dma_start", 1)
+        self._write("dma_start", 1 if last else "chunk")
+
+    def build(self):
+        """Bitstream release and commit, e.g. '0.1.0+8004bc9'."""
+        return self._read("build").strip()
 
     def dma_status(self):
         return _parse_lines(self._read("dma_status"))
@@ -234,11 +241,11 @@ class UioControl:
         self._pusher._read_reg(self._reg(self._R_STATUS))
         self._sticky = 0
 
-    def dma_start(self, addr, length):
+    def dma_start(self, addr, length, last=True):
         from dma_push import REG_DMA_ADDR, REG_DMA_CTRL, REG_DMA_LEN
         self._pusher._write_reg(REG_DMA_ADDR, addr)
         self._pusher._write_reg(REG_DMA_LEN, length)
-        self._pusher._write_reg(REG_DMA_CTRL, 1)
+        self._pusher._write_reg(REG_DMA_CTRL, 1 if last else 3)
 
     def dma_status(self):
         return self._pusher.dma_status()

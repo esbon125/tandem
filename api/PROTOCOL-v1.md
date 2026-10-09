@@ -129,7 +129,12 @@ salida de frames se llena (3.2). La librería Python lo hace por dentro.
 
 Cada chunk de entrada va al DMA con el bit `no_pad` (no es el último); el
 último va sin él, y `stream_dma.v` agrega el `sequence_end_code` que hace
-salir la última picture.
+salir la última picture. Los chunks tienen que empezar en direcciones
+alineadas a 8 bytes (el driver rechaza las otras): `stream_dma` lee palabras
+AXI de 64 bits enteras, y un chunk desalineado reenvía los bytes anteriores.
+Verificado en hardware: tek60 en 4 y en 37 chunks alineados da pictures
+bit-idénticas al push único. Esto es interno del daemon; el cliente manda
+chunks HTTP de cualquier tamaño.
 
 ### 3.2 Salida sin pérdidas: congelar el decoder
 
@@ -373,12 +378,22 @@ acepta; en una red pública no, y para eso está 6.2.
 - Certificado autofirmado generado en el primer arranque; el cliente lo fija
   por su huella digital (`fingerprint`) en vez de depender de una autoridad
   certificante. Para un despliegue público se reemplaza por uno real.
-- Apagado por defecto, por costo: medido en la placa (OpenSSL 3.2, un core
-  U54, sin extensiones criptográficas en el CPU), ChaCha20-Poly1305 cifra
-  ~11 MB/s y AES-128-GCM ~5.7 MB/s. El stream de frames a 704x480 / 23 fps son
-  ~12 MB/s: cifrarlo ocupa un core entero o más, y podría frenar la entrega.
-  Por eso el daemon prefiere ChaCha20 cuando TLS está activo, y por eso no
-  está prendido en la LAN.
+- Apagado por defecto, por costo. Medido en la placa de punta a punta
+  (`webserver/tls_bench.py` + `tools/regress/tls_bench_client.py`, Python
+  `ssl` sobre OpenSSL 3.2, un core U54 sin extensiones criptográficas,
+  chunks del tamaño de un frame 704x480):
+
+  | modo | MB/s | CPU por MiB | frames 704x480/s |
+  |---|---|---|---|
+  | HTTP plano | 29.0 | 34 ms | ~57 |
+  | TLS 1.2 ChaCha20-Poly1305 | 7.6 | 132 ms | ~15 |
+  | TLS 1.2 AES-128-GCM | 4.5 | 223 ms | ~9 |
+
+  El core queda al 100% en los tres casos. Sin TLS sobra margen sobre los
+  ~23 fps del decoder; con TLS la entrega pasa a estar limitada por la CPU
+  (~15 fps con ChaCha20) y el control de flujo frena al decoder para
+  acompañarla. Por eso el daemon fuerza ChaCha20 cuando TLS está activo
+  (con AES rinde 40% menos), y por eso no está prendido en la LAN.
 - Alternativa para un despliegue público: TLS terminado en otro equipo
   delante del dispositivo (un reverse proxy), con el dispositivo en una red
   privada detrás. El protocolo no cambia.

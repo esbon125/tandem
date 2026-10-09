@@ -138,6 +138,10 @@
 #define MPEG2FPGA_B_ARBITER_FLAGS	0x1b	/* ro */
 #define MPEG2FPGA_B_MEM_RES_VALID_CNT	0x1c	/* ro: memory responses returned */
 #define MPEG2FPGA_B_CORE_ENABLE		0x20	/* rw: bit 0 releases the core from reset */
+/* 0x2b-0x2d: product registers (2026-10-08), see the bridge's header comment */
+#define MPEG2FPGA_B_BUILD_VERSION	0x2b	/* ro: {major[7:0], minor[7:0], patch[15:0]} */
+#define MPEG2FPGA_B_BUILD_GIT		0x2c	/* ro: {dirty, 3'b0, short hash[27:0]} */
+#define MPEG2FPGA_B_PIC_IRQ		0x2d	/* rw: picture-ready interrupt */
 /* 0x31-0x38: Fase 8d/8e/9b debug counters, reusing SCFIFO_DBG's old eight
  * words (that xfifo_sc RAM port-sharing bug is RESOLVED) -- see
  * apb3_mpeg2fpga_bridge.v's Fase 8f header comment for why these are NOT at
@@ -163,6 +167,28 @@
 
 /* dma ctrl (0x13, write-only) */
 #define MPEG2FPGA_DMA_CTRL_START	BIT(0)
+/* sampled with START: more chunks of the same stream follow, so stream_dma
+ * must not append its sequence_end_code padding after this one
+ */
+#define MPEG2FPGA_DMA_CTRL_NO_PAD	BIT(1)
+
+/* build id (0x2b/0x2c, read-only) */
+#define MPEG2FPGA_BUILD_MAJOR_MASK	GENMASK(31, 24)
+#define MPEG2FPGA_BUILD_MINOR_MASK	GENMASK(23, 16)
+#define MPEG2FPGA_BUILD_PATCH_MASK	GENMASK(15, 0)
+#define MPEG2FPGA_BUILD_GIT_DIRTY	BIT(31)
+#define MPEG2FPGA_BUILD_GIT_HASH_MASK	GENMASK(27, 0)
+
+/* picture-ready interrupt (0x2d). One per finished picture, in display
+ * order, raised when the core hands the picture to its display path.
+ * Read: pending, enable, overrun, frame buffer, free-running count.
+ * Write: enable (level), pending (write 1 to clear pending and overrun).
+ */
+#define MPEG2FPGA_PIC_IRQ_PENDING	BIT(0)
+#define MPEG2FPGA_PIC_IRQ_ENABLE	BIT(1)
+#define MPEG2FPGA_PIC_IRQ_OVERRUN	BIT(2)
+#define MPEG2FPGA_PIC_IRQ_FRAME_MASK	GENMASK(6, 4)
+#define MPEG2FPGA_PIC_IRQ_COUNT_MASK	GENMASK(31, 16)
 
 /* dma status (0x14, read-only), packed as
  * {bytes_done[23:0], 6'b0, done_sticky, busy} -- see the bridge's
