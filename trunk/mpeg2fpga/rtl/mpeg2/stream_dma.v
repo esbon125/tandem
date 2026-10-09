@@ -40,6 +40,21 @@
  * Fase 7a path (decoder_push.py/push_stream.py's SEQUENCE_END_PADDING) --
  * callers pass the real elementary-stream length, not a pre-padded one.
  *
+ * Chunked streaming (2026-10-08, plan item 9): no_pad, sampled together
+ * with start, skips that padding for this one transfer -- "more chunks
+ * follow". A stream fed as a chain of transfers must only be padded after
+ * its last chunk: padding every chunk ends the sequence each time, and the
+ * decoder then starves with no sequence header to resync on (see
+ * webserver/decode_stream.py). With no_pad the transfer goes straight from
+ * its last data beat to S_DONE, and the next transfer's first byte follows
+ * the previous one's last byte on stream_data with nothing in between.
+ *
+ * addr must be 8-byte aligned (any len is fine): reads are whole 64-bit AXI
+ * beats and emission starts at byte 0 of the first one, so an unaligned
+ * start re-sends the bytes below it. A single transfer from an aligned base
+ * never notices; a chain split at arbitrary offsets does -- found on
+ * hardware, 2026-10-08. The driver rejects unaligned addresses.
+ *
  * mpeg_busy is mpeg2video's own busy output (input FIFO risks overflow),
  * the exact same backpressure signal the manual STREAM_PUSH_ADDR path
  * already respects -- both sources share it, and mpeg2fpga_apb_peripheral.v
@@ -101,7 +116,7 @@ module stream_dma (
     clk, rst_n, watchdog_rst,
 
     /* control, core_clk domain (from apb3_mpeg2fpga_bridge.v) */
-    start, addr, len,
+    start, addr, len, no_pad,
     busy, done, bytes_done,
 
     /* mpeg2video side */
@@ -137,6 +152,7 @@ module stream_dma (
   input             start;      /* 1-cycle pulse; ignored while busy */
   input      [31:0] addr;       /* byte offset inside STAGING_BASE */
   input      [31:0] len;        /* real elementary-stream length, no padding */
+  input             no_pad;     /* sampled with start: 1 = more chunks follow, skip S_PAD */
   output            busy;
   output reg        done;       /* 1-cycle pulse */
   output reg [31:0] bytes_done; /* running total, incl. padding; latched at done */
@@ -219,6 +235,7 @@ module stream_dma (
   reg  [3:0]  byte_idx;           /* next byte of beat_r to emit, 0-7 */
 
   reg  [4:0]  pad_idx;            /* 0-31 */
+  reg         no_pad_r;           /* no_pad, latched on start */
 
   /* set by a watchdog_rst pulse, held until any outstanding AXI4 read
    * obligation (beats_left_in_burst != 0 -- see header comment) has been
@@ -248,13 +265,14 @@ module stream_dma (
 
   always @* begin
     case (state)
-      S_IDLE:  next = start ? ((len == 32'd0) ? S_PAD : S_AR) : S_IDLE;
+      S_IDLE:  next = start ? ((len != 32'd0) ? S_AR : no_pad ? S_DONE : S_PAD) : S_IDLE;
       S_AR:    next = m_axi_arready ? S_RDATA : S_AR;
       S_RDATA: next = m_axi_rvalid  ? S_DRAIN : S_RDATA;
       S_DRAIN: if (abort_pending) next = (beats_left_in_burst != 5'd0) ? S_RDATA : S_IDLE;
                else if (mpeg_busy || byte_idx != bytes_in_beat_r) next = S_DRAIN;
                else next = (beats_left_in_burst != 5'd0) ? S_RDATA
                           : (bytes_left != 32'd0)         ? S_AR
+                          : no_pad_r                      ? S_DONE
                           : S_PAD;
       S_PAD:   next = abort_pending ? S_IDLE
                      : (mpeg_busy || pad_idx != 5'd31) ? S_PAD : S_DONE;
@@ -278,6 +296,10 @@ module stream_dma (
     else if (!watchdog_rst) abort_pending <= 1'b1;
     else if (next == S_IDLE) abort_pending <= 1'b0;
   end
+
+  always @(posedge clk or negedge rst_n)
+    if (!rst_n) no_pad_r <= 1'b0;
+    else if ((state == S_IDLE) && start) no_pad_r <= no_pad;
 
   /* transfer-scope bookkeeping: latched on start, advanced per beat */
   always @(posedge clk or negedge rst_n) begin

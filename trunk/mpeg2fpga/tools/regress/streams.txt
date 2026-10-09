@@ -1,0 +1,46 @@
+# Conformance streams for tools/regress.  name  path-under-tools/streams  [pictures, default 8]
+#
+# Each stream is cut to that many pictures on a picture boundary (framecmp cut)
+# so the reference decoder and the hardware hold the same pictures; the
+# framestore keeps four buffers, so more than ~8 adds time and no coverage.
+# Field-picture streams need an even count (two fields make one frame).
+mcp10ccett      ccett/mcp10ccett/mcp10ccett.bits
+tek60           ../framecmp/baselines/c069e3b_tek60/stream.bits
+tek-5.2         tek/Tek-5.2/conf4.bit
+tek-5-long      tek/Tek-5-long/conf4.bit
+att-mismatch    att/att_mismatch/att.bits
+ti-c1-2         ti/TI_cl_2/TI_c1_2.bits
+toshiba-dpall   toshiba/toshiba_DPall-0/toshiba_DPall-0.mpg
+sony-ct1        sony/sony-ct1/sony-ct1.bits
+sony-ct2        sony/sony-ct2/sony-ct2.bits
+sony-ct3        sony/sony-ct3/sony-ct3.bs
+gi4             gi/gi4/video.bits
+gi6             gi/gi6/bit_stream
+gi7             gi/gi7/bit_stream
+gi9             gi/gi_9/bit_stream
+gi-from-tape    gi/gi_from_tape/gi_stream
+hhi-burst-short hhi/hhi_burst_short/hhi_burst_short.bits
+hhi-burst-long  hhi/hhi_burst_long/hhi_burst_long.bits
+ibm-bw          ibm/ibm-bw-v3/ibm-bw.BITS
+lep-11          lep/bits_conf_lep_11/bits_conf_lep_11.bits
+# MPEG-1 (no picture coding extension): out of scope for an MPEG-2 core, kept to show it
+mei-16-long     mei/MEI.stream16.long/MEI.stream16.long
+mei-16v2        mei/MEI.stream16v2/MEI.stream16v2
+mei-2-4f        mei/mei.2conftest.4f/mei_2stream.4f
+mei-2-60f       mei/mei.2conftest.60f.new/mei_2stream.60f.new
+nokia6          nokia/nokia6/nokia6_dual.bit
+nokia6-60       nokia/nokia6/nokia6_dual_60.bit
+nokia7          nokia/nokia_7/nokia7_dual.bit
+ntr-skipped     ntr/ntr_skipped_v3/ntr_skipped_v3.bits
+tceh-conf2      tceh/tceh_conf2/conf2.bits
+tcela-6         tcela/tcela-6-slices/tcela-6.bits
+tcela-7         tcela/tcela-7-slices/tcela-7.bits
+tcela-8         tcela/tcela-8-fp-dp/tcela-8.bits
+tcela-9         tcela/tcela-9-fp-dp/tcela-9.bits
+tcela-10        tcela/tcela-10-killer/tcela-10.bits
+tcela-14-short  tcela/tcela-14-bff-dp/tcela-14.short.bits
+tcela-14        tcela/tcela-14-bff-dp/tcela-14.bits
+tcela-15        tcela/tcela-15-stuffing/tcela-15.bits
+tcela-17        tcela/tcela-17-dots/tcela-17.bits
+teracom-vlc4    teracom/teracom_vlc4/teracom_vlc4.bin
+greyramp        greyramp.mpg

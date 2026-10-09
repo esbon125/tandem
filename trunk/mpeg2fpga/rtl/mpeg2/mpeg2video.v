@@ -59,10 +59,16 @@ module mpeg2video(clk, mem_clk, dot_clk,
              mem_res_wr_dta, mem_res_wr_en, mem_res_wr_almost_full,                                                               // clocked with mem_clk
              testpoint_dip, testpoint_dip_en, testpoint,
              vbuf_wr_addr, vbuf_rd_addr,                                                                                        // clocked with clk; Fase 7a debug
-             disp_service_cnt, vbr_service_cnt, vbr_starved_cnt, arbiter_flags,                                                 // clocked with clk; Fase 7a debug
+             disp_service_cnt, vbr_service_cnt, vbr_starved_cnt, write_service_cnt,               // clocked with clk; Fase 7a/8b debug
+             fwd_service_cnt, bwd_service_cnt, idle_cnt,
+             fwd_addr_empty_cnt, fwd_dta_stall_cnt, bwd_addr_empty_cnt, bwd_dta_stall_cnt,
+             mem_req_almost_full_cnt, tag_almost_full_cnt, arbiter_flags,
+             vld_en_cnt, vld_stall_rld_cnt, vld_stall_motcomp_cnt,               // clocked with clk; Fase 8c debug
+             predict_err_almost_full_cnt, rld_stall_predict_err_cnt,           // clocked with clk; Fase 9b debug
              mem_res_valid_cnt, dbg_last_mem_req_wr_addr, vld_dbg, getbits_dbg,
              dbg_first_mem_res, dbg_first_vbr_wr, vbuf_read_fifo_dbg,                                                              // clocked with clk; Fase 7a debug
-             dbg_mem_req_wr_push_cnt, dbg_mem_req_rd_pop_cnt                                                                    // push_cnt clocked with clk, pop_cnt with mem_clk
+             dbg_mem_req_wr_push_cnt, dbg_mem_req_rd_pop_cnt,                                                                   // push_cnt clocked with clk, pop_cnt with mem_clk
+             picture_out, picture_out_frame                                                                                      // clocked with clk; 2026-10-08 picture-ready tap
 	     );
 
   input            clk;                     // clock. Typically a multiple of 27 Mhz as MPEG2 timestamps have a 27 Mhz resolution.
@@ -80,10 +86,16 @@ module mpeg2video(ref_clk, clk_out, mem_clk_out, mem_rst_out, core_rst_out,
              mem_res_wr_dta, mem_res_wr_en, mem_res_wr_almost_full,                                                               // clocked with mem_clk
              testpoint_dip, testpoint_dip_en, testpoint,
              vbuf_wr_addr, vbuf_rd_addr,                                                                                        // clocked with clk; Fase 7a debug
-             disp_service_cnt, vbr_service_cnt, vbr_starved_cnt, arbiter_flags,                                                 // clocked with clk; Fase 7a debug
+             disp_service_cnt, vbr_service_cnt, vbr_starved_cnt, write_service_cnt,               // clocked with clk; Fase 7a/8b debug
+             fwd_service_cnt, bwd_service_cnt, idle_cnt,
+             fwd_addr_empty_cnt, fwd_dta_stall_cnt, bwd_addr_empty_cnt, bwd_dta_stall_cnt,
+             mem_req_almost_full_cnt, tag_almost_full_cnt, arbiter_flags,
+             vld_en_cnt, vld_stall_rld_cnt, vld_stall_motcomp_cnt,               // clocked with clk; Fase 8c debug
+             predict_err_almost_full_cnt, rld_stall_predict_err_cnt,           // clocked with clk; Fase 9b debug
              mem_res_valid_cnt, dbg_last_mem_req_wr_addr, vld_dbg, getbits_dbg,
              dbg_first_mem_res, dbg_first_vbr_wr, vbuf_read_fifo_dbg,                                                              // clocked with clk; Fase 7a debug
-             dbg_mem_req_wr_push_cnt, dbg_mem_req_rd_pop_cnt                                                                    // push_cnt clocked with clk, pop_cnt with mem_clk
+             dbg_mem_req_wr_push_cnt, dbg_mem_req_rd_pop_cnt,                                                                   // push_cnt clocked with clk, pop_cnt with mem_clk
+             picture_out, picture_out_frame                                                                                      // clocked with clk; 2026-10-08 picture-ready tap
 	     );
 
   input            ref_clk;
@@ -174,6 +186,16 @@ module mpeg2video(ref_clk, clk_out, mem_clk_out, mem_rst_out, core_rst_out,
   output      [31:0]disp_service_cnt;
   output      [31:0]vbr_service_cnt;
   output      [31:0]vbr_starved_cnt;
+  output      [31:0]write_service_cnt;
+  output      [31:0]fwd_service_cnt;
+  output      [31:0]bwd_service_cnt;
+  output      [31:0]idle_cnt;
+  output      [31:0]fwd_addr_empty_cnt;
+  output      [31:0]fwd_dta_stall_cnt;
+  output      [31:0]bwd_addr_empty_cnt;
+  output      [31:0]bwd_dta_stall_cnt;
+  output      [31:0]mem_req_almost_full_cnt;
+  output      [31:0]tag_almost_full_cnt;
   output      [31:0]arbiter_flags;
   output      [31:0]mem_res_valid_cnt;
   output      [21:0]dbg_last_mem_req_wr_addr;
@@ -653,6 +675,114 @@ always @(posedge mem_clk)
 
 always @(posedge dot_clk)
     cnt_dot <= cnt_dot + 1;
+
+  /* 2026-09-07 (Fase 8c): docs/bringup 43 found the memory arbiter idle 90%
+   * of the time after both read and write pipelining -- the bottleneck
+   * moved upstream, into this module's own compute pipeline. getbits.v's
+   * vld_en is the single signal gating whether the VLD may advance at all:
+   *   vld_en = (next==STATE_READY) && ~wait_state && ~rld_wr_almost_full
+   *            && ~mvec_wr_almost_full && ~motcomp_busy
+   * -- i.e. VLD stalls for one of four reasons: getbits itself not ready
+   * (bitstream/alignment side, already known small from vbr_starved_cnt),
+   * the rld/iquant/idct reconstruction chain backed up, the motion-vector
+   * queue to motcomp backed up, or motcomp itself busy (its own input fifo
+   * full -- meaning ITS reconstruction, not memory: fwd/bwd reference reads
+   * are already known small, ~3% combined, from mem_res_valid_cnt/
+   * fwd_service_cnt/bwd_service_cnt). Only 3 APB debug addresses remain
+   * (0x3d-0x3f, PADDR/apb_addr_r is 6 bits -- see apb3_mpeg2fpga_bridge.v),
+   * so this measures VLD's own active fraction plus the two most
+   * architecturally likely culprits (reconstruction backpressure, motcomp
+   * busy) rather than a complete breakdown; mvec_wr_almost_full and the
+   * getbits/wait_state case are left to be inferred as whatever remainder
+   * these three don't account for, same wall-clock-relative-estimate
+   * caveat as every other counter this session. */
+  output reg [31:0] vld_en_cnt;
+  output reg [31:0] vld_stall_rld_cnt;
+  output reg [31:0] vld_stall_motcomp_cnt;
+
+  always @(posedge clk)
+    if (~sync_rst) vld_en_cnt <= 32'b0;
+    else if (vld_en) vld_en_cnt <= vld_en_cnt + 32'd1;
+
+  always @(posedge clk)
+    if (~sync_rst) vld_stall_rld_cnt <= 32'b0;
+    else if (~vld_en && rld_wr_almost_full) vld_stall_rld_cnt <= vld_stall_rld_cnt + 32'd1;
+
+  always @(posedge clk)
+    if (~sync_rst) vld_stall_motcomp_cnt <= 32'b0;
+    else if (~vld_en && motcomp_busy) vld_stall_motcomp_cnt <= vld_stall_motcomp_cnt + 32'd1;
+
+  /* 2026-09-08 (Fase 9b): Fase 9a's fifo_size.v change (MEMTAG_THRESHOLD)
+   * cut tag_almost_full_cnt from ~77% to ~66% on real hardware but left fps
+   * unchanged and vld_stall_rld_cnt/vld_stall_motcomp_cnt roughly where
+   * they were (~37%/~38% combined ~75%, same order as before the fix) --
+   * i.e. the memory-arbiter plumbing had headroom to spare all along, and
+   * relieving it didn't help, pointing the remaining investigation squarely
+   * downstream of the arbiter, into the reconstruction pipeline itself.
+   * rld_wr_almost_full (already measured by vld_stall_rld_cnt) is rld_fifo's
+   * own almost-full flag -- the queue VLD writes run/length coefficients
+   * into and RLD drains -- and rld.v's own module port list already wires
+   * idct_fifo_almost_full (predict_err_fifo's prog_full, from idct.v,
+   * declared as the `idct_fifo_almost_full` wire below) directly into rld
+   * as an input. That is: RLD already deliberately stalls draining
+   * rld_fifo whenever predict_err_fifo (motcomp_recon's input) is nearly
+   * full -- a backpressure chain that was already built into the design,
+   * just never instrumented. If idct_fifo_almost_full is asserted for most
+   * of vld_stall_rld_cnt's own window, the true bottleneck is motcomp_recon
+   * not draining predict_err_fifo fast enough (its own header comment's
+   * claim, just not for the memory-feed-rate reason originally assumed --
+   * today's fifo/tag measurements already ruled that out). If it mostly
+   * isn't, rld_wr_almost_full has some OTHER cause -- rld/iquant/idct's own
+   * multi-cycle-per-coefficient processing latency, independent of
+   * anything downstream -- which would point the next investigation at
+   * rld.v/iquant.v/idct.v's own per-symbol cycle counts instead of at
+   * motcomp_recon at all. */
+  output reg [31:0] predict_err_almost_full_cnt;
+  output reg [31:0] rld_stall_predict_err_cnt;
+
+  always @(posedge clk)
+    if (~sync_rst) predict_err_almost_full_cnt <= 32'b0;
+    else if (idct_fifo_almost_full) predict_err_almost_full_cnt <= predict_err_almost_full_cnt + 32'd1;
+
+  always @(posedge clk)
+    if (~sync_rst) rld_stall_predict_err_cnt <= 32'b0;
+    else if (~vld_en && rld_wr_almost_full && idct_fifo_almost_full) rld_stall_predict_err_cnt <= rld_stall_predict_err_cnt + 32'd1;
+
+  /* 2026-10-08: picture-ready tap, read-only. picture_out pulses for one clk
+   * cycle when motcomp_picbuf hands a finished frame to the display path,
+   * i.e. on the rising edge of output_frame_valid; picture_out_frame is the
+   * frame store buffer (0..3) that holds it. That hand-off already happens in
+   * display order (motcomp_picbuf reorders I/P against B), which is exactly
+   * the order software wants frames in. Forced frames (source_select 4..7,
+   * trick mode "show buffer N") raise output_frame_valid too and are not
+   * decoded pictures, so they are masked out.
+   *
+   * This exists because none of the core's own interrupts mean "a picture is
+   * in the frame store": picture_hdr fires at the VLD before reconstruction,
+   * and frame_end is the display's vertical sync (doc/mpeg2fpga.txt 1.9).
+   * apb3_mpeg2fpga_bridge.v turns the pulse into a maskable interrupt. Only
+   * wires are read here; nothing in motcomp/resample changes. */
+  output reg       picture_out;
+  output reg  [2:0]picture_out_frame;
+  reg              output_frame_valid_d;
+
+  always @(posedge clk)
+    if (~sync_rst) output_frame_valid_d <= 1'b0;
+    else output_frame_valid_d <= output_frame_valid;
+
+  always @(posedge clk)
+    if (~sync_rst) begin
+      picture_out       <= 1'b0;
+      picture_out_frame <= 3'd0;
+    end else begin
+      picture_out       <= output_frame_valid && ~output_frame_valid_d && (source_select == 3'd0);
+      picture_out_frame <= output_frame;
+    end
+
+`ifdef __IVERILOG__
+  always @(posedge clk)
+    if (picture_out) $display("%m\tpicture_out: frame buffer %0d at %0t", picture_out_frame, $time);
+`endif
 
   /* 2026-08-27 clock/reset liveness debug: dbg_mem_req_rd_pop_cnt reads 0
    * on real hardware even with both mem_req_rd_en root causes fixed and
@@ -1515,6 +1645,16 @@ always @(posedge dot_clk)
     .disp_service_cnt(disp_service_cnt),
     .vbr_service_cnt(vbr_service_cnt),
     .vbr_starved_cnt(vbr_starved_cnt),
+    .write_service_cnt(write_service_cnt),
+    .fwd_service_cnt(fwd_service_cnt),
+    .bwd_service_cnt(bwd_service_cnt),
+    .idle_cnt(idle_cnt),
+    .fwd_addr_empty_cnt(fwd_addr_empty_cnt),
+    .fwd_dta_stall_cnt(fwd_dta_stall_cnt),
+    .bwd_addr_empty_cnt(bwd_addr_empty_cnt),
+    .bwd_dta_stall_cnt(bwd_dta_stall_cnt),
+    .mem_req_almost_full_cnt(mem_req_almost_full_cnt),
+    .tag_almost_full_cnt(tag_almost_full_cnt),
     .arbiter_flags(arbiter_flags_framestore),
     .mem_res_valid_cnt(mem_res_valid_cnt),
     .dbg_last_mem_req_wr_addr(dbg_last_mem_req_wr_addr),

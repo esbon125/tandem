@@ -376,6 +376,21 @@ module mpeg2fpga_apb_peripheral (
   wire [31:0]  disp_service_cnt_internal;
   wire [31:0]  vbr_service_cnt_internal;
   wire [31:0]  vbr_starved_cnt_internal;
+  wire [31:0]  write_service_cnt_internal;
+  wire [31:0]  fwd_service_cnt_internal;
+  wire [31:0]  bwd_service_cnt_internal;
+  wire [31:0]  idle_cnt_internal;
+  wire [31:0]  vld_en_cnt_internal;
+  wire [31:0]  vld_stall_rld_cnt_internal;
+  wire [31:0]  vld_stall_motcomp_cnt_internal;
+  wire [31:0]  predict_err_almost_full_cnt_internal;
+  wire [31:0]  rld_stall_predict_err_cnt_internal;
+  wire [31:0]  fwd_addr_empty_cnt_internal;
+  wire [31:0]  fwd_dta_stall_cnt_internal;
+  wire [31:0]  bwd_addr_empty_cnt_internal;
+  wire [31:0]  bwd_dta_stall_cnt_internal;
+  wire [31:0]  mem_req_almost_full_cnt_internal;
+  wire [31:0]  tag_almost_full_cnt_internal;
   wire [31:0]  arbiter_flags_internal;
   wire [31:0]  mem_res_valid_cnt_internal;
   wire [21:0]  dbg_last_write_addr_from_fifo_internal;
@@ -416,6 +431,16 @@ module mpeg2fpga_apb_peripheral (
   wire        dma_start;
   wire [31:0] dma_addr;
   wire [31:0] dma_len;
+  wire        dma_no_pad;      /* 2026-10-08: chunked streaming, see stream_dma.v */
+
+  /* 2026-10-08: picture-ready interrupt. mpeg2video's own interrupt (STATUS
+   * register sources, doc sec. 1.9) and u_bridge's PIC_IRQ share the single
+   * fabric-to-MSS line; the driver reads both to tell them apart. */
+  wire        core_interrupt;
+  wire        picture_out;
+  wire  [2:0] picture_out_frame;
+  wire        picture_irq;
+  assign interrupt = core_interrupt | picture_irq;
   wire        dma_busy;
   wire        dma_done;
   wire [31:0] dma_bytes_done;
@@ -456,14 +481,30 @@ module mpeg2fpga_apb_peripheral (
       .stream_data(stream_data_internal),
       .stream_valid(stream_valid_internal),
 
-      .dma_start(dma_start), .dma_addr(dma_addr), .dma_len(dma_len),
+      .dma_start(dma_start), .dma_addr(dma_addr), .dma_len(dma_len), .dma_no_pad(dma_no_pad),
       .dma_busy(dma_busy), .dma_done(dma_done), .dma_bytes_done(dma_bytes_done),
+      .picture_out(picture_out), .picture_out_frame(picture_out_frame), .picture_irq(picture_irq),
 
       .vbuf_wr_addr(vbuf_wr_addr_internal), .vbuf_rd_addr(vbuf_rd_addr_internal),
 
       .disp_service_cnt(disp_service_cnt_internal),
       .vbr_service_cnt(vbr_service_cnt_internal),
       .vbr_starved_cnt(vbr_starved_cnt_internal),
+      .write_service_cnt(write_service_cnt_internal),
+      .fwd_service_cnt(fwd_service_cnt_internal),
+      .bwd_service_cnt(bwd_service_cnt_internal),
+      .idle_cnt(idle_cnt_internal),
+      .vld_en_cnt(vld_en_cnt_internal),
+      .vld_stall_rld_cnt(vld_stall_rld_cnt_internal),
+      .vld_stall_motcomp_cnt(vld_stall_motcomp_cnt_internal),
+      .predict_err_almost_full_cnt(predict_err_almost_full_cnt_internal),
+      .rld_stall_predict_err_cnt(rld_stall_predict_err_cnt_internal),
+      .fwd_addr_empty_cnt(fwd_addr_empty_cnt_internal),
+      .fwd_dta_stall_cnt(fwd_dta_stall_cnt_internal),
+      .bwd_addr_empty_cnt(bwd_addr_empty_cnt_internal),
+      .bwd_dta_stall_cnt(bwd_dta_stall_cnt_internal),
+      .mem_req_almost_full_cnt(mem_req_almost_full_cnt_internal),
+      .tag_almost_full_cnt(tag_almost_full_cnt_internal),
       .arbiter_flags(arbiter_flags_combined),
       .mem_res_valid_cnt(mem_res_valid_cnt_internal),
 
@@ -484,7 +525,7 @@ module mpeg2fpga_apb_peripheral (
   stream_dma u_stream_dma (
       .clk(clk_internal), .rst_n(gated_rst_n), .watchdog_rst(watchdog_rst),
 
-      .start(dma_start), .addr(dma_addr), .len(dma_len),
+      .start(dma_start), .addr(dma_addr), .len(dma_len), .no_pad(dma_no_pad),
       .busy(dma_busy), .done(dma_done), .bytes_done(dma_bytes_done),
 
       .mpeg_busy(busy),
@@ -523,7 +564,7 @@ module mpeg2fpga_apb_peripheral (
 
       .busy(busy),
       .error(error),
-      .interrupt(interrupt),
+      .interrupt(core_interrupt),
       .watchdog_rst(watchdog_rst),
 
       .r(r), .g(g), .b(b), .y(y), .u(u), .v(v),
@@ -550,6 +591,21 @@ module mpeg2fpga_apb_peripheral (
       .disp_service_cnt(disp_service_cnt_internal),
       .vbr_service_cnt(vbr_service_cnt_internal),
       .vbr_starved_cnt(vbr_starved_cnt_internal),
+      .write_service_cnt(write_service_cnt_internal),
+      .fwd_service_cnt(fwd_service_cnt_internal),
+      .bwd_service_cnt(bwd_service_cnt_internal),
+      .idle_cnt(idle_cnt_internal),
+      .vld_en_cnt(vld_en_cnt_internal),
+      .vld_stall_rld_cnt(vld_stall_rld_cnt_internal),
+      .vld_stall_motcomp_cnt(vld_stall_motcomp_cnt_internal),
+      .predict_err_almost_full_cnt(predict_err_almost_full_cnt_internal),
+      .rld_stall_predict_err_cnt(rld_stall_predict_err_cnt_internal),
+      .fwd_addr_empty_cnt(fwd_addr_empty_cnt_internal),
+      .fwd_dta_stall_cnt(fwd_dta_stall_cnt_internal),
+      .bwd_addr_empty_cnt(bwd_addr_empty_cnt_internal),
+      .bwd_dta_stall_cnt(bwd_dta_stall_cnt_internal),
+      .mem_req_almost_full_cnt(mem_req_almost_full_cnt_internal),
+      .tag_almost_full_cnt(tag_almost_full_cnt_internal),
       .arbiter_flags(arbiter_flags_internal),
       .mem_res_valid_cnt(mem_res_valid_cnt_internal),
       .dbg_last_mem_req_wr_addr(dbg_last_mem_req_wr_addr_internal),
@@ -559,7 +615,9 @@ module mpeg2fpga_apb_peripheral (
       .dbg_first_vbr_wr(dbg_first_vbr_wr_internal),
       .vbuf_read_fifo_dbg(vbuf_read_fifo_dbg_internal),
       .dbg_mem_req_wr_push_cnt(dbg_mem_req_wr_push_cnt_internal),
-      .dbg_mem_req_rd_pop_cnt(dbg_mem_req_rd_pop_cnt_internal)
+      .dbg_mem_req_rd_pop_cnt(dbg_mem_req_rd_pop_cnt_internal),
+      .picture_out(picture_out),
+      .picture_out_frame(picture_out_frame)
   );
 
   assign mem_clk_out = mem_clk_internal;

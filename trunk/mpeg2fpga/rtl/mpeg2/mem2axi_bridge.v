@@ -51,6 +51,55 @@
  * translation never carries into bits the firmware side doesn't expect to
  * move.
  *
+ * Read pipelining (2026-09-06, Fase 8a -- optimizing decode rate, see
+ * decode_rate_bottleneck memory / this module's own comment above naming
+ * "multiple outstanding transactions" as the next lever): reads no longer
+ * block the state machine until RDATA returns. Once an AR is accepted,
+ * `state` goes straight back to S_IDLE so the next request can be popped
+ * from mem_req_rd immediately -- up to RESP_DEPTH reads can now be
+ * in-flight-or-buffered at once. This needed neither distinct AXI ids nor
+ * touching mem_tag_fifo/framestore.v as originally guessed: every read still
+ * uses id 0, and AXI4 guarantees transactions sharing an id complete in
+ * issue order, so RDATA always arrives in the same order the reads were
+ * requested -- exactly the order mem_res_wr must reproduce -- with no
+ * per-transaction bookkeeping needed on this end. rd_outstanding counts
+ * ARs issued but not yet answered; resp_buf is a small local FIFO (separate
+ * from mem_response_fifo downstream) holding RDATA that has arrived but not
+ * yet been pushed into mem_res_wr, absorbing mem_res_wr_almost_full without
+ * stalling the AXI R channel for the whole backpressure window.
+ *
+ * Two commands to the same address, program-order READ-then-WRITE or
+ * WRITE-then-READ, need that order preserved against the real DDR4 access,
+ * and AXI4 makes no ordering promise between a read and a write even sharing
+ * an id (only among transactions of the same *type* and id). So a WRITE may
+ * only start once rd_outstanding is back to 0 -- i.e. every earlier read has
+ * actually been answered by the memory, not merely issued. Two reads never
+ * have this problem: neither mutates memory, so returning their data out of
+ * *request* order relative to each other cannot happen (same id forbids it)
+ * and would not matter if it somehow did.
+ *
+ * Write pipelining (2026-09-07, Fase 8b -- profiling in
+ * docs/bringup/41_pipelining_lecturas_en_mem2axi_bridge.md's follow-up found
+ * reads, even after Fase 8a, accounting for only a small slice of the cycle
+ * budget, with writes -- never touched by 8a -- the prime remaining
+ * suspect): the same trick as 8a's reads, applied to writes. Once AW and W
+ * have *both* been accepted, `state` returns to S_IDLE instead of waiting
+ * for BRESP, so the next request can be popped immediately -- up to
+ * WR_DEPTH writes can now be outstanding (accepted, BRESP not yet seen) at
+ * once. Same reasoning as reads: every write still uses id 0, and AXI4
+ * guarantees same-id same-type transactions complete in the order issued,
+ * so two writes committing to memory out of order relative to each other
+ * cannot happen. wr_outstanding counts AW+W-accepted-but-unBRESPed writes;
+ * unlike rd_outstanding there is no buffer to build alongside it, since a
+ * write has no data to relay anywhere -- only a count.
+ *
+ * The read/write hazard from 8a is symmetric now, not just one-directional:
+ * a WRITE still waits for rd_outstanding==0 (as above), and a READ now
+ * *also* waits for wr_outstanding==0 before its AR may issue -- otherwise a
+ * read pipelined in behind a still-uncommitted write could race it. Reads
+ * pipeline freely against other reads, writes pipeline freely against other
+ * writes; the two kinds still never overlap each other.
+ *
  * Graceful-abort fix (2026-08-26, same investigation as stream_dma.v's --
  * see its header comment for the full mechanism and docs/bringup/
  * 24_fase7a_fwft_fix_and_axi4_interconnect_wedge.md): `rst` used to be
@@ -58,7 +107,9 @@
  * master has the identical vulnerability stream_dma.v's had: FIC_1 and the
  * DDR controller are not in mpeg2video's watchdog reset domain, so
  * resetting `state` instantly while an AW/W/B or AR/R transaction is
- * outstanding (S_WRITE, S_BRESP, S_ARADDR, S_RDATA) abandons it -- confirmed
+ * outstanding (S_WRITE, S_ARADDR, or -- since Fase 8a/8b's pipelining --
+ * rd_outstanding/wr_outstanding != 0 with `state` already back at S_IDLE)
+ * abandons it -- confirmed
  * on real hardware (dbg_last_write_awaddr_issued reading back an
  * arithmetically-impossible 0 mid-stall, only explainable by this module's
  * `rst` firing again with the AXI4 side never having drained) and
@@ -211,11 +262,10 @@ module mem2axi_bridge (
   localparam [2:0]
     S_IDLE   = 3'd0,   // popping mem_req_rd; mem_req_rd_en asserted
     S_LATCH  = 3'd1,   // mem_req_rd_valid seen last cycle; cmd_r/addr_r/dta_r valid, decode cmd
-    S_WRITE  = 3'd2,   // AW/W outstanding, waiting on awready/wready
-    S_BRESP  = 3'd3,   // waiting on bvalid
-    S_ARADDR = 3'd4,   // AR outstanding, waiting on arready
-    S_RDATA  = 3'd5,   // waiting on rvalid
-    S_RESP   = 3'd6;   // pushing mem_res_wr, respecting mem_res_wr_almost_full
+    S_WRITE  = 3'd2,   // AW/W outstanding, waiting on awready/wready -- BRESP itself is no
+                        // longer waited on here, see wr_outstanding below
+    S_ARADDR = 3'd4;   // AR outstanding, waiting on arready -- RDATA itself is no longer
+                        // waited on here, see rd_outstanding/resp_buf below
 
   reg [2:0]state;
   reg [2:0]next;
@@ -229,33 +279,56 @@ module mem2axi_bridge (
 
   wire [37:0]axi_addr = DDR_BASE + {addr_r, 3'b000};
 
-  /* next-state logic */
-  always @* begin
-    case (state)
-      S_IDLE:   next = mem_req_rd_valid ? S_LATCH : S_IDLE;
-      S_LATCH:  case (cmd_r)
-                  CMD_WRITE: next = S_WRITE;
-                  CMD_READ:  next = S_ARADDR;
-                  default:   next = S_IDLE;      // CMD_NOOP / CMD_REFRESH: no AXI transaction
-                endcase
-      S_WRITE:  next = ((aw_done || m_axi_awready) && (w_done || m_axi_wready)) ? S_BRESP : S_WRITE;
-      S_BRESP:  next = m_axi_bvalid ? S_IDLE : S_BRESP;
-      S_ARADDR: next = m_axi_arready ? S_RDATA : S_ARADDR;
-      S_RDATA:  next = m_axi_rvalid ? S_RESP : S_RDATA;
-      S_RESP:   next = mem_res_wr_almost_full ? S_RESP : S_IDLE;
-      default:  next = S_IDLE;
-    endcase
-  end
+  /* read pipelining -- see header comment. ar_hs/r_hs are the AR/R channel
+   * handshakes; RESP_DEPTH bounds both how many reads may be outstanding at
+   * once and the local buffer that decouples RDATA arrival from
+   * mem_res_wr_almost_full. 4 is a first cut, not a hardware limit -- tune
+   * against measured decode rate. */
+  localparam [2:0] RESP_DEPTH = 3'd4;
 
-  /* an AXI4 obligation is outstanding -- AW/W/B issued or accepted-but-
-   * unacked (S_WRITE/S_BRESP), or AR issued/accepted-but-unacked
-   * (S_ARADDR/S_RDATA) -- and state must not be clobbered by a deferred
-   * watchdog reset until it clears. S_RESP has none (the AXI4 side of a
-   * read is already fully done by then; only mpeg2video's own response
-   * fifo is pending) so it's safe to abandon immediately, same as S_IDLE/
-   * S_LATCH. See header comment. */
-  wire in_axi_obligation = (state == S_WRITE) || (state == S_BRESP) ||
-                            (state == S_ARADDR) || (state == S_RDATA);
+  wire ar_hs = m_axi_arvalid && m_axi_arready;
+  wire r_hs  = m_axi_rvalid  && m_axi_rready;
+
+  reg [2:0] rd_outstanding;   // ARs accepted but not yet answered by RDATA
+
+  /* write pipelining -- see header comment. b_hs is the B channel handshake
+   * (bready is unconditionally 1, see below, so b_hs reduces to bvalid).
+   * WR_DEPTH bounds how many writes may be outstanding at once; unlike
+   * RESP_DEPTH there is no buffer sized against it -- a write has no data to
+   * relay anywhere once accepted, only a count of how many BRESPs are still
+   * owed. */
+  localparam [2:0] WR_DEPTH = 3'd4;
+
+  wire b_hs = m_axi_bvalid && m_axi_bready;
+
+  reg [2:0] wr_outstanding;   // AW+W accepted but not yet answered by BRESP
+
+  /* resp_buf: small local FIFO (RESP_DEPTH entries, indices mod RESP_DEPTH)
+   * holding RDATA that has arrived but not yet been pushed into mem_res_wr.
+   * Pushed by r_hs, popped whenever mem_res_wr has room and the buffer is
+   * non-empty -- both can happen the same cycle. Responses are pushed and
+   * popped in strict arrival order, which -- because every read shares AXI
+   * id 0 -- is also request order (see header comment), matching what
+   * mem_res_wr must reproduce. */
+  reg [63:0] resp_buf [0:RESP_DEPTH-1];
+  reg  [1:0] resp_wptr, resp_rptr;
+  reg  [2:0] resp_count;
+
+  wire resp_pop = (resp_count != 3'd0) && !mem_res_wr_almost_full;
+
+  /* an AXI4 obligation is outstanding -- AW/W issued or accepted-but-unacked
+   * (S_WRITE), AR issued/accepted-but-unacked (S_ARADDR), any read whose AR
+   * was already accepted but whose RDATA has not yet come back
+   * (rd_outstanding != 0), or any write whose AW+W were already accepted but
+   * whose BRESP has not yet come back (wr_outstanding != 0) -- none of which
+   * are reflected in `state` any more once accepted, since Fase 8a/8b's
+   * pipelining returns `state` to S_IDLE right after the AR or AW+W
+   * handshake. Data already sitting in resp_buf, waiting only on
+   * mem_res_wr_almost_full, carries no such obligation: the AXI4 side of
+   * that read is already fully done, same reasoning the old S_RESP state
+   * used. See header comment. */
+  wire in_axi_obligation = (state == S_WRITE) || (state == S_ARADDR) ||
+                            (rd_outstanding != 3'd0) || (wr_outstanding != 3'd0);
 
   reg abort_pending;
 
@@ -264,9 +337,61 @@ module mem2axi_bridge (
     else if (!watchdog_rst) abort_pending <= 1'b1;
     else if (abort_pending && !in_axi_obligation) abort_pending <= 1'b0;
 
+  /* next-state logic. Unlike before Fase 8b, there is no override forcing
+   * `next` to S_IDLE once the obligation that made abort_pending wait
+   * clears -- with reads and writes pipelined, `state` can legitimately
+   * already be mid-S_LATCH for a brand-new, unrelated request by the exact
+   * cycle some *earlier* request's rd_outstanding/wr_outstanding drains to
+   * 0. An override at that point would either clobber that unrelated
+   * request's own `next` (every block reading `next` -- the AW/AR channel
+   * drivers, mem_req_rd_en's pop pulse below -- would then disagree with
+   * each other for one cycle: e.g. the AR driver still sees the
+   * pre-override next==S_ARADDR and issues a real ARVALID pulse the main
+   * state register never accounted for, an AXI4 protocol violation
+   * (ARVALID withdrawn before ARREADY) a real interconnect need not
+   * tolerate -- reproduced in bench/mem_axi_bridge/testbench_wedge.v:
+   * fake_axi_ddr's AR state machine latched the withdrawn address anyway
+   * and produced a phantom RDATA beat later, underflowing rd_outstanding
+   * to 3'b111), or silently drop a fully legitimate new request depending
+   * on exactly which cycle the drain happened to land on -- also
+   * reproduced there, as an intermittent timeout in the *recovery* half of
+   * the very same scenario the override was meant to fix.
+   *
+   * The actual fix needs no state-machine override at all: mem_req_rd_en
+   * below is gated on `!abort_pending`, so no *new* request is ever popped
+   * from mem_req_rd while an abort is pending, regardless of what `state`
+   * or `next` compute. The in-flight transaction that triggered
+   * abort_pending (if `state` was S_WRITE/S_ARADDR at the time) is left
+   * completely alone and completes normally through the case below; once
+   * it does, `state` naturally settles at S_IDLE and *stays* there --
+   * next_raw's own S_IDLE case only ever leaves idle in response to
+   * mem_req_rd_valid, which cannot go high while nothing is being popped.
+   * So by the time in_axi_obligation actually clears and abort_pending
+   * follows suit, state is already idle with nothing latched -- normal
+   * popping resumes the following cycle with nothing lost and nothing to
+   * race against. */
+  always @* begin
+    case (state)
+      S_IDLE:   next = mem_req_rd_valid ? S_LATCH : S_IDLE;
+      S_LATCH:  case (cmd_r)
+                  // a write must wait for every earlier read to actually be
+                  // answered (not merely issued), and for room in the write
+                  // pipeline -- see header comment
+                  CMD_WRITE: next = (rd_outstanding == 3'd0) && (wr_outstanding < WR_DEPTH) ? S_WRITE : S_LATCH;
+                  // symmetric: a read must wait for every earlier write to
+                  // actually be committed, and for room in the read pipeline
+                  CMD_READ:  next = (wr_outstanding == 3'd0) && (rd_outstanding < RESP_DEPTH) ? S_ARADDR : S_LATCH;
+                  default:   next = S_IDLE;      // CMD_NOOP / CMD_REFRESH: no AXI transaction
+                endcase
+      // don't wait for BRESP here anymore -- see wr_outstanding
+      S_WRITE:  next = ((aw_done || m_axi_awready) && (w_done || m_axi_wready)) ? S_IDLE : S_WRITE;
+      S_ARADDR: next = m_axi_arready ? S_IDLE : S_ARADDR;   // don't wait for RDATA here anymore
+      default:  next = S_IDLE;
+    endcase
+  end
+
   always @(posedge clk)
     if (~rst) state <= S_IDLE;
-    else if (abort_pending && !in_axi_obligation) state <= S_IDLE;
     else state <= next;
 
   /* Fase 7a debug (2026-08-23): bisect "mpeg2fpga -> fifo" from "fifo ->
@@ -356,10 +481,17 @@ module mem2axi_bridge (
    * cycles in a row, so at most one fifo word is ever popped before its
    * result is captured, matching CoreFIFO's one-cycle read latency
    * exactly. Verified in e2e_fix_test: rptr reaches 60 and all 60 turn
-   * into completed AXI4 writes (was 31/60 without this). */
+   * into completed AXI4 writes (was 31/60 without this).
+   *
+   * 2026-09-07 (Fase 8b): added `&& !abort_pending` -- this is the actual
+   * graceful-abort mechanism now (see the next-state logic's header
+   * comment above for why an override on `next`/`state` instead was worse
+   * than no override at all). No new request is latched while an abort is
+   * pending; the in-flight transaction that triggered it, if any, drains
+   * on its own through the case statement above, untouched. */
   always @(posedge clk)
     if (~rst) mem_req_rd_en <= 1'b0;
-    else mem_req_rd_en <= (next == S_IDLE) && !mem_req_rd_empty && !mem_req_rd_en;
+    else mem_req_rd_en <= (next == S_IDLE) && !abort_pending && !mem_req_rd_empty && !mem_req_rd_en;
 
   /* AXI write address/data channels */
   always @(posedge clk)
@@ -397,18 +529,16 @@ module mem2axi_bridge (
       end
     endcase
 
-  /* 2026-08-27: was (state == S_BRESP) -- state only reaches S_BRESP one
-   * cycle after AW/W actually complete (next decides S_BRESP combinationally
-   * off aw_done/w_done/awready/wready, state registers it the following
-   * edge), so BREADY used to trail the AW/W handshake by a cycle. Confirmed
-   * on real hardware (SmartDebug Active Probes): the FSM sits in S_BRESP
-   * forever, AWVALID/WVALID both already low (accepted), BVALID never
-   * arrives. AXI4 requires a slave to hold VALID until READY is seen, so a
-   * spec-compliant slave shouldn't be affected either way -- but this
-   * bridge is single-outstanding and has no other use for the cycle BREADY
-   * would otherwise withhold, so there is no reason to gate it on state at
-   * all. Holding it unconditionally high removes any chance of a real
-   * slave's BVALID window being missed by one cycle, at zero cost. */
+  /* 2026-08-27: was (state == S_BRESP) -- a stale state that no longer
+   * exists (Fase 8b's write pipelining folded it back into S_WRITE's own
+   * transition to S_IDLE, the same move Fase 8a made for S_RDATA). Gating
+   * BREADY on `state` was already wrong before that removal: the FSM could
+   * sit waiting on BVALID forever with AWVALID/WVALID both already low
+   * (accepted) if BREADY trailed the handshake by even a cycle -- confirmed
+   * on real hardware via SmartDebug Active Probes. AXI4 requires a slave to
+   * hold BVALID until BREADY is seen, so holding BREADY unconditionally high
+   * removes any chance of that miss at zero cost -- this bridge never has a
+   * competing use for the cycle it would otherwise withhold. */
   assign m_axi_bready = 1'b1;
 
   /* AXI read address channel */
@@ -425,16 +555,13 @@ module mem2axi_bridge (
       default:  m_axi_arvalid <= 1'b0;
     endcase
 
-  /* same reasoning as m_axi_bready above -- data capture below already
-   * gates on (state == S_RDATA) && m_axi_rvalid, so holding RREADY
-   * unconditionally high can't cause a wrong read to be captured; it just
-   * removes the same one-cycle-late-READY risk on the read response. */
-  assign m_axi_rready = 1'b1;
-
-  /* capture the read result, then push it once the response fifo has room */
-  always @(posedge clk)
-    if (~rst) mem_res_wr_dta <= 64'b0;
-    else if ((state == S_RDATA) && m_axi_rvalid) mem_res_wr_dta <= m_axi_rdata;
+  /* RREADY now genuinely gates on buffer room -- unlike the old
+   * single-outstanding design, RDATA can arrive while this bridge still has
+   * an earlier result parked in resp_buf waiting on mem_res_wr_almost_full,
+   * so it is no longer always safe to accept the next beat immediately.
+   * Deasserting RREADY simply makes the AXI4 slave hold RVALID, which is
+   * spec-legal backpressure, not a hang. */
+  assign m_axi_rready = (resp_count < RESP_DEPTH);
 
   always @(posedge clk)
     if (~rst)
@@ -442,16 +569,51 @@ module mem2axi_bridge (
         dbg_first_rdata      <= 64'b0;
         dbg_first_rdata_seen <= 1'b0;
       end
-    else if ((state == S_RDATA) && m_axi_rvalid && ~dbg_first_rdata_seen)
+    else if (r_hs && ~dbg_first_rdata_seen)
       begin
         dbg_first_rdata      <= m_axi_rdata;
         dbg_first_rdata_seen <= 1'b1;
       end
 
+  /* rd_outstanding: +1 per AR accepted, -1 per RDATA accepted into resp_buf.
+   * Bounded to [0, RESP_DEPTH] by the S_LATCH/CMD_READ gate above. */
   always @(posedge clk)
-    if (~rst) mem_res_wr_en <= 1'b0;
-    else if (state == S_RESP) mem_res_wr_en <= ~mem_res_wr_almost_full;
-    else mem_res_wr_en <= 1'b0;
+    if (~rst) rd_outstanding <= 3'd0;
+    else rd_outstanding <= rd_outstanding + (ar_hs ? 3'd1 : 3'd0) - (r_hs ? 3'd1 : 3'd0);
+
+  /* wr_outstanding: +1 per write whose AW and W have both been accepted
+   * (the same condition that used to gate the transition into the now-gone
+   * S_BRESP), -1 per BRESP. Bounded to [0, WR_DEPTH] by the S_LATCH/
+   * CMD_WRITE gate above. */
+  wire write_accepted = (state == S_WRITE) &&
+                         (aw_done || m_axi_awready) && (w_done || m_axi_wready);
+
+  always @(posedge clk)
+    if (~rst) wr_outstanding <= 3'd0;
+    else wr_outstanding <= wr_outstanding + (write_accepted ? 3'd1 : 3'd0) - (b_hs ? 3'd1 : 3'd0);
+
+  always @(posedge clk)
+    if (~rst) begin
+      resp_wptr  <= 2'd0;
+      resp_rptr  <= 2'd0;
+      resp_count <= 3'd0;
+    end else begin
+      if (r_hs) begin
+        resp_buf[resp_wptr] <= m_axi_rdata;
+        resp_wptr <= resp_wptr + 2'd1;
+      end
+      if (resp_pop) resp_rptr <= resp_rptr + 2'd1;
+      resp_count <= resp_count + (r_hs ? 3'd1 : 3'd0) - (resp_pop ? 3'd1 : 3'd0);
+    end
+
+  always @(posedge clk)
+    if (~rst) begin
+      mem_res_wr_dta <= 64'b0;
+      mem_res_wr_en  <= 1'b0;
+    end else begin
+      mem_res_wr_en <= resp_pop;
+      if (resp_pop) mem_res_wr_dta <= resp_buf[resp_rptr];
+    end
 
 `undef CHECK
 `ifdef __IVERILOG__
@@ -460,15 +622,21 @@ module mem2axi_bridge (
 
 `ifdef CHECK
   always @(posedge clk)
-    if ((state == S_BRESP) && m_axi_bvalid && (m_axi_bresp != 2'b00))
-      $display("%m\t*** warning: AXI write to %h got BRESP %b (not OKAY) ***", m_axi_awaddr, m_axi_bresp);
+    if (b_hs && (m_axi_bresp != 2'b00))
+      // m_axi_awaddr no longer identifies this specific transaction under
+      // write pipelining (the AW channel may already be issuing a later
+      // write), same reasoning as the RRESP check below.
+      $display("%m\t*** warning: AXI write got BRESP %b (not OKAY) ***", m_axi_bresp);
 
   always @(posedge clk)
-    if ((state == S_RDATA) && m_axi_rvalid && (m_axi_rresp != 2'b00))
-      $display("%m\t*** warning: AXI read from %h got RRESP %b (not OKAY) ***", m_axi_araddr, m_axi_rresp);
+    if (r_hs && (m_axi_rresp != 2'b00))
+      // m_axi_araddr no longer identifies this specific transaction under
+      // read pipelining (the AR channel may already be issuing a later
+      // read), so it is deliberately omitted here.
+      $display("%m\t*** warning: AXI read got RRESP %b (not OKAY) ***", m_axi_rresp);
 
   always @(posedge clk)
-    if ((state == S_RDATA) && m_axi_rvalid && ~m_axi_rlast)
+    if (r_hs && ~m_axi_rlast)
       begin
         $display("%m\t*** error: single-beat read did not see RLAST ***");
         $stop;

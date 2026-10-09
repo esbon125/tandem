@@ -96,9 +96,38 @@
  * gated-off core itself is doing, so nothing here can hang waiting on a
  * disabled core -- confirmed by inspection of the C_IDLE/C_READ_WAIT1/
  * C_READ_WAIT2/C_DONE sequence below, none of which waits on any signal
- * that only a running u_mpeg2 could produce. */
+ * that only a running u_mpeg2 could produce.
+ *
+ * 2026-10-08, product registers (protocol v1, api/PROTOCOL-v1.md on
+ * firmware_development). Three words in what was Fase 7a's first-beat debug
+ * (RDATA_LO/HI, MEMRES_LO/HI at 0x2b-0x2e, a resolved investigation that no
+ * software reads any more) -- the window is fixed at 0x00-0x3f, see the
+ * localparam block:
+ *
+ *   0x2b BUILD_VERSION (ro) {major[7:0], minor[7:0], patch[15:0]}
+ *   0x2c BUILD_GIT     (ro) {dirty, 3'b0, git short hash[27:0]}
+ *        Both come from build_id.v, which the Libero build script rewrites
+ *        in the project's own copy of the sources (the tree keeps a
+ *        placeholder), so a bitstream can say which release and commit it
+ *        was built from. The upstream core's version register (regfile
+ *        0x0) is mpeg2fpga's own and never changes between our releases.
+ *   0x2d PIC_IRQ (rw) picture-ready interrupt, see mpeg2video.v's
+ *        picture_out tap. Read: [0] pending, [1] enable, [2] overrun (a
+ *        picture arrived while pending was still set: software missed
+ *        one), [6:4] frame buffer of the latest picture, [31:16] free-
+ *        running picture count. Write: [1] enable, [0] write-1-to-clear
+ *        pending and overrun. picture_irq = pending & enable, ORed into the
+ *        peripheral's single interrupt line by mpeg2fpga_apb_peripheral.v.
+ *        enable resets to 0, so a driver that does not know this register
+ *        never sees it fire.
+ *   0x2e reserved, reads 0.
+ *
+ * And DMA_CTRL (0x13) bit 1, no_pad: start a transfer that is not the last
+ * chunk of its stream -- stream_dma.v skips the sequence_end padding (plan
+ * item 9, chunked streaming). */
 
 `include "timescale.v"
+`include "build_id.v"
 
 module apb3_mpeg2fpga_bridge (
     /* APB3 side: PCLK domain */
@@ -112,8 +141,12 @@ module apb3_mpeg2fpga_bridge (
     busy, stream_data, stream_valid,
 
     /* stream_dma.v side: core_clk domain, no CDC needed (see header) */
-    dma_start, dma_addr, dma_len,
+    dma_start, dma_addr, dma_len, dma_no_pad,
     dma_busy, dma_done, dma_bytes_done,
+
+    /* picture-ready tap from mpeg2video.v and the interrupt it raises,
+     * core_clk domain (see header comment) */
+    picture_out, picture_out_frame, picture_irq,
 
     /* Fase 7a debug (2026-08-21): mpeg2video's circular video buffer
      * addresses, core_clk domain like dma_addr/dma_len above -- read
@@ -123,7 +156,12 @@ module apb3_mpeg2fpga_bridge (
 
     /* Fase 7a debug (2026-08-22): framestore_request.v's fixed-priority
      * memory arbiter starvation counters, same core_clk-domain treatment. */
-    disp_service_cnt, vbr_service_cnt, vbr_starved_cnt,
+    disp_service_cnt, vbr_service_cnt, vbr_starved_cnt, write_service_cnt,
+    fwd_service_cnt, bwd_service_cnt, idle_cnt,
+    vld_en_cnt, vld_stall_rld_cnt, vld_stall_motcomp_cnt,
+    fwd_addr_empty_cnt, fwd_dta_stall_cnt, bwd_addr_empty_cnt, bwd_dta_stall_cnt,
+    mem_req_almost_full_cnt, tag_almost_full_cnt,
+    predict_err_almost_full_cnt, rld_stall_predict_err_cnt,
     arbiter_flags, mem_res_valid_cnt,
 
     /* Fase 7a debug (2026-08-23): mem2axi_bridge.v's own view of the last
@@ -163,7 +201,7 @@ module apb3_mpeg2fpga_bridge (
   input             PSEL;
   input             PENABLE;
   input             PWRITE;
-  input       [7:0] PADDR;           /* [7:2] register index (0x00-0x0f: regfile, 0x10-0x1f: bridge-owned debug/DMA regs, 0x20: CORE_ENABLE, 0x21-0x24: vld debug), [1:0] byte offset (must be 2'b00) */
+  input       [7:0] PADDR;           /* [7:2] register index (0x00-0x0f: regfile, 0x10-0x1f: bridge-owned debug/DMA regs, 0x20: CORE_ENABLE, 0x21-0x24: vld debug, 0x31-0x36: fwd/bwd starve/stall + mem_req/tag almost_full -- Fase 8f, reverted to 6 bits: 0x40+ never reached this bridge, see localparam block comment), [1:0] byte offset (must be 2'b00) */
   input      [31:0] PWDATA;
   output     [31:0] PRDATA;
   output            PREADY;
@@ -196,6 +234,11 @@ module apb3_mpeg2fpga_bridge (
   output reg        dma_start;       /* 1-cycle pulse */
   output      [31:0]dma_addr;
   output      [31:0]dma_len;
+  output reg        dma_no_pad;      /* valid with dma_start: 1 = more chunks follow */
+
+  input             picture_out;       /* 1-cycle pulse: a finished picture went to display */
+  input        [2:0]picture_out_frame; /* its frame buffer */
+  output            picture_irq;       /* level, pending & enable */
   input             dma_busy;
   input             dma_done;        /* 1-cycle pulse */
   input       [31:0]dma_bytes_done;
@@ -206,6 +249,21 @@ module apb3_mpeg2fpga_bridge (
   input       [31:0]disp_service_cnt; /* cycles state==STATE_DISP, core_clk domain, free-running */
   input       [31:0]vbr_service_cnt;  /* cycles state==STATE_VBR, core_clk domain, free-running */
   input       [31:0]vbr_starved_cnt;  /* cycles do_vbr true but arbiter picked something else */
+  input       [31:0]write_service_cnt; /* cycles state==STATE_VBW/RECON/OSD, core_clk domain, free-running -- Fase 8b */
+  input       [31:0]fwd_service_cnt;   /* cycles state==STATE_FWD, core_clk domain, free-running -- Fase 8b follow-up */
+  input       [31:0]bwd_service_cnt;   /* cycles state==STATE_BWD, core_clk domain, free-running -- Fase 8b follow-up */
+  input       [31:0]idle_cnt;          /* cycles state==STATE_IDLE, core_clk domain, free-running -- Fase 8b follow-up */
+  input       [31:0]vld_en_cnt;         /* cycles vld_en, core_clk domain, free-running -- Fase 8c */
+  input       [31:0]vld_stall_rld_cnt;  /* cycles ~vld_en && rld_wr_almost_full -- Fase 8c */
+  input       [31:0]vld_stall_motcomp_cnt; /* cycles ~vld_en && motcomp_busy -- Fase 8c */
+  input       [31:0]fwd_addr_empty_cnt; /* cycles fwd_rd_addr_empty -- Fase 8d */
+  input       [31:0]fwd_dta_stall_cnt;  /* cycles ~fwd_rd_addr_empty && fwd_wr_dta_almost_full -- Fase 8d */
+  input       [31:0]bwd_addr_empty_cnt; /* cycles bwd_rd_addr_empty -- Fase 8d */
+  input       [31:0]bwd_dta_stall_cnt;  /* cycles ~bwd_rd_addr_empty && bwd_wr_dta_almost_full -- Fase 8d */
+  input       [31:0]mem_req_almost_full_cnt; /* cycles mem_req_wr_almost_full -- Fase 8e */
+  input       [31:0]tag_almost_full_cnt;     /* cycles tag_wr_almost_full -- Fase 8e */
+  input       [31:0]predict_err_almost_full_cnt; /* cycles idct_fifo_almost_full (predict_err_fifo prog_full) -- Fase 9b */
+  input       [31:0]rld_stall_predict_err_cnt;   /* cycles ~vld_en && rld_wr_almost_full && idct_fifo_almost_full -- Fase 9b */
 
   /* Fase 7a debug (2026-08-22): live snapshot -- bits[10:0]=state (one-hot),
    * [11]=do_vbr, [12]=do_disp, [13]=vbuf_empty, [14]=vbr_rd_almost_empty,
@@ -269,11 +327,58 @@ module apb3_mpeg2fpga_bridge (
   /* 2026-09-05: three probes splitting the VBUF read return path, each a
    * 64-bit word over two addresses (low, high). See framestore.v and
    * mem2axi_bridge.v for what each captures and docs/bringup 34 for why. */
-  localparam [5:0] RDATA_LO_ADDR   = 6'h2b, RDATA_HI_ADDR   = 6'h2c,
-                   MEMRES_LO_ADDR  = 6'h2d, MEMRES_HI_ADDR  = 6'h2e,
+  localparam [5:0] BUILD_VERSION_ADDR = 6'h2b, BUILD_GIT_ADDR = 6'h2c,   /* 2026-10-08, were RDATA_LO/HI */
+                   PIC_IRQ_ADDR       = 6'h2d,                          /* 2026-10-08, was MEMRES_LO; 0x2e (MEMRES_HI) reserved */
                    VBRWR_LO_ADDR   = 6'h2f, VBRWR_HI_ADDR   = 6'h30;
-  /* 2026-09-05: xfifo_sc's own internals for vbuf_read_fifo, eight words. */
-  localparam [5:0] SCFIFO_DBG0_ADDR = 6'h31, SCFIFO_DBG7_ADDR = 6'h38;
+  /* 2026-09-08 (Fase 8f): this whole 0x00-0x3f range is the peripheral's
+   * ENTIRE APB address window -- FIC_3_PERIPHERALS.tcl connects it via a bif
+   * pin literally named "FIC_3_0x4000_04xx", and both mpeg2fpga.dts and
+   * mpeg2fpga-uio.dts declare `reg = <... 0x100>` (256 bytes = 64 words).
+   * Addresses past 0x3f never reach this bridge at all -- PSEL simply never
+   * asserts for them, and whatever FIC_3 does with an unrouted address
+   * apparently reads back silent zero. Fase 8d/8e widened PADDR/apb_addr_r
+   * to 7 bits and put six new counters at 0x40-0x45 assuming that was
+   * sufficient, and every one of them read 0 on real hardware -- not
+   * because the conditions they measured never occurred, but because none
+   * of those addresses were ever actually reaching the read mux below.
+   * Properly widening the real window means changing FIC_3_ADDRESS_
+   * GENERATION's decode plus both device-tree overlays, a system-wide
+   * address-map change bigger than anything else this session -- out of
+   * scope for now. Recycling existing addresses instead: xfifo_sc's RAM
+   * port-sharing bug the eight SCFIFO_DBG* words below existed to diagnose
+   * is RESOLVED (syn_ramstyle="uram", confirmed 26/26 on real hardware),
+   * so this reclaims six of its eight words for the six counters Fase 8d/8e
+   * actually needed, back inside the real 0x00-0x3f window this time.
+   * vbuf_read_fifo_dbg's plumbing is left in place upstream (mpeg2video.v/
+   * framestore.v) in case xfifo_sc debug is needed again later -- only its
+   * APB exposure here is removed, at SCFIFO_DBG_ADDR (now a single 2-word
+   * remainder, 0x37-0x38, kept for the low 64 of the 256-bit bundle in case
+   * of a quick spot-check; the upper 192 bits are no longer APB-readable). */
+  localparam [5:0] FWD_ADDR_EMPTY_CNT_ADDR = 6'h31;  /* Fase 8d, relocated Fase 8f */
+  localparam [5:0] FWD_DTA_STALL_CNT_ADDR  = 6'h32;  /* Fase 8d, relocated Fase 8f */
+  localparam [5:0] BWD_ADDR_EMPTY_CNT_ADDR = 6'h33;  /* Fase 8d, relocated Fase 8f */
+  localparam [5:0] BWD_DTA_STALL_CNT_ADDR  = 6'h34;  /* Fase 8d, relocated Fase 8f */
+  localparam [5:0] MEM_REQ_ALMOST_FULL_CNT_ADDR = 6'h35; /* Fase 8e, relocated Fase 8f */
+  localparam [5:0] TAG_ALMOST_FULL_CNT_ADDR     = 6'h36; /* Fase 8e, relocated Fase 8f */
+  /* 2026-09-08 (Fase 9b): 0x37-0x38 were SCFIFO_DBG's last two words (the
+   * low 64 of xfifo_sc's 256-bit debug bundle, already reduced from 8 words
+   * to 2 in Fase 8f). That bug (xfifo_sc RAM port sharing) is RESOLVED, and
+   * this session hasn't needed the remaining two words either -- reclaiming
+   * them completes that retirement and gives the two registers Fase 9b's
+   * predict_err_fifo/rld-stall correlation counters need, still inside the
+   * peripheral's real 0x00-0x3f window (see the Fase 8f comment above for
+   * why addresses beyond that never reach this bridge at all).
+   * vbuf_read_fifo_dbg's plumbing stays wired upstream unused, same
+   * reasoning as Fase 8f. */
+  localparam [5:0] PREDICT_ERR_ALMOST_FULL_CNT_ADDR = 6'h37; /* Fase 9b */
+  localparam [5:0] RLD_STALL_PREDICT_ERR_CNT_ADDR   = 6'h38; /* Fase 9b */
+  localparam [5:0] WRITE_SERVICE_CNT_ADDR = 6'h39;   /* Fase 8b */
+  localparam [5:0] FWD_SERVICE_CNT_ADDR = 6'h3a;     /* Fase 8b follow-up */
+  localparam [5:0] BWD_SERVICE_CNT_ADDR = 6'h3b;     /* Fase 8b follow-up */
+  localparam [5:0] IDLE_CNT_ADDR = 6'h3c;            /* Fase 8b follow-up */
+  localparam [5:0] VLD_EN_CNT_ADDR = 6'h3d;          /* Fase 8c */
+  localparam [5:0] VLD_STALL_RLD_CNT_ADDR = 6'h3e;   /* Fase 8c */
+  localparam [5:0] VLD_STALL_MOTCOMP_CNT_ADDR = 6'h3f; /* Fase 8c */
 
   /* Fase 7c PWDATA investigation: hold the Access phase open for this many
    * extra PCLK cycles before committing, instead of on the very first
@@ -514,15 +619,67 @@ module apb3_mpeg2fpga_bridge (
   wire is_vld_dbg3 = (apb_addr_r == VLD_DBG3_ADDR);
   wire is_gb_dbg = (apb_addr_r >= GB_DBG0_ADDR) && (apb_addr_r <= GB_DBG5_ADDR);
   wire [2:0] gb_dbg_idx = apb_addr_r[2:0] - GB_DBG0_ADDR[2:0];   /* 0..5 within the bundle */
-  wire is_rdata_lo  = (apb_addr_r == RDATA_LO_ADDR);
-  wire is_rdata_hi  = (apb_addr_r == RDATA_HI_ADDR);
-  wire is_memres_lo = (apb_addr_r == MEMRES_LO_ADDR);
-  wire is_memres_hi = (apb_addr_r == MEMRES_HI_ADDR);
+  wire is_build_version = (apb_addr_r == BUILD_VERSION_ADDR);
+  wire is_build_git     = (apb_addr_r == BUILD_GIT_ADDR);
+  wire is_pic_irq       = (apb_addr_r == PIC_IRQ_ADDR);
+  /* must be decoded here: an undecoded index falls through to the regfile
+   * path below, which only looks at apb_addr_r[3:0] -- 0x2e would read the
+   * core's register 0xe instead of 0 */
+  wire is_reserved_2e   = (apb_addr_r == 6'h2e);
   wire is_vbrwr_lo  = (apb_addr_r == VBRWR_LO_ADDR);
   wire is_vbrwr_hi  = (apb_addr_r == VBRWR_HI_ADDR);
-  wire is_scfifo_dbg = (apb_addr_r >= SCFIFO_DBG0_ADDR) && (apb_addr_r <= SCFIFO_DBG7_ADDR);
-  wire [2:0] scfifo_dbg_idx = apb_addr_r[2:0] - SCFIFO_DBG0_ADDR[2:0];   /* 0..7 */
+  wire is_predict_err_almost_full_cnt = (apb_addr_r == PREDICT_ERR_ALMOST_FULL_CNT_ADDR);
+  wire is_rld_stall_predict_err_cnt = (apb_addr_r == RLD_STALL_PREDICT_ERR_CNT_ADDR);
+  wire is_write_service_cnt = (apb_addr_r == WRITE_SERVICE_CNT_ADDR);
+  wire is_fwd_service_cnt = (apb_addr_r == FWD_SERVICE_CNT_ADDR);
+  wire is_bwd_service_cnt = (apb_addr_r == BWD_SERVICE_CNT_ADDR);
+  wire is_idle_cnt = (apb_addr_r == IDLE_CNT_ADDR);
+  wire is_vld_en_cnt = (apb_addr_r == VLD_EN_CNT_ADDR);
+  wire is_vld_stall_rld_cnt = (apb_addr_r == VLD_STALL_RLD_CNT_ADDR);
+  wire is_vld_stall_motcomp_cnt = (apb_addr_r == VLD_STALL_MOTCOMP_CNT_ADDR);
+  wire is_fwd_addr_empty_cnt = (apb_addr_r == FWD_ADDR_EMPTY_CNT_ADDR);
+  wire is_fwd_dta_stall_cnt = (apb_addr_r == FWD_DTA_STALL_CNT_ADDR);
+  wire is_bwd_addr_empty_cnt = (apb_addr_r == BWD_ADDR_EMPTY_CNT_ADDR);
+  wire is_bwd_dta_stall_cnt = (apb_addr_r == BWD_DTA_STALL_CNT_ADDR);
+  wire is_mem_req_almost_full_cnt = (apb_addr_r == MEM_REQ_ALMOST_FULL_CNT_ADDR);
+  wire is_tag_almost_full_cnt = (apb_addr_r == TAG_ALMOST_FULL_CNT_ADDR);
   wire is_core_enable = (apb_addr_r == CORE_ENABLE_ADDR);
+
+  /* PIC_IRQ (0x2d), see header comment. Kept out of the big C_IDLE block
+   * because the hardware side (picture_out) must be able to set pending on
+   * any cycle; the APB write is decoded here from the same
+   * req_toggle_sync/req_toggle_seen edge C_IDLE acts on. A picture landing on
+   * the very cycle software clears pending wins: the new picture stays
+   * pending rather than being lost. */
+  reg        pic_pending, pic_irq_en, pic_overrun;
+  reg  [2:0] pic_frame;
+  reg [15:0] pic_count;
+  wire pic_irq_write = (core_state == C_IDLE) && (req_toggle_sync != req_toggle_seen)
+                       && is_pic_irq && apb_write_r;
+
+  always @(posedge core_clk or negedge core_rst_n) begin
+    if (!core_rst_n) begin
+      pic_pending <= 1'b0;
+      pic_irq_en  <= 1'b0;
+      pic_overrun <= 1'b0;
+      pic_frame   <= 3'd0;
+      pic_count   <= 16'd0;
+    end else begin
+      if (pic_irq_write) pic_irq_en <= apb_wdata_r[1];
+      if (picture_out) begin
+        pic_frame   <= picture_out_frame;
+        pic_count   <= pic_count + 16'd1;
+        pic_pending <= 1'b1;
+        /* a clear on this same cycle acknowledged everything before it */
+        pic_overrun <= (pic_irq_write && apb_wdata_r[0]) ? 1'b0 : (pic_overrun | pic_pending);
+      end else if (pic_irq_write && apb_wdata_r[0]) begin
+        pic_pending <= 1'b0;
+        pic_overrun <= 1'b0;
+      end
+    end
+  end
+
+  assign picture_irq = pic_pending & pic_irq_en;
 
   always @(posedge core_clk or negedge core_rst_n) begin
     if (!core_rst_n) begin
@@ -538,6 +695,7 @@ module apb3_mpeg2fpga_bridge (
       dma_addr_r      <= 32'b0;
       dma_len_r       <= 32'b0;
       dma_start       <= 1'b0;
+      dma_no_pad      <= 1'b0;
       dma_done_sticky <= 1'b0;
       pwdata_sticky_meta <= 32'b0;
       pwdata_sticky_sync <= 32'b0;
@@ -594,6 +752,7 @@ module apb3_mpeg2fpga_bridge (
             end else if (is_dma_ctrl) begin
               if (apb_write_r && apb_wdata_r[0] && !dma_busy) begin
                 dma_start       <= 1'b1;
+                dma_no_pad      <= apb_wdata_r[1];
                 dma_done_sticky <= 1'b0;
               end
               core_state <= C_DONE;
@@ -641,6 +800,58 @@ module apb3_mpeg2fpga_bridge (
               if (!apb_write_r)
                 rdata_hold <= mem_res_valid_cnt;
               core_state <= C_DONE;
+            end else if (is_write_service_cnt) begin
+              if (!apb_write_r)
+                rdata_hold <= write_service_cnt;
+              core_state <= C_DONE;
+            end else if (is_fwd_service_cnt) begin
+              if (!apb_write_r)
+                rdata_hold <= fwd_service_cnt;
+              core_state <= C_DONE;
+            end else if (is_bwd_service_cnt) begin
+              if (!apb_write_r)
+                rdata_hold <= bwd_service_cnt;
+              core_state <= C_DONE;
+            end else if (is_idle_cnt) begin
+              if (!apb_write_r)
+                rdata_hold <= idle_cnt;
+              core_state <= C_DONE;
+            end else if (is_vld_en_cnt) begin
+              if (!apb_write_r)
+                rdata_hold <= vld_en_cnt;
+              core_state <= C_DONE;
+            end else if (is_vld_stall_rld_cnt) begin
+              if (!apb_write_r)
+                rdata_hold <= vld_stall_rld_cnt;
+              core_state <= C_DONE;
+            end else if (is_vld_stall_motcomp_cnt) begin
+              if (!apb_write_r)
+                rdata_hold <= vld_stall_motcomp_cnt;
+              core_state <= C_DONE;
+            end else if (is_fwd_addr_empty_cnt) begin
+              if (!apb_write_r)
+                rdata_hold <= fwd_addr_empty_cnt;
+              core_state <= C_DONE;
+            end else if (is_fwd_dta_stall_cnt) begin
+              if (!apb_write_r)
+                rdata_hold <= fwd_dta_stall_cnt;
+              core_state <= C_DONE;
+            end else if (is_bwd_addr_empty_cnt) begin
+              if (!apb_write_r)
+                rdata_hold <= bwd_addr_empty_cnt;
+              core_state <= C_DONE;
+            end else if (is_bwd_dta_stall_cnt) begin
+              if (!apb_write_r)
+                rdata_hold <= bwd_dta_stall_cnt;
+              core_state <= C_DONE;
+            end else if (is_mem_req_almost_full_cnt) begin
+              if (!apb_write_r)
+                rdata_hold <= mem_req_almost_full_cnt;
+              core_state <= C_DONE;
+            end else if (is_tag_almost_full_cnt) begin
+              if (!apb_write_r)
+                rdata_hold <= tag_almost_full_cnt;
+              core_state <= C_DONE;
             end else if (is_dbg_last_write_addr_from_fifo) begin
               if (!apb_write_r)
                 rdata_hold <= {10'b0, dbg_last_write_addr_from_fifo_sync};
@@ -669,17 +880,19 @@ module apb3_mpeg2fpga_bridge (
               if (!apb_write_r)
                 rdata_hold <= getbits_dbg[{gb_dbg_idx, 5'b0} +: 32];
               core_state <= C_DONE;
-            end else if (is_rdata_lo) begin
-              if (!apb_write_r) rdata_hold <= dbg_first_rdata_sync[31:0];
+            end else if (is_build_version) begin
+              if (!apb_write_r) rdata_hold <= `MPEG2FPGA_BUILD_VERSION;
               core_state <= C_DONE;
-            end else if (is_rdata_hi) begin
-              if (!apb_write_r) rdata_hold <= dbg_first_rdata_sync[63:32];
+            end else if (is_build_git) begin
+              if (!apb_write_r) rdata_hold <= `MPEG2FPGA_BUILD_GIT;
               core_state <= C_DONE;
-            end else if (is_memres_lo) begin
-              if (!apb_write_r) rdata_hold <= dbg_first_mem_res[31:0];
+            end else if (is_reserved_2e) begin
+              if (!apb_write_r) rdata_hold <= 32'b0;
               core_state <= C_DONE;
-            end else if (is_memres_hi) begin
-              if (!apb_write_r) rdata_hold <= dbg_first_mem_res[63:32];
+            end else if (is_pic_irq) begin
+              /* the write side lives in the picture-irq always block below */
+              if (!apb_write_r)
+                rdata_hold <= {pic_count, 9'b0, pic_frame, 1'b0, pic_overrun, pic_irq_en, pic_pending};
               core_state <= C_DONE;
             end else if (is_vbrwr_lo) begin
               if (!apb_write_r) rdata_hold <= dbg_first_vbr_wr[31:0];
@@ -687,9 +900,13 @@ module apb3_mpeg2fpga_bridge (
             end else if (is_vbrwr_hi) begin
               if (!apb_write_r) rdata_hold <= dbg_first_vbr_wr[63:32];
               core_state <= C_DONE;
-            end else if (is_scfifo_dbg) begin
+            end else if (is_predict_err_almost_full_cnt) begin
               if (!apb_write_r)
-                rdata_hold <= vbuf_read_fifo_dbg[{scfifo_dbg_idx, 5'b0} +: 32];
+                rdata_hold <= predict_err_almost_full_cnt;
+              core_state <= C_DONE;
+            end else if (is_rld_stall_predict_err_cnt) begin
+              if (!apb_write_r)
+                rdata_hold <= rld_stall_predict_err_cnt;
               core_state <= C_DONE;
             end else if (is_core_enable) begin
               if (apb_write_r) core_enable_r <= apb_wdata_r[0];

@@ -23,6 +23,7 @@ module testbench ();
   reg         watchdog_rst;   /* active low pulse; held high (inactive) -- see testbench_wedge.v for the abort path */
 
   reg         start;
+  reg         no_pad;
   reg  [31:0] addr;
   reg  [31:0] len;
   wire        busy;
@@ -63,7 +64,7 @@ module testbench ();
    * against real DDR, and would just add a constant offset here. */
   stream_dma #(.STAGING_BASE(38'h0), .BURST_BEATS(5'd16)) dut (
       .clk(clk), .rst_n(rst_n), .watchdog_rst(watchdog_rst),
-      .start(start), .addr(addr), .len(len),
+      .start(start), .addr(addr), .len(len), .no_pad(no_pad),
       .busy(busy), .done(done), .bytes_done(bytes_done),
       .mpeg_busy(mpeg_busy),
       .stream_data(stream_data), .stream_valid(stream_valid),
@@ -108,6 +109,7 @@ module testbench ();
 
   initial begin
     start     = 1'b0;
+    no_pad    = 1'b0;
     addr      = 32'b0;
     len       = 32'b0;
     mpeg_busy = 1'b0;
@@ -144,15 +146,28 @@ module testbench ();
   task run_transfer;
     input [31:0] a;
     input [31:0] l;
-    integer      timeout;
     begin
       reset_capture;
+      run_chunk(a, l, 1'b0);
+    end
+  endtask
+
+  /* one transfer without clearing the capture, so chained chunks
+   * accumulate into one captured stream */
+  task run_chunk;
+    input [31:0] a;
+    input [31:0] l;
+    input        np;
+    integer      timeout;
+    begin
       @(posedge clk);
-      addr  = a;
-      len   = l;
-      start = 1'b1;
+      addr   = a;
+      len    = l;
+      no_pad = np;
+      start  = 1'b1;
       @(posedge clk);
-      start = 1'b0;
+      start  = 1'b0;
+      no_pad = 1'b0;
       timeout = 0;
       while (!done) begin
         @(posedge clk);
@@ -332,6 +347,31 @@ module testbench ();
       @(posedge clk);
     end
     check_captured_stream("start_ignored_while_busy", 4000, 128);
+
+    /* ---- test 7: no_pad -- a chunk that is not the last emits exactly its
+     * payload, no sequence_end padding ---- */
+    preload_ramp(20'd5000, 160);
+    reset_capture;
+    run_chunk(32'd5000, 32'd100, 1'b1);   /* odd length is fine; only the start must be aligned */
+    check_eq("no_pad_chunk.captured_count", captured_count, 100);
+    check_eq("no_pad_chunk.bytes_done", bytes_done, 100);
+
+    /* ---- test 8: the next chunk continues the same stream and, being the
+     * last one, is padded once: the two chunks read as one 160-byte stream.
+     * Chunk starts must be 8-byte aligned (see stream_dma.v), so the first
+     * chunk is 96 bytes, not 100. ---- */
+    reset_capture;
+    run_chunk(32'd5000, 32'd96, 1'b1);
+    run_chunk(32'd5096, 32'd64, 1'b0);
+    check_captured_stream("chained_96b_64b", 5000, 160);
+
+    /* ---- test 9: zero-length no_pad transfer is a no-op that still
+     * completes (done pulses, nothing emitted) ---- */
+    reset_capture;
+    run_chunk(32'd0, 32'd0, 1'b1);
+    check_eq("zero_length_no_pad.captured_count", captured_count, 0);
+    check_eq("zero_length_no_pad.ar_seen_count", ar_seen_count, 0);
+    check_eq("zero_length_no_pad.bytes_done", bytes_done, 0);
 
     if (errors == 0)
       $display("ALL TESTS PASSED (%0d checks)", checks);

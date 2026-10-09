@@ -19,6 +19,8 @@ import_files -library work -hdl_source ../../rtl/mpeg2/resample_codes.v
 import_files -library work -hdl_source ../../rtl/mpeg2/vlc_tables.v
 import_files -library work -hdl_source ../../rtl/mpeg2/vld_codes.v
 import_files -library work -hdl_source ../../rtl/mpeg2/zigzag_table.v
+# placeholder; build_mpeg2fpga_soc.tcl stamps the project's copy with the commit
+import_files -library work -hdl_source ../../rtl/mpeg2/build_id.v
 
 import_files -library work -hdl_source ../../rtl/mpeg2/mpeg2video.v
 import_files -library work -hdl_source ../../rtl/mpeg2/vbuf.v

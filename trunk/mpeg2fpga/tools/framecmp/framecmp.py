@@ -56,6 +56,7 @@ reference frame within --threshold, 1 otherwise.
 from __future__ import print_function
 
 import argparse
+import json
 import os
 import re
 import subprocess
@@ -444,6 +445,7 @@ def cmd_compare(args):
         orders = {args.chroma_order: orders[args.chroma_order]}
 
     failures = []
+    rows = []
     chosen_order = None
     print("%-8s  %-22s  %8s  %8s  %6s   %s"
           % ("buffer", "best reference frame", "MAD(Y)", "PSNR(Y)", "peak", "chroma MAD (U/V)"))
@@ -453,6 +455,7 @@ def cmd_compare(args):
         planes = frames[f]
         if is_blank(planes["Y"]):
             print("%-8d  %-22s" % (f, "(never written)"))
+            rows.append({"buffer": f, "written": False})
             continue
 
         best = None
@@ -476,12 +479,21 @@ def cmd_compare(args):
 
         print("%-8d  %-22s  %8.3f  %8.2f  %6d   %.3f / %.3f"
               % (f, name, mad, psnr, peak, u_mad, v_mad))
+        rows.append({"buffer": f, "written": True, "ref": name,
+                     "mad": round(float(mad), 4), "peak": int(peak),
+                     "psnr": None if psnr == float("inf") else round(float(psnr), 2),
+                     "mad_u": round(float(u_mad), 4), "mad_v": round(float(v_mad), 4)})
         if args.detail and mad > 0.0:
             print_macroblock_map(planes["Y"], ref["Y"], mb_width, mb_height)
         if mad > args.threshold:
             failures.append((f, name, mad))
 
     print("")
+    if args.json:
+        with open(args.json, "w") as fp:
+            json.dump({"dump": args.dump, "width": width, "height": height,
+                       "chroma_order": chosen_order, "threshold": args.threshold,
+                       "buffers": rows, "ok": not failures}, fp, indent=1)
     if chosen_order:
         print("chroma order: %s (%s)"
               % (chosen_order,
@@ -549,6 +561,8 @@ def main(argv=None):
                         "expected)")
     p.add_argument("--chroma-order", default="auto",
                    choices=["auto", "cr-is-cb", "cr-is-cr"])
+    p.add_argument("--json", metavar="PATH",
+                   help="also write the per-buffer scores as JSON (for tools/regress)")
     p.add_argument("-d", "--detail", action="store_true",
                    help="print a map of which macroblocks differ")
     p.set_defaults(func=cmd_compare)

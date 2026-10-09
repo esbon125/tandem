@@ -278,6 +278,44 @@ configure_tool -name {PLACEROUTE} -params {DELAY_ANALYSIS:MAX} -params {EFFORT_L
 # exceptions that don't survive a specific optimization outcome.
 project_settings -abort_flow_on_sdc_errors {FALSE}
 
+# Stamp the build identity (apb3_mpeg2fpga_bridge.v's BUILD_VERSION/BUILD_GIT,
+# 0x2b/0x2c) into the project's own copy of build_id.v -- import_files copied
+# rtl/mpeg2/build_id.v (placeholder hash 0) into $project_dir/hdl/, and that
+# copy is what Synplify reads. The tree is never touched, so building does
+# not dirty it. Done on every invocation, not only on a fresh project, so a
+# re-run of SYNTHESIZE on a reused project still gets the current commit;
+# the version itself is whatever rtl/mpeg2/build_id.v says (bumped by hand
+# when cutting a release). Dirty = uncommitted changes to tracked files under
+# trunk/mpeg2fpga (untracked files ignored): such a bitstream is not
+# reproducible from its hash and says so.
+# Only when synthesizing: that is the step that reads it. Stamping on a later
+# step (PLACEROUTE, EXPORT_FPE...) after new commits would rewrite the copy
+# with a hash the netlist was not built from, and could make Libero consider
+# synthesis out of date.
+set build_id_copy "$project_dir/hdl/build_id.v"
+if {[info exists SYNTHESIZE] && [file exists $build_id_copy]} {
+    if {[catch {
+        set git_hash [string trim [exec git -C $local_dir rev-parse --short=7 HEAD]]
+        set git_dirty [string length [string trim [exec git -C $local_dir/.. status --porcelain --untracked-files=no -- .]]]
+    } issue]} {
+        puts "build_id: git unavailable ($issue), leaving placeholder"
+    } else {
+        set fp [open $build_id_copy r]
+        set text [read $fp]
+        close $fp
+        set stamp [format "32'h%X%s" [expr {$git_dirty > 0 ? 8 : 0}] $git_hash]
+        regsub {`define MPEG2FPGA_BUILD_GIT[ \t]+[^\n]*} $text "`define MPEG2FPGA_BUILD_GIT     $stamp" stamped
+        # only write on a real change: touching a source between steps can
+        # make Libero consider synthesis out of date
+        if {$stamped ne $text} {
+            set fp [open $build_id_copy w]
+            puts -nonewline $fp $stamped
+            close $fp
+        }
+        puts "build_id: $stamp in $build_id_copy"
+    }
+}
+
 if {[info exists SYNTHESIZE]} {
     run_tool -name {SYNTHESIZE}
 } elseif {[info exists PLACEROUTE]} {
