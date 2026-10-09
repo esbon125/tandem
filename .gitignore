@@ -1,4 +1,15 @@
 *
+# firmware_development additions first: master changes the end of this file
+!api
+!api/**
+!daemon
+!daemon/**
+!demo
+!demo/**
+!user-guide
+!user-guide/**
+!release
+!release/**
 !docs
 !.gitignore
 !trunk
@@ -11,13 +22,5 @@
 !webserver/**
 !.github
 !.github/**
-!api
-!api/**
-!daemon
-!daemon/**
-!demo
-!demo/**
-!user-guide
-!user-guide/**
-!release
-!release/**
+!assets
+!assets/**
