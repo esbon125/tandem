@@ -456,7 +456,11 @@ static ssize_t dma_start_store(struct device *dev,
 	}
 	if (!start)
 		return count;
-	if (!priv->dma_len)
+	/* a zero-length chunk only makes sense as the last one: it carries
+	 * nothing but stream_dma's sequence_end padding, which is how a
+	 * streamed upload ends when its size was not known in advance
+	 */
+	if (!priv->dma_len && !last)
 		return -EINVAL;
 
 	spin_lock_irqsave(&priv->lock, flags);
@@ -759,3 +763,4 @@ module_platform_driver(mpeg2fpga_platform_driver);
 MODULE_AUTHOR("Esteban Bustamante");
 MODULE_DESCRIPTION("mpeg2fpga MPEG-2 decoder platform driver");
 MODULE_LICENSE("GPL");
+MODULE_VERSION("0.1.0");

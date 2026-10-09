@@ -13,3 +13,5 @@
 !.github/**
 !api
 !api/**
+!daemon
+!daemon/**

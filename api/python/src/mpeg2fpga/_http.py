@@ -136,7 +136,10 @@ def exchange(sock, method, path, host, headers, body_chunks=None, body=None, tim
                     if piece:
                         out += b"%x\r\n" % len(piece) + bytes(piece) + b"\r\n"
             sel.modify(sock, selectors.EVENT_READ | (selectors.EVENT_WRITE if out else 0))
-            if not sel.select(timeout):
+            # TLS may already hold decrypted bytes the socket will never
+            # signal as readable again: don't block on select then
+            ssl_pending = isinstance(sock, ssl.SSLSocket) and sock.pending() > 0
+            if not sel.select(0 if ssl_pending else timeout) and not ssl_pending:
                 raise socket.timeout("no progress in %.0f s" % timeout)
 
             if out:
@@ -151,19 +154,21 @@ def exchange(sock, method, path, host, headers, body_chunks=None, body=None, tim
                     out.clear()
                     source = None
 
+            # One read per turn, and the caller consumes what it yields before
+            # the next turn: draining the socket here instead would pull the
+            # whole frame stream into memory whenever the caller is slow,
+            # defeating the flow control the device relies on (protocol 3.2).
             eof = False
-            while True:
-                try:
-                    data = sock.recv(READ_SIZE)
-                except (BlockingIOError, ssl.SSLWantReadError, ssl.SSLWantWriteError):
-                    break
-                except ConnectionResetError:
+            try:
+                data = sock.recv(READ_SIZE)
+                if data:
+                    inbuf += data
+                else:
                     eof = True
-                    break
-                if not data:
-                    eof = True
-                    break
-                inbuf += data
+            except (BlockingIOError, ssl.SSLWantReadError, ssl.SSLWantWriteError):
+                pass
+            except ConnectionResetError:
+                eof = True
 
             if resp is None:
                 end = inbuf.find(b"\r\n\r\n")
