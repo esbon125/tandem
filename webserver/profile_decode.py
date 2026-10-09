@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Bracket one full decode (the same decode_stream.decode() call server.py's
+"""Bracket one full decode (the same decode_stream.decode() call the old demo server's
 /decode uses, so capture_seconds/fps here are directly comparable to every
 other measurement in this session) with two reads of perf_counters, and
 report what fraction of the core_clk cycles in that window each counter
@@ -36,7 +36,7 @@ def main():
     control = decoder_control.open_control()
     print("backend:", control.backend)
 
-    # This script drives the decoder directly (not through server.py), so
+    # This script drives the decoder directly (not through a server), so
     # nothing tracks whether the core has ever been enabled -- right after
     # a fresh FPGA reprogram it hasn't, core_enable defaults to 0 (see
     # apb3_mpeg2fpga_bridge.v), and reset=False's flush_vbuf path silently

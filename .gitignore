@@ -15,3 +15,5 @@
 !api/**
 !daemon
 !daemon/**
+!demo
+!demo/**

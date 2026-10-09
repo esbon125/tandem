@@ -38,8 +38,9 @@
 <body>
 
 <h1>mpeg2fpga on PolarFire SoC</h1>
-<p class="sub">An MPEG-2 elementary stream goes in over DMA, the FPGA decodes it,
-and every reconstructed picture comes back here.</p>
+<p class="sub">An MPEG-2 elementary stream goes to the board over the network
+(protocol v1), the FPGA decodes it, and every picture comes back here as it is
+decoded. <span id="device" class="muted"></span></p>
 
 <div class="bar">
   <input type="file" id="file" accept=".m2v,.mpg,.mpeg,.bits,.bit">
@@ -59,17 +60,11 @@ and every reconstructed picture comes back here.</p>
 </div>
 
 <div class="decoder">
-  <span class="label">decoder</span>
-  <button data-control="pause">Pause</button>
-  <button data-control="resume">Resume</button>
-  <button data-control="blank">Blank</button>
-  <span class="muted" id="trick"></span>
+  <button id="reset">Reset decoder</button>
+  <span class="muted" id="decoderstate"></span>
 </div>
-<p class="note">These act on the hardware's display path, not on the playback
-above: pause is <code>repeat_frame=31</code>, which holds the picture the
-decoder is showing and stalls it behind that. The core is only reset on the
-first decode; every stream after that is separated with
-<code>flush_vbuf</code>.</p>
+<p class="note">Clips are chained without resetting the core; reset is only for
+recovery, if a decode ends with the watchdog set.</p>
 
 <table id="report"></table>
 
@@ -119,42 +114,20 @@ class RecordReader {
 }
 
 // ---------------------------------------------------------------------------
-// The board hands over the frame store's bytes untouched, so the two things its
-// storage format does to a pixel get undone here rather than on the MSS, which
-// has neither numpy nor the cycles:
-//   * the eight pixels of a 64-bit word are reversed, because the leftmost
-//     pixel is bits [63:56] and DRAM is little-endian;
-//   * values are signed, offset by -128, which `^ 0x80` undoes.
+// A frame record: u32 display_index, u32 decode_index, u8 type, 3 pad,
+// u16 width, u16 height, then I420 -- standard pixels, nothing to unscramble.
 // ---------------------------------------------------------------------------
-
-function plane(src, at, stride, rows, width, height) {
-  const out = new Uint8Array(width * height);
-  for (let y = 0; y < height; y++) {
-    const from = at + y * stride, to = y * width;
-    for (let x = 0; x < width; x++) {
-      out[to + x] = src[from + (x & ~7) + (7 - (x & 7))] ^ 0x80;
-    }
-  }
-  return out;
-}
 
 function toImageData(payload) {
   const view = new DataView(payload.buffer, payload.byteOffset);
   const displayIndex = view.getUint32(0, true);
-  const width = view.getUint32(12, true);
-  const height = view.getUint32(16, true);
-  const lumaStride = view.getUint32(20, true);
-  const lumaRows = view.getUint32(24, true);
-  const chromaStride = view.getUint32(28, true);
-  const chromaRows = view.getUint32(32, true);
-
-  let at = 36;
+  const type = String.fromCharCode(payload[8]);
+  const width = view.getUint16(12, true);
+  const height = view.getUint16(14, true);
   const cw = width >> 1, ch = height >> 1;
-  const Y = plane(payload, at, lumaStride, lumaRows, width, height);
-  at += lumaStride * lumaRows;
-  const Cb = plane(payload, at, chromaStride, chromaRows, cw, ch);
-  at += chromaStride * chromaRows;
-  const Cr = plane(payload, at, chromaStride, chromaRows, cw, ch);
+  const Y = payload.subarray(16, 16 + width * height);
+  const Cb = payload.subarray(16 + width * height, 16 + width * height + cw * ch);
+  const Cr = payload.subarray(16 + width * height + cw * ch);
 
   const image = new ImageData(width, height);
   const px = image.data;
@@ -171,7 +144,7 @@ function toImageData(payload) {
       px[o + 3] = 255;
     }
   }
-  return { displayIndex, image, width, height };
+  return { displayIndex, type, image, width, height };
 }
 
 // ---------------------------------------------------------------------------
@@ -240,7 +213,7 @@ $("go").onclick = async () => {
   setStatus(`pushing ${file.size.toLocaleString()} bytes...`);
 
   try {
-    const resp = await fetch("/decode", { method: "POST", body: await file.arrayBuffer() });
+    const resp = await fetch("/api/decode", { method: "POST", body: await file.arrayBuffer() });
     if (!resp.ok) { setStatus(`server said ${resp.status}`, true); return; }
 
     const reader = resp.body.getReader();
@@ -260,14 +233,8 @@ $("go").onclick = async () => {
             $("seek").max = Math.max(0, json.pictures - 1);
             $("progress").max = json.pictures;
             $("progress").hidden = false;
-            setStatus(`${json.width}x${json.height}, ${json.pictures} pictures at ` +
+            setStatus(`${json.width}x${json.height}, ${json.pictures} frames at ` +
                       `${json.frame_rate.toFixed(2)} fps - decoding on the FPGA...`);
-          } else if (json.kind === "capturing") {
-            // The board holds every frame in RAM while it decodes and only
-            // sends them afterwards: the decoder does not wait, so a socket
-            // write inside the capture loop costs pictures.
-            $("progress").value = json.captured;
-            setStatus(`decoding on the FPGA: ${json.captured} / ${json.total} pictures`);
           } else if (json.kind === "error") {
             setStatus(json.error, true);
           } else {
@@ -278,14 +245,10 @@ $("go").onclick = async () => {
           frames[displayIndex] = await createImageBitmap(image);
           const have = frames.filter(Boolean).length;
           $("progress").value = have;
-          setStatus(`receiving frames: ${have} / ${frames.length}`);
-          // Pictures arrive in decode order, not display order (a B picture's
-          // reference frames decode before it but display after), so frame 3
-          // can land before frame 1. Presenting each frame the instant it
-          // arrives was showing them out of order -- display 0, then 3, then
-          // back to 1, then 2 -- which read as the video jumping backward.
-          // Advance the preview only through what is *contiguously* filled
-          // from where it left off, so it only ever moves forward.
+          setStatus(`decoding on the FPGA, frames streaming in: ${have} / ${frames.length}`);
+          // Frames arrive in display order (protocol v1), so the preview can
+          // simply follow them; it still only advances through contiguously
+          // filled frames, in case one goes missing.
           if (!playing) {
             while (previewIndex < frames.length && frames[previewIndex]) {
               present(previewIndex);
@@ -302,9 +265,10 @@ $("go").onclick = async () => {
     if (done) {
       showReport(done);
       const got = frames.filter(Boolean).length;
-      const fps = done.capture_seconds > 0 ? done.captured / done.capture_seconds : 0;
-      setStatus(`decoded ${got} frames at ${fps.toFixed(2)} fps` +
-                (done.error ? " - decoder reported an error" : ""), done.error);
+      const bad = done.decoder.error || done.decoder.watchdog || !done.complete;
+      setStatus(`decoded ${got} frames at ${done.fps.toFixed(2)} fps end to end` +
+                (done.decoder.error ? " - decoder reported a stream error" : "") +
+                (done.complete ? "" : " - incomplete"), bad);
       if (got) { position = 0; startPlayback(); }
     }
   } catch (err) {
@@ -314,53 +278,42 @@ $("go").onclick = async () => {
   }
 };
 
-for (const button of document.querySelectorAll("[data-control]")) {
-  button.onclick = async () => {
-    try {
-      const resp = await fetch(`/control/${button.dataset.control}`, { method: "POST" });
-      const state = await resp.json();
-      if (!resp.ok) { $("trick").textContent = state.error || resp.status; return; }
-      $("trick").textContent =
-        `trick ${state.raw} · ${state.frozen ? "frozen" : "running"}` +
-        ` · source ${state.source_select}` +
-        ` · persistence ${state.persistence ? "on" : "off"}`;
-    } catch (err) {
-      $("trick").textContent = String(err);
-    }
-  };
-}
+$("reset").onclick = async () => {
+  try {
+    const resp = await fetch("/api/reset", { method: "POST" });
+    const st = await resp.json();
+    $("decoderstate").textContent = resp.ok ? `decoder ${st.state}` : st.error;
+  } catch (err) {
+    $("decoderstate").textContent = String(err);
+  }
+};
 
-// Performance stats, derived from what decode_stream.py already reports --
-// no server change needed. decode_stream.py's own timer (capture_seconds) is
-// setup + the capture-loop's poll, and stops as soon as the last expected
-// picture is seen; r.seconds also includes delivering every frame's pixels
-// over this HTTP response afterward, which is transfer time, not decode
-// time -- that split is why "decode rate" below uses capture_seconds, not
-// the "capture+delivery" row.
+(async () => {
+  try {
+    const d = await (await fetch("/api/device")).json();
+    $("device").textContent = `Device: bitstream ${d.versions.bitstream}, ` +
+      `daemon ${d.versions.daemon}, driver ${d.versions.driver}` +
+      (d.security.tls ? ", TLS" : "") + ".";
+  } catch (err) {
+    $("device").textContent = "Device not reachable: " + err;
+  }
+})();
+
+// The decode summary is the END record of protocol v1 plus what this server
+// measured on its side (frames received, wall time).
 function showReport(r) {
-  const decodeFps = r.capture_seconds > 0 ? r.captured / r.capture_seconds : 0;
-  // How this decode compares to playing the source at its own declared rate:
-  // 1.0x means the core kept up with real time, under 1.0x means it fell
-  // behind. See docs/bringup 41 (docs branch) for where the core currently
-  // stands on this for 704x480 content.
-  const realTime = r.frame_rate > 0 ? decodeFps / r.frame_rate : 0;
-  // give_up_after starts at IDLE_GIVE_UP_S (3.0s, see decode_stream.py) and
-  // only grows if some picture took much longer than the ones before it --
-  // a captured-but-slow picture, distinct from `complete` (which flags a
-  // picture that never arrived at all).
-  const stalled = r.give_up_after > 3.0;
-
+  const realTime = r.frame_rate > 0 ? r.fps / r.frame_rate : 0;
+  const t = r.timing || {};
   const rows = [
-    ["size", `${r.width} x ${r.height}`],
-    ["decoder SIZE register", r.decoder_size.join(" x ")],
-    ["stream's own frame rate", `${r.frame_rate} fps`],
-    ["decode rate", `${decodeFps.toFixed(2)} fps (${r.capture_seconds} s for ${r.captured} pictures)`],
+    ["decode id", r.decode_id],
+    ["frames", `${r.frames} of ${r.pictures_in_stream} in the stream`, !r.complete],
+    ["end-to-end rate", `${r.fps} fps (${r.client_seconds} s, upload to last frame)`],
     ["real-time factor", `${realTime.toFixed(2)}x` + (realTime < 1 ? " -- slower than real time" : "")],
-    ["pictures / captured", `${r.pictures} / ${r.captured}`, !r.complete],
-    ["slowest-picture margin", `gave up after ${r.give_up_after} s` + (stalled ? " -- one picture ran much slower than the rest" : " (no stall seen)"), stalled],
-    ["capture + delivery time", `${r.seconds} s`],
-    ["status register", `${r.sticky}` +
-      (r.error ? " error" : "") + (r.watchdog ? " watchdog" : ""), r.error || r.watchdog],
+    ["bytes uploaded", r.bytes_in.toLocaleString()],
+    ["decoder", (r.decoder.error ? "stream error " : "") + (r.decoder.watchdog ? "watchdog " : "") +
+      (!r.decoder.error && !r.decoder.watchdog ? "clean" : ""), r.decoder.error || r.decoder.watchdog],
+    ["capture lag (max)", `${r.capture_lag_max} picture(s)`, r.capture_lag_max >= 2],
+    ["device time per stage", Object.entries(t).map(([k, v]) => `${k} ${v}`).join(", ")],
   ];
   $("report").innerHTML = rows
     .map(([k, v, warn]) => `<tr><th>${k}</th><td${warn ? ' class="warn"' : ""}><code>${v}</code></td></tr>`)
