@@ -2,7 +2,8 @@
 
 Una release se pide con una versión y sale sola, o no sale:
 
-**Actions → release → Run workflow → `version: 1.0.0`**
+**Actions → Release → Run workflow → `version: v1.0.0`** (o `v1.0.0-rc1`,
+que se publica como pre-release)
 
 `release.yml` corre `release/qualify.sh` en la máquina conectada a la placa:
 
@@ -17,9 +18,15 @@ Una release se pide con una versión y sale sola, o no sale:
 6. **artefactos** — recién ahí: librería Python (wheel probado), user guide,
    bundle de la placa, el `.job` del bitstream, notas, `SHA256SUMS`
 
-y sólo si todo pasó, el job `publish` crea la release `vX.Y.Z` con esos
-archivos. Si algo falla, el reporte queda como artifact
-`qualification-failure-X.Y.Z` y no se publica nada.
+y sólo si todo pasó, el job `release` mergea en `master` **exactamente los
+commits que se calificaron** de docs, hardware_development y
+firmware_development (`--no-ff`; un conflicto aborta antes de pushear nada),
+taggea cada rama como `vX.Y.Z-<rama>` y master como `vX.Y.Z`, y publica la
+release con esos archivos adjuntos. Si algo falla, el reporte queda como
+artifact `qualification-failure-vX.Y.Z` y no se publica nada.
+
+`release.yml` vive en firmware_development y en master, y tiene que ser igual
+en las dos: cada release mergea firmware_development en master.
 
 A mano es lo mismo, sin publicar: `release/qualify.sh 1.0.0` deja todo en
 `release/dist/1.0.0/`.
@@ -36,6 +43,9 @@ runner, con las etiquetas `self-hosted, linux, mpeg2fpga-board`.
 |---|---|
 | `MPEG2FPGA_BOARD` | `root@192.168.18.5` |
 | `MPEG2FPGA_STREAMS_DIR` | `/home/esbon/Proyectos/tandem/trunk/mpeg2fpga/tools/streams` |
+
+y el secret `RELEASE_PAT` (token personal con scope `repo`), para que el merge,
+los tags y la release queden a nombre de una persona y no del bot.
 
 **En esa máquina:** clave ssh sin passphrase hacia la placa; el árbol del
 kernel compilado (`~/kernel-src/linux4microchip-linux`, o `KERNEL_SRC`);
