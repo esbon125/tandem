@@ -1,0 +1,38 @@
+\chapter{Limitaciones conocidas}\label{cap:limitaciones}
+
+\section{Velocidad}
+
+El decodificador va entre 0.5 y 0.8 veces tiempo real según la resolución.
+El límite está en la etapa de compensación de movimiento del núcleo, no en la
+memoria ni en el reloj (medido en el proyecto). Sirve para clips grabados; no
+para fuentes en vivo que no acepten control de flujo.
+
+\section{Matrices de cuantización cargadas}
+
+Los streams que cargan en el encabezado de secuencia una matriz de
+cuantización intra no simétrica se decodifican con errores visibles desde la
+primera imagen. Afecta a 11 de los 39 streams de conformidad del banco de
+pruebas, entre ellos varios que cargan la matriz \emph{por defecto}. Las
+matrices simétricas, y el caso habitual en que el stream no carga ninguna,
+funcionan correctamente. Es una diferencia del núcleo original, en
+investigación.
+
+\section{Deriva en imágenes predichas}
+
+En imágenes P y B con mucho movimiento la diferencia con el decodificador de
+referencia crece levemente a lo largo del GOP (error medio absoluto de hasta
+$\sim$1 en los streams típicos), sin efecto visible apreciable. También es
+propia del núcleo original.
+
+\section{Otras}
+
+\begin{itemize}
+  \item Sin salida de video: la placa no tiene conector de video; la salida es
+    la red.
+  \item MPEG-1 no está soportado; un stream \emph{stuffing} de conformidad
+    (\cmd{tcela-15}) no produce imágenes.
+  \item Con TLS la entrega queda limitada a unos 15 cuadros por segundo a
+    704×480.
+  \item Cambios de resolución dentro de un mismo clip: soportados por el
+    protocolo, sin verificación exhaustiva en hardware.
+\end{itemize}

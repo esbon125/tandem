@@ -1,0 +1,81 @@
+\chapter{Introducción}
+
+\textbf{mpeg2fpga} es un decodificador de video MPEG-2 (ISO/IEC 13818-2)
+implementado en la FPGA de un PolarFire SoC y ofrecido como un servicio de red.
+Un cliente le envía un clip por Ethernet y recibe, a medida que se decodifican,
+los cuadros en formato YUV 4:2:0 planar (I420), en orden de presentación.
+
+La decodificación ocurre íntegramente en hardware. Los procesadores RISC-V del
+SoC sólo administran: reciben el clip, lo entregan al decodificador por DMA,
+leen cada cuadro terminado y lo envían al cliente.
+
+\section{Qué incluye un release}
+
+\begin{dato}
+\begin{tabularx}{\linewidth}{@{}l X@{}}
+\textbf{Dispositivo} & Placa PolarFire SoC Discovery Kit con el bitstream del
+  decodificador grabado. La FPGA es de tecnología flash: conserva la
+  configuración sin alimentación ni memoria externa. \\[3pt]
+\textbf{Software de la placa} & Driver de Linux (\cmd{mpeg2fpga.ko}), servicio
+  \cmd{mpeg2fpgad} y su conversor nativo de cuadros. \\[3pt]
+\textbf{Librería cliente} & Paquete Python \cmd{mpeg2fpga} (wheel), sin
+  dependencias fuera de la biblioteca estándar. \\[3pt]
+\textbf{Protocolo} & Especificación del protocolo de red v1, el contrato
+  entre el dispositivo y cualquier cliente. \\[3pt]
+\textbf{Documentación} & Esta guía y las notas del release con el informe de
+  conformidad y rendimiento.
+\end{tabularx}
+\end{dato}
+
+\section{Arquitectura}
+
+\begin{center}
+\begin{tikzpicture}[font=\sffamily\small,
+    box/.style={blk, minimum width=31mm, minimum height=12mm},
+    hbox/.style={hw, minimum width=31mm, minimum height=12mm}]
+  % top row: software
+  \node[box] (app) at (0,0) {\textbf{Aplicación}\\[-1pt]\scriptsize librería \texttt{mpeg2fpga}};
+  \node[box] (d)   at (6.6,0) {\textbf{mpeg2fpgad}\\[-1pt]\scriptsize servicio, protocolo v1};
+  \node[box] (drv) at (11.2,0) {\textbf{Driver}\\[-1pt]\scriptsize \texttt{mpeg2fpga.ko}};
+  % bottom row: FPGA
+  \node[hbox] (fs)  at (2.0,-3.4) {\textbf{Framestore}\\[-1pt]\scriptsize DDR, 4 buffers};
+  \node[hbox] (dec) at (6.6,-3.4) {\textbf{Decodificador}\\[-1pt]\scriptsize MPEG-2};
+  \node[hbox] (dma) at (11.2,-3.4) {\textbf{DMA de entrada}\\[-1pt]\scriptsize \texttt{stream\_dma}};
+  % data path
+  \draw[arr] ([yshift=2.5mm]app.east) -- node[above, lbl]{clip (HTTP)} ([yshift=2.5mm]d.west);
+  \draw[arr] ([yshift=-2.5mm]d.west) -- node[below, lbl]{cuadros I420} ([yshift=-2.5mm]app.east);
+  \draw[arr] (d) -- node[above, lbl]{sysfs} (drv);
+  \draw[arr] (drv) -- node[right, lbl]{bloques del clip} (dma);
+  \draw[arr] (dma) -- (dec);
+  \draw[arr] (dec) -- node[above, lbl]{cuadros} (fs);
+  % control path
+  \draw[arr, dashed, color=m2teal] (dec.north east) to[bend right=12]
+    node[pos=0.55, right=1mm, lbl, align=left]{IRQ:\\cuadro listo} (drv.south west);
+  \draw[arr, dashed, color=m2teal] (fs.north) |- node[pos=0.3, left, lbl]{lectura} ([yshift=-6mm]d.south west) -- ([xshift=-8mm]d.south);
+  \begin{scope}[on background layer]
+    \node[draw=m2grey!60, dashed, rounded corners=4pt, fit=(d)(drv)(fs)(dma), inner sep=4mm] (soc) {};
+    \node[lbl, anchor=south east] at (soc.north east) {PolarFire SoC};
+    \node[lbl, anchor=south west] at ([yshift=6mm]app.north west) {PC del cliente};
+  \end{scope}
+\end{tikzpicture}
+\end{center}
+
+\begin{itemize}
+  \item El \textbf{clip sube} por HTTP. El servicio lo parte en bloques y el
+    driver los entrega al DMA, que alimenta al decodificador.
+  \item Cuando el decodificador termina un cuadro, una \textbf{interrupción}
+    le avisa al driver qué buffer del framestore lo contiene, y el driver se
+    lo pasa al servicio. El servicio lo lee en el momento, antes de que el
+    decodificador reutilice el buffer.
+  \item El cuadro se convierte a I420 y \textbf{baja} al cliente por la misma
+    conexión, mientras el resto del clip sigue subiendo.
+\end{itemize}
+
+Subida y bajada ocurren a la vez y con control de flujo en ambos sentidos: no
+hay límite de largo de clip y la memoria usada en la placa es fija.
+
+\section{Convenciones de esta guía}
+
+Los comandos que se ejecutan en la PC del usuario no llevan prefijo; los que
+se ejecutan en la placa aparecen precedidos de \cmd{ssh root@placa}. En los
+ejemplos la placa tiene la dirección \cmd{192.168.18.5}.

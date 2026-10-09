@@ -11,7 +11,7 @@ they get validated against the reference decoder in simulation and then reused
 here unchanged.
 
 Usage:
-    python3 capture_framestore.py STREAM [-o OUTPUT.bin]
+    python3 capture_framestore.py STREAM [-o OUTPUT.bin] [--no-reset] [--json]
 
 Writes OUTPUT.bin (12 MiB) and OUTPUT.txt next to it. Copy both to the host and
 
@@ -25,6 +25,7 @@ script does not need to know which.
 """
 import argparse
 import hashlib
+import json
 import os
 import sys
 import time
@@ -32,6 +33,7 @@ import time
 sys.path.insert(0, "/root/webserver")
 
 import decoder_control
+import trick_mode
 from dma_push import STAGE_OFFSET, sync_for_device
 from ddr_region import DDRRegion, STAGING_DEVICE, FRAMESTORE_DEVICE
 from framestore import OSD_WORD, FRAMESTORE_BYTES
@@ -51,7 +53,20 @@ def main():
     ap.add_argument("-o", "--out", default="hw_framestore.bin")
     ap.add_argument("--settle-timeout", type=float, default=30.0,
                     help="give up waiting for the framestore to stop changing")
+    ap.add_argument("--no-reset", action="store_true",
+                    help="keep the core running and drop the previous stream "
+                         "with flush_vbuf, the way a player switches streams, "
+                         "instead of pulsing core enable")
+    ap.add_argument("--json", action="store_true",
+                    help="end with one 'RESULT {...}' line for tools/regress")
     args = ap.parse_args()
+    result = {"stream": os.path.basename(args.stream), "reset": not args.no_reset}
+
+    def report(**fields):
+        result.update(fields)
+        if args.json:
+            print("RESULT " + json.dumps(result, sort_keys=True))
+            sys.stdout.flush()
 
     data = open(args.stream, "rb").read()
     print("stream %s: %d bytes" % (args.stream, len(data)))
@@ -60,15 +75,26 @@ def main():
          DDRRegion(FRAMESTORE_DEVICE) as fs:
         print("backend: %s" % control.backend)
 
-        # start from a known state: core off, framestore poisoned so that
-        # "never written" is distinguishable from "reconstructed to mid-grey".
-        control.set_enable(False)
-        time.sleep(0.3)
+        # start from a known state: framestore poisoned so that "never
+        # written" is distinguishable from "reconstructed to mid-grey". By
+        # default the core is held off meanwhile; with --no-reset it keeps
+        # running (idle, between streams), and the previous stream's tail is
+        # dropped with flush_vbuf -- the path a corrupted stream must not
+        # have broken, which is what tools/regress checks with it.
         poison = b"\xEE" * (1 << 20)
-        for off in range(0, FRAMESTORE_BYTES, len(poison)):
-            fs.write(off, poison)
-        control.set_enable(True)
-        time.sleep(0.5)
+        if args.no_reset:
+            control.set_freeze(False)
+            control.set_source_select(trick_mode.SOURCE_LAST_DECODED)
+            control.flush_vbuf()
+            for off in range(0, FRAMESTORE_BYTES, len(poison)):
+                fs.write(off, poison)
+        else:
+            control.set_enable(False)
+            time.sleep(0.3)
+            for off in range(0, FRAMESTORE_BYTES, len(poison)):
+                fs.write(off, poison)
+            control.set_enable(True)
+            time.sleep(0.5)
         control.clear_status()
 
         with DDRRegion(STAGING_DEVICE) as st:
@@ -79,7 +105,8 @@ def main():
         status = control.dma_status()
         while not status["done"] and time.time() - t0 < 10.0:
             status = control.dma_status()
-        print("DMA: %s in %.3f s" % (status, time.time() - t0))
+        dma_seconds = time.time() - t0
+        print("DMA: %s in %.3f s" % (status, dma_seconds))
 
         # Let the decoder run, accumulating sticky status, until the framestore
         # stops changing. This is the hardware counterpart of mem_ctl.v's
@@ -104,6 +131,8 @@ def main():
                 stable_since = None
             previous = now
         settled = stable_since is not None
+        # time to the last change, not to the end of the settle wait
+        settle_seconds = (stable_since if settled else time.time()) - t0
         print("framestore %s after %.1f s"
               % ("settled" if settled else "STILL CHANGING", time.time() - t0))
 
@@ -115,12 +144,21 @@ def main():
               % (sticky, bool(sticky.get("error")), bool(sticky.get("frame_end")),
                  bool(sticky.get("watchdog"))))
 
+        result.update(dma_done=bool(status["done"]), dma_seconds=round(dma_seconds, 3),
+                      settled=settled, settle_seconds=round(settle_seconds, 3),
+                      width=width, height=height,
+                      sticky=sticky.get("sticky", 0), error=bool(sticky.get("error")),
+                      watchdog=bool(sticky.get("watchdog")), dump=None)
         if width == 0 or height == 0:
+            report()
             raise SystemExit("SIZE reads 0 -- the decoder never parsed a sequence header")
 
+        h = hashlib.sha1()
         with open(args.out, "wb") as fp:
             for off in range(0, FRAMESTORE_BYTES, 1 << 20):
-                fp.write(fs.read(off, 1 << 20))
+                chunk = fs.read(off, 1 << 20)
+                h.update(chunk)
+                fp.write(chunk)
 
     meta = os.path.splitext(args.out)[0] + ".txt"
     with open(meta, "w") as fp:
@@ -143,6 +181,7 @@ def main():
 
     print("wrote %s (%d bytes) and %s"
           % (args.out, os.path.getsize(args.out), meta))
+    report(dump=args.out, sha1=h.hexdigest())
 
 
 if __name__ == "__main__":

@@ -1,0 +1,54 @@
+\chapter{Operación y diagnóstico}
+
+\section{Estado del servicio}
+
+\begin{lstlisting}[language=shell]
+ssh root@placa systemctl status mpeg2fpgad
+ssh root@placa journalctl -u mpeg2fpgad -f
+\end{lstlisting}
+
+El log registra cada pedido y, por cada decode, cuántos cuadros se enviaron,
+en cuánto tiempo y si quedó completo.
+
+\section{El resumen de cada decode}
+
+El registro END trae lo necesario para saber cómo salió un decode:
+
+\begin{center}
+\begin{tabularx}{\linewidth}{@{}l X@{}}
+\toprule
+\cmd{complete} & se entregó un cuadro por cada cuadro del clip \\
+\cmd{decoder.error} & el decodificador encontró algo que no pudo interpretar; los cuadros pueden tener errores, el dispositivo queda sano \\
+\cmd{decoder.watchdog} & el decodificador se detuvo; conviene \cmd{reset} \\
+\cmd{capture\_lag\_max} & cuántos cuadros esperaron para ser leídos; 0 o 1 es normal, 2 o más indica sobrecarga \\
+\cmd{timing} & tiempo por etapa en la placa: lectura, envío, espera del DMA, tiempo con el decodificador congelado \\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+\section{Problemas frecuentes}
+
+\begin{center}
+\begin{tabularx}{\linewidth}{@{}>{\raggedright}p{42mm} X@{}}
+\toprule
+\textbf{Síntoma} & \textbf{Qué revisar} \\
+\midrule
+No responde \cmd{/v1/health} & red y dirección; \cmd{systemctl status mpeg2fpgad} \\
+401 con el token correcto & el token cambió (rotación); volver a copiarlo \\
+409 persistente & otro cliente está decodificando; \cmd{/v1/status} lo muestra \\
+503 & driver no cargado u overlay sin aplicar: \cmd{systemctl status mpeg2fpga-overlay} \\
+\cmd{complete: false} sin error & el clip termina con una imagen incompleta, o tiene imágenes que el núcleo no soporta (capítulo~\ref{cap:limitaciones}) \\
+Cuadros más lentos que lo esperado & TLS activo; un cliente que lee lento (\cmd{timing.frozen\_s} alto) \\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+\Needspace{10\baselineskip}
+\section{Recuperación}
+
+En operación normal los clips se encadenan sin resetear nada. Si un decode
+termina con \cmd{watchdog}, o \cmd{/v1/status} informa \cmd{error}:
+
+\begin{lstlisting}[language=Python]
+dev.reset()
+\end{lstlisting}

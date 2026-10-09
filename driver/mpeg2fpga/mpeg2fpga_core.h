@@ -78,6 +78,40 @@ struct mpeg2fpga_core {
 	 * only one who will ever see those events.
 	 */
 	u32 sticky;
+	/* @pic_irq_enabled: shadow of PIC_IRQ's enable bit, so acking a
+	 * picture (a write to the same register) keeps it as the owner set it
+	 */
+	bool pic_irq_enabled;
+};
+
+/**
+ * struct mpeg2fpga_build - which release and commit the bitstream was built from
+ * @major: release major version
+ * @minor: release minor version
+ * @patch: release patch version
+ * @git_hash: short git hash (7 hex digits), 0 if the build could not tell
+ * @dirty: built with uncommitted changes, so @git_hash does not reproduce it
+ */
+struct mpeg2fpga_build {
+	u8 major;
+	u8 minor;
+	u16 patch;
+	u32 git_hash;
+	bool dirty;
+};
+
+/**
+ * struct mpeg2fpga_picture_event - one finished picture, as the hardware saw it
+ * @count: free-running hardware picture counter (16 bits, wraps); a gap
+ *	between consecutive events means pictures were missed
+ * @frame: frame store buffer (0..3) holding the picture
+ * @overrun: a further picture arrived before this one was acknowledged --
+ *	only the latest is described here
+ */
+struct mpeg2fpga_picture_event {
+	u16 count;
+	u8 frame;
+	bool overrun;
 };
 
 /**
@@ -118,6 +152,146 @@ struct mpeg2fpga_geometry {
 	u16 macroblocks_high;
 };
 
+/**
+ * struct mpeg2fpga_perf_counters - free-running cycle counters, core_clk domain
+ *
+ * All five wrap silently and never reset on their own (framestore_request.v's
+ * arbiter -- see its header comment); only deltas between two reads mean
+ * anything, e.g. bracketing one decode with two reads of this attribute.
+ * Meant to answer "where did the cycles go", the same question a slower
+ * decode rate raises: sum @disp_service_cnt + @vbr_service_cnt over an
+ * interval and compare against the core_clk cycles that interval took
+ * (elapsed wall time * the known 108 MHz core clock, since there is no
+ * software-readable free-running cycle counter -- mpeg2video.v's cnt_clk is
+ * SmartDebug-probe-only, not wired to the APB map) to see how much of the
+ * core was actually busy versus idle, and @vbr_starved_cnt to see whether
+ * the VLD went hungry waiting on the video buffer while it did.
+ *
+ * @disp_service_cnt: cycles the framestore arbiter spent servicing the
+ *	display (resample/OSD) path
+ * @vbr_service_cnt: cycles spent servicing vbuf_read_fifo (feeding the VLD)
+ * @vbr_starved_cnt: cycles the VLD wanted a vbuf read serviced but the
+ *	arbiter picked something else instead
+ * @mem_res_valid_cnt: cycles mem2axi_bridge (or mem_ctl.v in simulation)
+ *	presented a valid memory response -- the read-side occupancy of the
+ *	single external memory port, across every consumer (vbuf, motion
+ *	compensation, display)
+ * @write_service_cnt: cycles the framestore arbiter spent servicing a
+ *	write -- STATE_VBW (incoming stream bytes), STATE_RECON (reconstructed
+ *	macroblock), or STATE_OSD (overlay), combined. Added in Fase 8b
+ *	alongside the other three, which cover the read side fairly well
+ *	between them and mem_res_valid_cnt above; the write side had no
+ *	counter at all before this, sticky or otherwise.
+ * @fwd_service_cnt: cycles the arbiter spent servicing a forward
+ *	motion-compensation reference read (STATE_FWD). Added once
+ *	disp+vbr+write_service+mem_res_valid_cnt left ~75-80% of cycles
+ *	unaccounted for even after both read and write pipelining -- the
+ *	arbiter's states are one-hot and mutually exclusive, so the remainder
+ *	has to be fwd/bwd service time (their read *responses* were already
+ *	in mem_res_valid_cnt, but never their own arbiter service time) or
+ *	genuine idle time.
+ * @bwd_service_cnt: same as @fwd_service_cnt, for STATE_BWD (backward
+ *	motion-compensation reference reads).
+ * @idle_cnt: cycles the arbiter had nothing ready to service (STATE_IDLE).
+ *	Measured directly rather than inferred by subtracting the other
+ *	counters from an already-estimated cycle total (wall clock * the
+ *	known 108 MHz core clock -- there is still no software-readable
+ *	free-running cycle counter), so it settles the fwd/bwd-vs-idle
+ *	question without compounding that estimate's own rounding error.
+ * @vld_en_cnt: cycles getbits.v's vld_en is asserted, i.e. the VLD is
+ *	actually allowed to advance. Added once idle_cnt confirmed the
+ *	memory arbiter has plenty of headroom (docs/bringup 43) -- the
+ *	bottleneck moved upstream into this module's own compute pipeline,
+ *	which vld_en gates: `vld_en = ready && ~wait_state &&
+ *	~rld_wr_almost_full && ~mvec_wr_almost_full && ~motcomp_busy`.
+ * @vld_stall_rld_cnt: cycles VLD was stalled specifically because
+ *	rld_wr_almost_full (the rld/iquant/idct reconstruction chain backed
+ *	up) -- one of vld_en's four stall reasons.
+ * @vld_stall_motcomp_cnt: cycles VLD was stalled specifically because
+ *	motcomp_busy (motcomp's own input fifo full -- its reconstruction,
+ *	not memory: fwd/bwd reference reads are already known small).
+ *	mvec_wr_almost_full and the getbits/wait_state stall reason are left
+ *	to be inferred as whatever remainder these two plus @vld_en_cnt
+ *	don't account for.
+ * @fwd_addr_empty_cnt: cycles framestore_request.v's do_fwd had nothing to
+ *	service because the fwd reference-read address fifo was empty --
+ *	i.e. motcomp_addrgen.v/mem_addr.v (upstream of the memory arbiter
+ *	entirely) hadn't queued a forward-reference read yet. Added
+ *	(Fase 8d) to split @vld_stall_motcomp_cnt's "motcomp busy" finding
+ *	into two very different possible causes with two very different
+ *	fixes: address generation not keeping up (this counter), versus the
+ *	fetch pipeline not draining once addresses are queued
+ *	(@fwd_dta_stall_cnt below).
+ * @fwd_dta_stall_cnt: cycles a fwd address WAS queued (fifo non-empty) but
+ *	the arbiter withheld service anyway because the fwd return-data fifo
+ *	was almost full -- i.e. the consumer (motcomp_recon) isn't draining
+ *	fetched reference pixels fast enough.
+ * @bwd_addr_empty_cnt: same as @fwd_addr_empty_cnt, for STATE_BWD.
+ * @bwd_dta_stall_cnt: same as @fwd_dta_stall_cnt, for STATE_BWD.
+ * @mem_req_almost_full_cnt: cycles mem_req_wr_almost_full is asserted --
+ *	the arbiter's own outgoing queue toward mem2axi_bridge is nearly
+ *	full. Added (Fase 8e) after @fwd_addr_empty_cnt/@fwd_dta_stall_cnt
+ *	both came back exactly 0 on real hardware: do_fwd's first two AND
+ *	terms are essentially always satisfied, yet fwd is serviced only
+ *	~1% of the time and the arbiter sits idle ~94% of the time. This
+ *	and @tag_almost_full_cnt are the two remaining AND terms do_fwd (and
+ *	nearly every other request type) shares -- if either is asserted
+ *	almost all the time, it directly explains @idle_cnt and reverses the
+ *	Fase 8b reading that idle time meant memory headroom.
+ * @tag_almost_full_cnt: cycles tag_wr_almost_full is asserted -- the
+ *	arbiter's own tag-routing queue (mem_tag_fifo) is nearly full.
+ *	Measured on real hardware at 76.9%% of all cycles during a full
+ *	decode, dwarfing @mem_req_almost_full_cnt's 0.8%% -- mem_tag_fifo's
+ *	early-warning threshold (not mem_request_fifo's, not any data fifo,
+ *	not memory latency) was what actually gated nearly every read.
+ *	Fase 9a raised MEMTAG_THRESHOLD in response (fifo_size.v), which cut
+ *	this to ~66%% on real hardware but did not change fps or
+ *	@vld_stall_rld_cnt/@vld_stall_motcomp_cnt's combined share --
+ *	i.e. the arbiter had headroom to spare all along, and relieving it
+ *	didn't help; see @predict_err_almost_full_cnt for where that pointed
+ *	next.
+ * @predict_err_almost_full_cnt: cycles idct_fifo_almost_full is asserted --
+ *	predict_err_fifo (idct.v's output, motcomp_recon's input) is nearly
+ *	full. Added (Fase 9b) after Fase 9a's fix moved @tag_almost_full_cnt
+ *	without moving fps, pointing the investigation downstream of the
+ *	memory arbiter entirely, into the reconstruction pipeline. rld.v
+ *	already wires idct_fifo_almost_full into its own internal stall
+ *	logic (independently of this driver); this just exposes that
+ *	existing signal for correlation against @vld_stall_rld_cnt.
+ * @rld_stall_predict_err_cnt: cycles ~vld_en && rld_wr_almost_full &&
+ *	idct_fifo_almost_full -- the overlap between @vld_stall_rld_cnt (VLD
+ *	stalled because rld_fifo is nearly full) and predict_err_fifo also
+ *	being nearly full at the same moment. Measured on real hardware at
+ *	78.4%% of @vld_stall_rld_cnt's own window -- i.e. rld_wr_almost_full
+ *	is itself mostly caused by motcomp_recon not draining
+ *	predict_err_fifo fast enough, not by rld/iquant/idct's own
+ *	processing throughput. Combined with @vld_stall_motcomp_cnt (motcomp
+ *	busy directly), this places the real bottleneck inside
+ *	motcomp_recon.v/motcomp.v's own reconstruction rate, not memory --
+ *	the memory arbiter's own counters above all show ample headroom.
+ */
+struct mpeg2fpga_perf_counters {
+	u32 disp_service_cnt;
+	u32 vbr_service_cnt;
+	u32 vbr_starved_cnt;
+	u32 mem_res_valid_cnt;
+	u32 write_service_cnt;
+	u32 fwd_service_cnt;
+	u32 bwd_service_cnt;
+	u32 idle_cnt;
+	u32 vld_en_cnt;
+	u32 vld_stall_rld_cnt;
+	u32 vld_stall_motcomp_cnt;
+	u32 fwd_addr_empty_cnt;
+	u32 fwd_dta_stall_cnt;
+	u32 bwd_addr_empty_cnt;
+	u32 bwd_dta_stall_cnt;
+	u32 mem_req_almost_full_cnt;
+	u32 tag_almost_full_cnt;
+	u32 predict_err_almost_full_cnt;
+	u32 rld_stall_predict_err_cnt;
+};
+
 void mpeg2fpga_core_init(struct mpeg2fpga_core *core,
 			  const struct mpeg2fpga_regops *ops);
 
@@ -152,12 +326,25 @@ bool mpeg2fpga_core_is_enabled(struct mpeg2fpga_core *core);
 /* Stream DMA. Writes address and length before the start bit, which is the
  * order stream_dma.v latches them in.
  */
-void mpeg2fpga_core_dma_start(struct mpeg2fpga_core *core, u32 addr, u32 len);
+int mpeg2fpga_core_dma_start(struct mpeg2fpga_core *core, u32 addr, u32 len);
+int mpeg2fpga_core_dma_start_chunk(struct mpeg2fpga_core *core, u32 addr,
+				    u32 len, bool last);
+
+void mpeg2fpga_core_get_build(struct mpeg2fpga_core *core,
+			       struct mpeg2fpga_build *build);
+
+void mpeg2fpga_core_set_picture_irq(struct mpeg2fpga_core *core, bool enable);
+bool mpeg2fpga_core_picture_irq_enabled(struct mpeg2fpga_core *core);
+bool mpeg2fpga_core_picture_ack(struct mpeg2fpga_core *core,
+				struct mpeg2fpga_picture_event *ev);
 void mpeg2fpga_core_dma_get_status(struct mpeg2fpga_core *core,
 				    struct mpeg2fpga_dma_status *status);
 
 void mpeg2fpga_core_get_geometry(struct mpeg2fpga_core *core,
 				  struct mpeg2fpga_geometry *geom);
+
+void mpeg2fpga_core_get_perf_counters(struct mpeg2fpga_core *core,
+				       struct mpeg2fpga_perf_counters *perf);
 
 /*
  * Trick mode -- what makes the decoder usable continuously rather than one

@@ -1,0 +1,40 @@
+\chapter{Actualizaciones}
+
+Un release tiene partes que se actualizan por caminos distintos:
+
+\begin{center}
+\begin{tabularx}{\linewidth}{@{}l l X@{}}
+\toprule
+\textbf{Parte} & \textbf{Dónde vive} & \textbf{Cómo se actualiza} \\
+\midrule
+Bitstream de la FPGA & flash de configuración de la FPGA & JTAG (FlashPro), con acceso físico \\
+Driver y servicio & tarjeta microSD & por red, con los instaladores \\
+Librería cliente & PC del usuario & \cmd{pip install} del nuevo wheel \\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+\begin{advertencia}[Limitación de la placa]
+El PolarFire SoC permite actualizar el bitstream en campo (\emph{Auto Update}
+e \emph{IAP}), pero ambos requieren una memoria flash SPI conectada al System
+Controller del chip, que la Discovery Kit no tiene. En esta placa el
+bitstream sólo se actualiza por JTAG. Una placa de producto debería incluir
+esa memoria.
+\end{advertencia}
+
+\section{Compatibilidad}
+
+\begin{itemize}
+  \item \cmd{/v1/device} informa las versiones de las tres partes de la placa;
+    \cmd{bitstream} identifica el release y el commit exacto.
+  \item Dentro del protocolo v1, un cliente de cualquier versión funciona con
+    un dispositivo de cualquier versión: el protocolo sólo crece por adición.
+\end{itemize}
+
+\section{Integridad de los archivos}
+
+Cada release publica un archivo \cmd{SHA256SUMS}. Antes de instalar:
+
+\begin{lstlisting}[language=shell]
+sha256sum -c SHA256SUMS
+\end{lstlisting}

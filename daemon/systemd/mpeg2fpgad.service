@@ -1,0 +1,31 @@
+[Unit]
+Description=mpeg2fpga decoder network service (protocol v1)
+Documentation=file:///usr/local/lib/mpeg2fpgad/PROTOCOL-v1.md
+# the driver and its device nodes come from the overlay unit
+Requires=mpeg2fpga-overlay.service
+After=mpeg2fpga-overlay.service network-online.target
+Wants=network-online.target
+# the demo webserver drives the same decoder
+Conflicts=mpeg2fpga-webserver.service
+
+[Service]
+User=mpeg2fpgad
+Group=mpeg2fpgad
+Environment=PYTHONPATH=/usr/local/lib/mpeg2fpgad
+EnvironmentFile=-/etc/mpeg2fpgad/mpeg2fpgad.env
+ExecStartPre=+/usr/local/lib/mpeg2fpgad/mpeg2fpgad-grant-access.sh
+ExecStart=/usr/bin/python3 -m mpeg2fpgad $MPEG2FPGAD_ARGS
+Restart=on-failure
+RestartSec=2
+
+# section 6.3: unprivileged, read-only system, nothing it does not need
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+ReadWritePaths=/etc/mpeg2fpgad
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+LockPersonality=yes
+
+[Install]
+WantedBy=multi-user.target

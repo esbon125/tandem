@@ -1,22 +1,19 @@
 #!/bin/sh
-# Install the UIO overlay (and optionally the webserver) as systemd units on
+# Install the UIO overlay as systemd units on
 # the board, so a reboot comes back with everything in place.
 #
 # Run this ON the board, from a checkout of driver/mpeg2fpga/tools:
 #
 #     ./install-on-board.sh                    # driver mode, overlay only
-#     ./install-on-board.sh --webserver        # + the demo webserver
 #     ./install-on-board.sh --uio              # userspace/UIO mode instead
 #
 # Idempotent.
 set -eu
 
 HERE=$(cd "$(dirname "$0")" && pwd)
-WEBSERVER=${WEBSERVER:-0}
 MODE=${MPEG2FPGA_MODE:-driver}
 for arg in "$@"; do
 	case "$arg" in
-		--webserver) WEBSERVER=1 ;;
 		--uio)       MODE=uio ;;
 		--driver)    MODE=driver ;;
 		*) echo "unknown option: $arg" >&2; exit 1 ;;
@@ -62,10 +59,6 @@ systemctl enable --now mpeg2fpga-overlay.service
 echo "overlay unit enabled; status:"
 systemctl --no-pager --lines=5 status mpeg2fpga-overlay.service || true
 
-if [ "$WEBSERVER" = "1" ]; then
-	install -m 0644 "$HERE/mpeg2fpga-webserver.service" /etc/systemd/system/
-	systemctl daemon-reload
-	systemctl enable --now mpeg2fpga-webserver.service
-	echo "webserver unit enabled; status:"
-	systemctl --no-pager --lines=5 status mpeg2fpga-webserver.service || true
-fi
+# The demo webserver that used to be installed here (--webserver) drove the
+# registers itself; it is replaced by mpeg2fpgad (daemon/install-on-board.sh)
+# plus demo/demo_server.py, a protocol v1 client that runs anywhere.

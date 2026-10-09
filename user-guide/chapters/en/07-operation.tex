@@ -1,0 +1,54 @@
+\chapter{Operation and troubleshooting}
+
+\section{Service status}
+
+\begin{lstlisting}[language=shell]
+ssh root@board systemctl status mpeg2fpgad
+ssh root@board journalctl -u mpeg2fpgad -f
+\end{lstlisting}
+
+The log records every request and, for each decode, how many frames were sent,
+in how long and whether it was complete.
+
+\section{The summary of each decode}
+
+The END record carries what is needed to tell how a decode went:
+
+\begin{center}
+\begin{tabularx}{\linewidth}{@{}l X@{}}
+\toprule
+\cmd{complete} & one frame was delivered for every frame in the clip \\
+\cmd{decoder.error} & the decoder met something it could not parse; frames may have errors, the device stays healthy \\
+\cmd{decoder.watchdog} & the decoder stopped; a \cmd{reset} is advisable \\
+\cmd{capture\_lag\_max} & how many frames waited to be read; 0 or 1 is normal, 2 or more means overload \\
+\cmd{timing} & time per stage on the board: reading, sending, waiting for the DMA, time with the decoder frozen \\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+\section{Common problems}
+
+\begin{center}
+\begin{tabularx}{\linewidth}{@{}>{\raggedright}p{42mm} X@{}}
+\toprule
+\textbf{Symptom} & \textbf{What to check} \\
+\midrule
+\cmd{/v1/health} does not answer & network and address; \cmd{systemctl status mpeg2fpgad} \\
+401 with the right token & the token changed (rotation); copy it again \\
+Persistent 409 & another client is decoding; \cmd{/v1/status} shows it \\
+503 & driver not loaded or overlay not applied: \cmd{systemctl status mpeg2fpga-overlay} \\
+\cmd{complete: false} without error & the clip ends with an incomplete picture, or has pictures the core does not support (chapter~\ref{cap:limitations}) \\
+Frames slower than expected & TLS on; a client reading slowly (high \cmd{timing.frozen\_s}) \\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+\Needspace{10\baselineskip}
+\section{Recovery}
+
+In normal operation clips are chained without resetting anything. If a decode
+ends with \cmd{watchdog}, or \cmd{/v1/status} reports \cmd{error}:
+
+\begin{lstlisting}[language=Python]
+dev.reset()
+\end{lstlisting}

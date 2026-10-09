@@ -1,0 +1,76 @@
+\chapter{Instalación}
+
+\section{Hardware}
+
+\begin{itemize}
+  \item Placa \textbf{PolarFire SoC Discovery Kit} (MPFS095T).
+  \item Tarjeta microSD con la imagen de Linux de la placa.
+  \item Cable Ethernet a la red de la PC cliente.
+  \item Cable USB, sólo para programar el bitstream (JTAG) y para la consola
+    serie.
+\end{itemize}
+
+Un dispositivo entregado ya trae el bitstream grabado y el software
+instalado: basta conectarlo a la red. Las secciones siguientes describen la
+instalación desde cero.
+
+\section{Programar el bitstream}
+
+El bitstream se graba por JTAG desde una PC con Microchip Libero SoC o
+FlashPro Express, con el programador embebido de la placa conectado por USB.
+La FPGA lo conserva sin alimentación.
+
+\begin{lstlisting}[language=shell]
+# con FlashPro Express y el archivo de programación del release
+FPExpress  # abrir mpeg2fpga-<versión>.job y ejecutar PROGRAM
+\end{lstlisting}
+
+Una vez arrancado Linux, el driver informa qué bitstream está cargado:
+
+\begin{lstlisting}[language=shell]
+ssh root@placa cat /sys/bus/platform/drivers/mpeg2fpga/*/build
+0.1.0+8004bc9
+\end{lstlisting}
+
+Es la versión del release y el commit del que se sintetizó; termina en
+\cmd{-dirty} si se sintetizó con cambios sin registrar.
+
+\section{Software de la placa}
+
+Primero el driver y su overlay de device tree, después el servicio:
+
+\begin{lstlisting}[language=shell]
+scp -r driver/mpeg2fpga/tools root@placa:/tmp/m2f-driver
+ssh root@placa sh /tmp/m2f-driver/install-on-board.sh
+
+scp -r daemon api/PROTOCOL-v1.md root@placa:/tmp/m2f-daemon/
+ssh root@placa sh /tmp/m2f-daemon/daemon/install-on-board.sh
+\end{lstlisting}
+
+El instalador del servicio:
+\begin{itemize}
+  \item crea el usuario de sistema \cmd{mpeg2fpgad} (sin privilegios);
+  \item instala el servicio en \cmd{/usr/local/lib/mpeg2fpgad} y el conversor
+    nativo \cmd{libm2fconv.so};
+  \item genera el token de acceso en \cmd{/etc/mpeg2fpgad/token};
+  \item habilita y arranca la unidad de systemd \cmd{mpeg2fpgad.service}.
+\end{itemize}
+
+Opciones: \cmd{-{}-tls} para HTTPS y \cmd{-{}-debug} para los endpoints de
+diagnóstico (ver capítulo~\ref{cap:seguridad}).
+
+\section{Verificar}
+
+\begin{lstlisting}[language=shell]
+curl http://192.168.18.5:8080/v1/health
+{"ok": true}
+\end{lstlisting}
+
+\section{Librería cliente}
+
+En la PC, con Python 3.9 o posterior:
+
+\begin{lstlisting}[language=shell]
+pip install mpeg2fpga-<versión>-py3-none-any.whl
+ssh root@placa cat /etc/mpeg2fpgad/token > token
+\end{lstlisting}

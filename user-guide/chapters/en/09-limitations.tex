@@ -1,0 +1,37 @@
+\chapter{Known limitations}\label{cap:limitations}
+
+\section{Speed}
+
+The decoder runs at 0.5 to 0.8 times real time depending on the resolution.
+The limit is in the core's motion compensation stage, not in memory or the
+clock (measured in the project). It suits recorded clips, not live sources
+that cannot accept flow control.
+
+\section{Loaded quantiser matrices}
+
+Streams that load a non-symmetric intra quantiser matrix in the sequence
+header decode with visible errors from the first picture on. This affects 11
+of the 39 conformance streams in the test bench, several of which load the
+\emph{default} matrix. Symmetric matrices, and the usual case where the stream
+loads none, decode correctly. It is a difference of the original core, under
+investigation.
+
+\section{Drift in predicted pictures}
+
+In P and B pictures with a lot of motion the difference from the reference
+decoder grows slightly along the GOP (mean absolute error up to $\sim$1 on
+typical streams), with no appreciable visible effect. It too belongs to the
+original core.
+
+\section{Others}
+
+\begin{itemize}
+  \item No video output: the board has no video connector; the output is the
+    network.
+  \item MPEG-1 is not supported; one \emph{stuffing} conformance stream
+    (\cmd{tcela-15}) produces no pictures.
+  \item With TLS, delivery is limited to about 15 frames per second at
+    704×480.
+  \item Resolution changes within one clip: supported by the protocol, not
+    exhaustively verified on hardware.
+\end{itemize}

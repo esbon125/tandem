@@ -1,0 +1,27 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "mpeg2fpga"
+dynamic = ["version"]
+description = "Client for the mpeg2fpga MPEG-2 decoder appliance (network protocol v1)"
+readme = "README.md"
+requires-python = ">=3.9"
+license = "MIT"
+authors = [{name = "Esteban Bustamante"}]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Topic :: Multimedia :: Video :: Conversion",
+]
+# stdlib only on purpose; numpy is used by Frame.to_numpy() if present
+dependencies = []
+
+[project.optional-dependencies]
+numpy = ["numpy"]
+
+[tool.setuptools.dynamic]
+version = {attr = "mpeg2fpga._version.__version__"}
+
+[tool.setuptools.packages.find]
+where = ["src"]

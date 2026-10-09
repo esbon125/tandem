@@ -1,0 +1,113 @@
+#!/usr/bin/env python3
+"""Bracket one full decode (the same decode_stream.decode() call the old demo server's
+/decode uses, so capture_seconds/fps here are directly comparable to every
+other measurement in this session) with two reads of perf_counters, and
+report what fraction of the core_clk cycles in that window each counter
+accounts for.
+
+Core clock is fixed at 108 MHz (see decode_rate_bottleneck memory) and there
+is no software-readable free-running cycle counter (mpeg2video.v's cnt_clk
+is SmartDebug-probe-only), so total cycles is estimated from wall clock --
+see mpeg2fpga_core.h's struct mpeg2fpga_perf_counters doc comment. dma_status
+"done" alone was tried first and rejected: it fires once the *push* is no
+longer backpressured, which decode_stream.py's own docstring notes returns
+before the last few pictures actually finish -- decode_stream.decode()'s
+settle-based capture loop is what genuinely waits for the last expected
+picture.
+
+Run on the board: python3 profile_decode.py <stream>
+"""
+import sys
+import time
+
+sys.path.insert(0, "/root/webserver")
+
+import decode_stream
+import decoder_control
+
+CORE_CLK_HZ = 108_000_000
+
+
+def main():
+    stream_path = sys.argv[1] if len(sys.argv) > 1 else "/root/webserver/tek60.bits"
+    data = open(stream_path, "rb").read()
+    print("stream: %s (%d bytes)" % (stream_path, len(data)))
+
+    control = decoder_control.open_control()
+    print("backend:", control.backend)
+
+    # This script drives the decoder directly (not through a server), so
+    # nothing tracks whether the core has ever been enabled -- right after
+    # a fresh FPGA reprogram it hasn't, core_enable defaults to 0 (see
+    # apb3_mpeg2fpga_bridge.v), and reset=False's flush_vbuf path silently
+    # does nothing useful against a core that was never running (captured
+    # comes back 0, decoder_size [0, 0], no error bit either -- there is
+    # nothing running to report one). One reset=True warm-up decode fixes
+    # it; only pay for that once.
+    warmup = decode_stream.decode(data, on_frame=lambda cap: None,
+                                   control=control, reset=True)
+    if not warmup.get("complete"):
+        print("warm-up decode did not complete -- something is wrong before profiling even starts:", warmup)
+        return
+
+    before = control.perf_counters()
+    report = decode_stream.decode(data, on_frame=lambda cap: None,
+                                   control=control, reset=False)
+    after = control.perf_counters()
+
+    print("report:", report)
+    elapsed = report["capture_seconds"]
+    total_cycles = CORE_CLK_HZ * elapsed
+    fps = report["captured"] / elapsed if elapsed else 0.0
+
+    print()
+    print("capture_seconds: %.3f s  (%.2f fps, %d pictures)" %
+          (elapsed, fps, report["captured"]))
+    print("estimated core_clk cycles in window: %d (@%d MHz)" %
+          (total_cycles, CORE_CLK_HZ // 1_000_000))
+    print()
+    print("%-20s %12s %10s" % ("counter", "delta", "% of window"))
+    deltas = {}
+    for key in ("disp_service_cnt", "vbr_service_cnt", "vbr_starved_cnt",
+                "mem_res_valid_cnt", "write_service_cnt",
+                "fwd_service_cnt", "bwd_service_cnt", "idle_cnt",
+                "vld_en_cnt", "vld_stall_rld_cnt", "vld_stall_motcomp_cnt",
+                "fwd_addr_empty_cnt", "fwd_dta_stall_cnt",
+                "bwd_addr_empty_cnt", "bwd_dta_stall_cnt",
+                "mem_req_almost_full_cnt", "tag_almost_full_cnt",
+                "predict_err_almost_full_cnt", "rld_stall_predict_err_cnt"):
+        # 32-bit free-running counters: handle a wraparound between reads.
+        delta = (after[key] - before[key]) & 0xFFFFFFFF
+        deltas[key] = delta
+        pct = 100.0 * delta / total_cycles if total_cycles else 0.0
+        print("%-20s %12d %9.1f%%" % (key, delta, pct))
+
+    # The arbiter's states (DISP/VBR/VBW+RECON+OSD/FWD/BWD/IDLE) are one-hot
+    # and mutually exclusive -- their service-time counters should sum to
+    # very close to the estimated total_cycles above (INIT/CLEAR/REFRESH are
+    # negligible in steady state). mem_res_valid_cnt/vbr_starved_cnt are
+    # deliberately excluded: they are not arbiter *states*, so they are not
+    # part of this partition and can overlap with it. This is also a sanity
+    # check on the wall-clock cycle estimate itself, not just the counters.
+    state_sum = (deltas["disp_service_cnt"] + deltas["vbr_service_cnt"] +
+                 deltas["write_service_cnt"] + deltas["fwd_service_cnt"] +
+                 deltas["bwd_service_cnt"] + deltas["idle_cnt"])
+    pct = 100.0 * state_sum / total_cycles if total_cycles else 0.0
+    print()
+    print("sum of arbiter-state counters: %d (%.1f%% of estimated total -- should be close to 100%%)" %
+          (state_sum, pct))
+
+    # Fase 9b: what fraction of vld_stall_rld_cnt's own window coincides with
+    # predict_err_fifo also being nearly full -- high means rld_wr_almost_full
+    # is caused by motcomp_recon backpressure, low means rld/iquant/idct's
+    # own throughput is the limiter, independent of motcomp_recon.
+    rld_stall = deltas["vld_stall_rld_cnt"]
+    overlap = deltas["rld_stall_predict_err_cnt"]
+    overlap_pct = 100.0 * overlap / rld_stall if rld_stall else 0.0
+    print()
+    print("rld_stall_predict_err_cnt / vld_stall_rld_cnt: %d / %d (%.1f%% -- fraction of the rld stall explained by predict_err_fifo backpressure)" %
+          (overlap, rld_stall, overlap_pct))
+
+
+if __name__ == "__main__":
+    main()

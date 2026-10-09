@@ -138,9 +138,57 @@
 #define MPEG2FPGA_B_ARBITER_FLAGS	0x1b	/* ro */
 #define MPEG2FPGA_B_MEM_RES_VALID_CNT	0x1c	/* ro: memory responses returned */
 #define MPEG2FPGA_B_CORE_ENABLE		0x20	/* rw: bit 0 releases the core from reset */
+/* 0x2b-0x2d: product registers (2026-10-08), see the bridge's header comment */
+#define MPEG2FPGA_B_BUILD_VERSION	0x2b	/* ro: {major[7:0], minor[7:0], patch[15:0]} */
+#define MPEG2FPGA_B_BUILD_GIT		0x2c	/* ro: {dirty, 3'b0, short hash[27:0]} */
+#define MPEG2FPGA_B_PIC_IRQ		0x2d	/* rw: picture-ready interrupt */
+/* 0x31-0x38: Fase 8d/8e/9b debug counters, reusing SCFIFO_DBG's old eight
+ * words (that xfifo_sc RAM port-sharing bug is RESOLVED) -- see
+ * apb3_mpeg2fpga_bridge.v's Fase 8f header comment for why these are NOT at
+ * 0x40+: the peripheral's real APB window is fixed at 0x00-0x3f by
+ * FIC_3_PERIPHERALS.tcl's bif pin and both mpeg2fpga*.dts overlays, and an
+ * earlier attempt to put them at 0x40-0x45 read back silent zero on real
+ * hardware because those addresses never reach this bridge at all. */
+#define MPEG2FPGA_B_FWD_ADDR_EMPTY_CNT	0x31	/* ro: cycles the fwd reference-read address fifo was empty -- Fase 8d */
+#define MPEG2FPGA_B_FWD_DTA_STALL_CNT	0x32	/* ro: cycles a queued fwd address existed but the return data fifo was almost full -- Fase 8d */
+#define MPEG2FPGA_B_BWD_ADDR_EMPTY_CNT	0x33	/* ro: cycles the bwd reference-read address fifo was empty -- Fase 8d */
+#define MPEG2FPGA_B_BWD_DTA_STALL_CNT	0x34	/* ro: cycles a queued bwd address existed but the return data fifo was almost full -- Fase 8d */
+#define MPEG2FPGA_B_MEM_REQ_ALMOST_FULL_CNT 0x35 /* ro: cycles mem_req_wr_almost_full (arbiter's own outgoing queue to mem2axi_bridge) -- Fase 8e */
+#define MPEG2FPGA_B_TAG_ALMOST_FULL_CNT 0x36	/* ro: cycles tag_wr_almost_full (arbiter's own tag-routing queue) -- Fase 8e */
+#define MPEG2FPGA_B_PREDICT_ERR_ALMOST_FULL_CNT 0x37 /* ro: cycles idct_fifo_almost_full (predict_err_fifo prog_full) -- Fase 9b */
+#define MPEG2FPGA_B_RLD_STALL_PREDICT_ERR_CNT 0x38 /* ro: cycles ~vld_en && rld_wr_almost_full && idct_fifo_almost_full -- Fase 9b */
+#define MPEG2FPGA_B_WRITE_SERVICE_CNT	0x39	/* ro: cycles arbiter served a write (vbuf/recon/osd) -- Fase 8b */
+#define MPEG2FPGA_B_FWD_SERVICE_CNT	0x3a	/* ro: cycles arbiter served a forward motion-comp read -- Fase 8b follow-up */
+#define MPEG2FPGA_B_BWD_SERVICE_CNT	0x3b	/* ro: cycles arbiter served a backward motion-comp read -- Fase 8b follow-up */
+#define MPEG2FPGA_B_IDLE_CNT		0x3c	/* ro: cycles the arbiter had nothing ready to service -- Fase 8b follow-up */
+#define MPEG2FPGA_B_VLD_EN_CNT		0x3d	/* ro: cycles vld_en (VLD actively decoding) -- Fase 8c */
+#define MPEG2FPGA_B_VLD_STALL_RLD_CNT	0x3e	/* ro: cycles VLD stalled by rld/iquant/idct backpressure -- Fase 8c */
+#define MPEG2FPGA_B_VLD_STALL_MOTCOMP_CNT 0x3f	/* ro: cycles VLD stalled by motcomp busy -- Fase 8c */
 
 /* dma ctrl (0x13, write-only) */
 #define MPEG2FPGA_DMA_CTRL_START	BIT(0)
+/* sampled with START: more chunks of the same stream follow, so stream_dma
+ * must not append its sequence_end_code padding after this one
+ */
+#define MPEG2FPGA_DMA_CTRL_NO_PAD	BIT(1)
+
+/* build id (0x2b/0x2c, read-only) */
+#define MPEG2FPGA_BUILD_MAJOR_MASK	GENMASK(31, 24)
+#define MPEG2FPGA_BUILD_MINOR_MASK	GENMASK(23, 16)
+#define MPEG2FPGA_BUILD_PATCH_MASK	GENMASK(15, 0)
+#define MPEG2FPGA_BUILD_GIT_DIRTY	BIT(31)
+#define MPEG2FPGA_BUILD_GIT_HASH_MASK	GENMASK(27, 0)
+
+/* picture-ready interrupt (0x2d). One per finished picture, in display
+ * order, raised when the core hands the picture to its display path.
+ * Read: pending, enable, overrun, frame buffer, free-running count.
+ * Write: enable (level), pending (write 1 to clear pending and overrun).
+ */
+#define MPEG2FPGA_PIC_IRQ_PENDING	BIT(0)
+#define MPEG2FPGA_PIC_IRQ_ENABLE	BIT(1)
+#define MPEG2FPGA_PIC_IRQ_OVERRUN	BIT(2)
+#define MPEG2FPGA_PIC_IRQ_FRAME_MASK	GENMASK(6, 4)
+#define MPEG2FPGA_PIC_IRQ_COUNT_MASK	GENMASK(31, 16)
 
 /* dma status (0x14, read-only), packed as
  * {bytes_done[23:0], 6'b0, done_sticky, busy} -- see the bridge's

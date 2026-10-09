@@ -1,0 +1,84 @@
+\chapter{Network protocol v1}\label{cap:protocol}
+
+A summary of the protocol; the full specification is \cmd{PROTOCOL-v1.md},
+included in every release. Any client that implements it works with the
+device, in any language.
+
+\section{Transport}
+
+HTTP/1.1 over TCP, port 8080 (8443 with TLS). Control and status in JSON;
+frames in a binary stream of their own. Every path carries the \cmd{/v1}
+prefix: within v1, fields and endpoints are only ever added, never removed.
+
+\section{Endpoints}
+
+\begin{center}
+\begin{tabularx}{\linewidth}{@{}l X@{}}
+\toprule
+\ep{GET}{/v1/health} & available without a token; \cmd{\{"ok": true\}} \\
+\ep{GET}{/v1/device} & versions (service, driver, bitstream, core), capabilities, limits, TLS \\
+\ep{GET}{/v1/status} & state (\cmd{idle}, \cmd{decoding}, \cmd{error}), decode in progress, last sequence \\
+\ep{POST}{/v1/decode} & the clip in the body; the response is the frame stream \\
+\ep{POST}{/v1/reset} & recovery: resets the core and aborts the decode in progress \\
+\ep{*}{/v1/debug/...} & diagnostics, only with \cmd{-{}-debug}, no compatibility guarantee \\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+One decode at a time: a second \ep{POST}{/v1/decode} gets 409 while the first
+one runs. The other endpoints always answer.
+
+\section{The frame stream}
+
+A sequence of records, integers \emph{little-endian}:
+
+\begin{center}
+\begin{tikzpicture}[x=11.5mm, font=\sffamily\scriptsize,
+    f/.style={draw=#1, fill=#1!10, minimum height=9mm, anchor=west, inner sep=1pt, align=center}]
+  % row 1: the 12-byte header every record starts with, one unit per byte
+  \foreach \x/\w/\t in {0/4/{magic\\\texttt{"M2FR"}}, 4/1/type, 5/1/flags,
+                         6/2/{header\\\_len}, 8/4/{payload\_len}}
+    \node[f=m2blue, minimum width=\w*11.5mm] at (\x, 0) {\t};
+  \foreach \b in {0,4,5,6,8,12} \node[lbl, below] at (\b, -0.48) {\b};
+  \draw[decorate, decoration={brace, amplitude=4pt}, m2grey]
+    (0, 0.55) -- node[above=4pt, lbl]{common header: 12 bytes} (12, 0.55);
+  % row 2: what follows
+  \node[f=m2teal, minimum width=5*11.5mm] at (0, -1.7)
+    {type-specific fields\\FRAME: 20 bytes · END: none};
+  \node[f=m2amber, minimum width=7*11.5mm] at (5, -1.7)
+    {payload\\FRAME: I420 frame · END: JSON summary};
+  \draw[decorate, decoration={brace, mirror, amplitude=4pt}, m2grey]
+    (0, -2.25) -- node[below=4pt, lbl]{\texttt{header\_len} $-$ 12} (5, -2.25);
+  \draw[decorate, decoration={brace, mirror, amplitude=4pt}, m2grey]
+    (5, -2.25) -- node[below=4pt, lbl]{\texttt{payload\_len}} (12, -2.25);
+\end{tikzpicture}
+\end{center}
+
+\begin{itemize}
+  \item \textbf{FRAME} (type 1): display index, decode index, width, height,
+    picture type and structure; the payload is the frame in I420.
+  \item \textbf{END} (type 2): the last record, with a JSON summary: frames
+    sent, whether the decode was complete, the decoder's error bits and
+    per-stage timings.
+\end{itemize}
+
+A client must use \cmd{header\_len} and \cmd{payload\_len} and skip the fields
+and record types it does not know: that is how the protocol grows without
+breaking old clients.
+
+\section{Error codes}
+
+\begin{center}
+\begin{tabular}{@{}c l l@{}}
+\toprule
+\textbf{HTTP} & \textbf{code} & \textbf{when} \\
+\midrule
+400 & \cmd{bad\_request} & invalid parameter, or the body is not MPEG-2 \\
+401 & \cmd{unauthorized} & token missing or wrong \\
+404 & \cmd{not\_found} & unknown path \\
+409 & \cmd{busy} & a decode is already running \\
+429 & \cmd{too\_many\_attempts} & too many wrong tokens \\
+503 & \cmd{decoder\_unavailable} & the hardware does not respond \\
+\bottomrule
+\end{tabular}
+\end{center}
