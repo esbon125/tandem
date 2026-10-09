@@ -16,7 +16,7 @@ from urllib.parse import parse_qs, urlparse
 
 from . import __version__, i420
 from .security import FailureBrake, token_ok
-from .session import READ_PIECE, DecodeSession
+from .session import READ_PIECE, DecodeSession, end_record
 
 PROTOCOL = "1.0"
 PREFIX_CHECK = 1 << 20          # a decode must show a sequence header in its first MiB
@@ -205,6 +205,7 @@ class Handler(BaseHTTPRequestHandler):
         if not d.decode_lock.acquire(blocking=False):
             return self._error(409, "busy", "a decode is already running", True,
                                [("Retry-After", "1")])
+        released = False
         try:
             body = self._body()
             # Look before touching the decoder: in the first MiB a real
@@ -237,15 +238,23 @@ class Handler(BaseHTTPRequestHandler):
             t0 = time.time()
             try:
                 summary = session.run()
-                wfile.write(b"0\r\n\r\n")
-                d.log("%s: %d frames, %d bytes in %.2f s, complete=%s"
-                      % (decode_id, summary["frames_sent"], summary["bytes_in"],
-                         time.time() - t0, summary["complete"]))
             except (OSError, ConnectionError) as exc:
                 d.log("%s: client went away (%r)" % (decode_id, exc))
+                return
+            finally:
+                # free the decoder before END goes out (see session.run)
+                d.session = None
+                d.decode_lock.release()
+                released = True
+            send(end_record(summary))
+            wfile.write(b"0\r\n\r\n")
+            d.log("%s: %d frames, %d bytes in %.2f s, complete=%s"
+                  % (decode_id, summary["frames_sent"], summary["bytes_in"],
+                     time.time() - t0, summary["complete"]))
         finally:
-            d.session = None
-            d.decode_lock.release()
+            if not released:
+                d.session = None
+                d.decode_lock.release()
 
     def _reset(self):
         d = self.daemon

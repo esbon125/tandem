@@ -110,6 +110,14 @@ class DecodeTest(unittest.TestCase):
         self.assertEqual([f.display_index for f in got3], [0, 1, 2])
         self.assertEqual(first3.summary.pictures_in_stream, 8)
 
+    def test_next_decode_can_start_as_soon_as_end_arrives(self):
+        # END used to go out before the decoder was released: a client chaining
+        # decodes got 409 (seen on the board)
+        with Running() as r:
+            dev = r.device()
+            for _ in range(10):
+                self.assertEqual(len(list(dev.decode(stream([IPBB])))), 4)
+
     def test_chained_decodes_without_reset(self):
         with Running() as r:
             dev = r.device()

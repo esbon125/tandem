@@ -140,7 +140,9 @@ class DecodeSession:
                     board.prepare_stream()
                 except Exception as exc:        # noqa: BLE001
                     self.log("cleanup after abort failed: %r" % exc)
-        self.send(end_record(self.summary()))
+        # END is the caller's to send (end_record(summary)): the decoder must be
+        # released first, or a client that starts its next decode the moment
+        # END arrives finds it still taken (409, seen on the board)
         return self.summary()
 
     def summary(self):

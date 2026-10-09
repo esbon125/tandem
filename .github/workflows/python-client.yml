@@ -1,11 +1,10 @@
-# Python client (api/python): tests on every change, a GitHub release on a
-# python-vX.Y.Z tag. Every step that matters is api/python/build_release.sh,
-# so a release built here is the same one `./build_release.sh` builds locally.
+# Python client (api/python): unit tests on every change. Releases are not
+# made here: the library ships inside the product release (release.yml), built
+# by api/python/build_release.sh only after the hardware qualified.
 name: python-client
 
 on:
   push:
-    tags: ["python-v*"]
     paths: ["api/**", ".github/workflows/python-client.yml"]
   pull_request:
     paths: ["api/**", ".github/workflows/python-client.yml"]
@@ -29,31 +28,3 @@ jobs:
       - name: unit tests (fake device, no hardware)
         working-directory: api/python
         run: python -m unittest discover -s tests -v
-
-  release:
-    needs: test
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write          # to create the release
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0       # build_release.sh derives the version from tags
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-      - name: build (tests, wheel, sdist, tests against the wheel)
-        working-directory: api/python
-        run: ./build_release.sh
-      - uses: actions/upload-artifact@v4
-        with:
-          name: mpeg2fpga-python-${{ github.sha }}
-          path: api/python/dist/
-      - name: publish GitHub release
-        if: startsWith(github.ref, 'refs/tags/python-v')
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          gh release create "$GITHUB_REF_NAME" api/python/dist/* \
-            --title "mpeg2fpga Python client ${GITHUB_REF_NAME#python-v}" \
-            --notes "Protocol v1 client. Install: pip install mpeg2fpga-*.whl (checksums in SHA256SUMS)."

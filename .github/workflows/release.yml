@@ -1,0 +1,88 @@
+# Product release: give it a version, it qualifies the hardware and publishes.
+#
+# Runs on a self-hosted runner on the machine wired to the board (labels
+# self-hosted, linux, mpeg2fpga-board): GitHub's own runners cannot reach a
+# board on a private network, nor program or test it. release/qualify.sh does
+# the work, in this order, and publishing happens only if all of it passed:
+# hardware regression -> end-to-end check -> user guide + Python library ->
+# GitHub release.
+name: release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Release version, X.Y.Z (tagged vX.Y.Z)"
+        required: true
+      fps_floor:
+        description: "End-to-end fps floor (empty: release/manifest.json)"
+        required: false
+
+concurrency:
+  group: mpeg2fpga-board          # one board: never two qualifications at once
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  qualify:
+    runs-on: [self-hosted, linux, mpeg2fpga-board]
+    timeout-minutes: 90
+    steps:
+      - name: check version
+        run: |
+          [[ "${{ inputs.version }}" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$ ]] || { echo "bad version"; exit 1; }
+          if git ls-remote --tags "https://github.com/${{ github.repository }}" | grep -q "refs/tags/v${{ inputs.version }}$"; then
+            echo "v${{ inputs.version }} already exists"; exit 1
+          fi
+      - uses: actions/checkout@v4
+        with:
+          path: fw
+          fetch-depth: 0
+      - uses: actions/checkout@v4      # tools/regress, framecmp, the reference decoder
+        with:
+          ref: hardware_development
+          path: hw
+      - name: qualify on the board and build the artifacts
+        env:
+          HW_TREE: ${{ github.workspace }}/hw
+          STREAMS_DIR: ${{ vars.MPEG2FPGA_STREAMS_DIR }}
+          BOARD: ${{ vars.MPEG2FPGA_BOARD }}
+          FPS_FLOOR: ${{ inputs.fps_floor }}
+        run: |
+          [ -n "$BOARD" ] || unset BOARD
+          [ -n "$FPS_FLOOR" ] || unset FPS_FLOOR
+          fw/release/qualify.sh "${{ inputs.version }}"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mpeg2fpga-${{ inputs.version }}
+          path: fw/release/dist/${{ inputs.version }}/
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v4   # the regression report even when it failed
+        if: failure()
+        with:
+          name: qualification-failure-${{ inputs.version }}
+          path: fw/release/dist/${{ inputs.version }}/
+          if-no-files-found: ignore
+
+  publish:
+    needs: qualify
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: mpeg2fpga-${{ inputs.version }}
+          path: dist
+      - name: verify checksums
+        working-directory: dist
+        run: sha256sum -c SHA256SUMS
+      - name: publish the GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "v${{ inputs.version }}" dist/* \
+            --repo "${{ github.repository }}" --target "${{ github.sha }}" \
+            --title "mpeg2fpga ${{ inputs.version }}" --notes-file dist/release-notes.md
