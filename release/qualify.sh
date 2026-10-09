@@ -90,7 +90,17 @@ echo "kernel $kernel"
 if [ ! -d "$TOOLS/streams/tek" ] && [ -n "${STREAMS_DIR:-}" ]; then
     rm -rf "$TOOLS/streams" && ln -s "$STREAMS_DIR" "$TOOLS/streams"
 fi
-[ -d "$TOOLS/streams/tek" ] || { echo "conformance streams missing (set STREAMS_DIR)" >&2; exit 1; }
+if [ ! -d "$TOOLS/streams/tek" ]; then
+    echo "conformance streams missing under $TOOLS/streams." >&2
+    if [ -z "${STREAMS_DIR:-}" ]; then
+        echo "STREAMS_DIR is empty. From the Release workflow it comes from the repository" >&2
+        echo "*variable* MPEG2FPGA_STREAMS_DIR (Settings -> Secrets and variables -> Actions ->" >&2
+        echo "Variables tab; a secret of that name is not visible to vars.*)." >&2
+    else
+        echo "STREAMS_DIR=$STREAMS_DIR does not contain tek/ (wrong path, or not readable by $(id -un))." >&2
+    fi
+    exit 1
+fi
 
 # --------------------------------------------------------------- 2. build
 step "2/6 build board software"
