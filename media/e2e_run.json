@@ -1,0 +1,16 @@
+{
+ "clip": "tos_cif.m2v",
+ "frames": 480,
+ "width": 352,
+ "height": 288,
+ "complete": true,
+ "first_frame_s": 0.137,
+ "total_s": 9.681,
+ "fps_steady": 50.19,
+ "versions": {
+  "daemon": "0.1.0",
+  "driver": "0.1.0",
+  "bitstream": "0.1.0+8004bc9",
+  "core": "0x000c"
+ }
+}
