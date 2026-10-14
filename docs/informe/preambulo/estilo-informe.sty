@@ -1,0 +1,19 @@
+% estilo-informe.sty -- paleta y marcas comunes al informe.
+% Los colores son los mismos de la guía de usuario
+% (firmware_development: user-guide/mpeg2fpga-style.sty): cambiar en ambos.
+\NeedsTeXFormat{LaTeX2e}
+\ProvidesPackage{estilo-informe}[2026/10/14 Informe final mpeg2fpga]
+\RequirePackage{xcolor}
+\definecolor{m2navy}{HTML}{14213D}
+\definecolor{m2blue}{HTML}{1D4E89}
+\definecolor{m2teal}{HTML}{0F7173}
+\definecolor{m2amber}{HTML}{E09F3E}
+\definecolor{m2red}{HTML}{9E2A2B}
+\definecolor{m2grey}{HTML}{5C6B73}
+\definecolor{m2paper}{HTML}{F4F6F8}
+\RequirePackage{booktabs, enumitem, graphicx}
+\RequirePackage[natbibapa]{apacite}
+\RequirePackage[colorlinks, linkcolor=m2blue, citecolor=m2teal,
+  urlcolor=m2blue]{hyperref}
+% Marca de borrador: texto pendiente de redactar, visible en rojo.
+\newcommand{\pendiente}[1]{{\color{m2red}\sffamily\small[\,PENDIENTE: #1\,]}}

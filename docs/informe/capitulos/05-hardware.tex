@@ -1,0 +1,17 @@
+\chapter{Desarrollo de hardware}
+
+\label{cap:hardware}
+\section{Arquitectura del sistema}
+\pendiente{Diagrama de bloques: MSS, FIC, puentes, núcleo, DDR.}
+\section{Port del núcleo a PolarFire}
+\pendiente{FIFOs blandos (xfifo\_sc/xfifo\_dc), CCC, clocks.}
+\section{Integración con el MSS}
+\pendiente{Puente APB (registros), mem2axi\_bridge, stream DMA, interrupción
+de imagen, build id.}
+\section{Problemas de integración relevantes}
+\pendiente{Selección pedagógica: extensión de signo del parámetro, alias de
+udmabuf y L2, puertos compartidos de la RAM del FIFO (uram), PSTRB, PLL
+apagado.}
+\section{Optimización del rendimiento}
+\pendiente{Pipelining del puente de memoria (7{,}2 $\to$ 22--23 fps),
+localización del cuello de botella en motcomp\_recon.}

@@ -1,0 +1,30 @@
+\chapter{Objetivos y alcance}
+
+\section{Objetivo general}
+\pendiente{Reformular sobre el aprobado; corregir la norma: MPEG-2 Video es
+ISO/IEC 13818-2 (el anteproyecto citaba ISO/IEC 23002-1, que es la de
+precisión de la IDCT).}
+
+\section{Objetivos específicos}
+\pendiente{Lista del anteproyecto, marcando cuáles se redefinieron.}
+
+\section{Redefinición del alcance}
+\label{sec:redefinicion-alcance}
+% Reglamento 2.3: se admiten las acciones "que la experiencia adquirida
+% indique como oportunas y necesarias". Criterio de evaluación 3.6 (e).
+\subsection{Sistema operativo: Linux en lugar de un RTOS propio}
+\pendiente{Acuerdo verbal con el tutor, Ing.~Ricardo Maldonado, a comienzos
+de 2026 (febrero): acotar el alcance para lograr un plazo de finalización
+realista. Qué objetivos del anteproyecto reemplaza (``Diseñar el sistema
+operativo'', ``Implementar el sistema operativo'', etapas 6 y 7) y a qué se
+destinó ese esfuerzo (driver de kernel, protocolo, producto). La
+justificación técnica va en el capítulo~\ref{cap:firmware}.}
+
+\subsection{Salida de video}
+\pendiente{La PolarFire SoC Discovery Kit no tiene conector de video: la
+cadena RTL de visualización (yuv2rgb, syncgen) queda instanciada pero sin
+verificar, y la conversión YUV$\to$RGB se hace en el cliente.}
+
+\section{Alcance final}
+\pendiente{Qué entra y qué no (p.\,ej.\ matrices de cuantización cargadas
+como limitación conocida, si sigue abierta al entregar).}
