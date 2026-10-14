@@ -3,16 +3,17 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" href="data:,">
 <title>mpeg2fpga en PolarFire SoC</title>
-<meta name="description" content="Decodificador MPEG-2 (ISO/IEC 13818-2) en FPGA PolarFire SoC: demo en tiempo real a 352x288.">
+<meta name="description" content="Decodificador MPEG-2 (ISO/IEC 13818-2) en FPGA PolarFire SoC: demo en vivo y resultado verificado a 352x288.">
 <style>
 :root {
   --bg: #fbfaf8; --fg: #1d1d1b; --muted: #6b6a66; --line: #e2e0db;
-  --card: #ffffff; --accent: #1f6f5c;
+  --card: #ffffff; --accent: #1f6f5c; --warn: #b3261e; --wait: #9a6700;
 }
 @media (prefers-color-scheme: dark) {
   :root { --bg: #151514; --fg: #ecebe8; --muted: #a09e98; --line: #2e2d2b;
-          --card: #1d1d1b; --accent: #5fbfa5; }
+          --card: #1d1d1b; --accent: #5fbfa5; --warn: #f2867c; --wait: #e3b341; }
 }
 * { box-sizing: border-box; }
 body { margin: 0; background: var(--bg); color: var(--fg);
@@ -26,7 +27,7 @@ video { width: 100%; height: auto; display: block; background: #000; border-radi
 .hero { max-width: 640px; }
 figure { margin: 0; }
 figcaption { color: var(--muted); font-size: .88rem; margin-top: 6px; }
-.stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+.stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
   gap: 12px; margin: 20px 0 8px; }
 .stat { background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 14px 16px; }
 .stat b { display: block; font-size: 1.6rem; font-variant-numeric: tabular-nums; color: var(--accent); }
@@ -39,15 +40,85 @@ code { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: .88em;
 a { color: var(--accent); }
 footer { margin-top: 48px; padding-top: 16px; border-top: 1px solid var(--line);
   color: var(--muted); font-size: .85rem; }
+
+/* live demo */
+.live { background: var(--card); border: 1px solid var(--line); border-radius: 10px;
+  padding: 18px 16px 16px; margin-top: 24px; }
+.live h2 { margin: 0 0 4px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.pill { font-size: .78rem; font-weight: 600; padding: 2px 10px; border-radius: 99px;
+  border: 1px solid currentColor; color: var(--muted); }
+.pill.up { color: var(--accent); } .pill.down { color: var(--warn); } .pill.busy { color: var(--wait); }
+.controls { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 14px 0 10px; }
+button, .file { font: inherit; font-size: .92rem; padding: 7px 14px; border-radius: 6px;
+  border: 1px solid var(--line); background: var(--bg); color: var(--fg); cursor: pointer; }
+button.primary { background: var(--accent); border-color: var(--accent); color: var(--bg); }
+button:disabled, .file.disabled { opacity: .45; cursor: default; }
+.file input { display: none; }
+#presets { display: contents; }
+.opt { color: var(--muted); font-size: .88rem; display: flex; gap: 6px; align-items: center; }
+.screen { position: relative; max-width: 640px; }
+canvas#screen { width: 100%; aspect-ratio: 4 / 3; display: block; background: #000;
+  border-radius: 6px; }
+progress { width: 100%; height: 4px; display: block; margin-top: 6px; accent-color: var(--accent); }
+#status { font-size: .92rem; margin: 8px 0 0; min-height: 1.5em; }
+#status.bad { color: var(--warn); }
+.transport { display: flex; gap: 10px; align-items: center; margin-top: 8px; max-width: 640px; }
+.transport input { flex: 1; min-width: 0; accent-color: var(--accent); }
+.counter { color: var(--muted); font-size: .85rem; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.live .stats { margin-top: 14px; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); }
+.live .stat b { font-size: 1.3rem; }
+canvas#madchart { width: 100%; height: 70px; display: block; margin-top: 10px; }
+.small { color: var(--muted); font-size: .84rem; max-width: 70ch; margin-top: 10px; }
 </style>
 </head>
 <body>
 <main>
   <h1>Decodificador MPEG-2 en FPGA PolarFire SoC</h1>
   <p class="lede">Port de <em>mpeg2fpga</em> (ISO/IEC 13818-2, Main Profile) a un Microchip
-  PolarFire SoC. El video de abajo lo decodificó el hardware: el clip MPEG-2 entra por red al
-  dispositivo y los cuadros vuelven por red, en orden de presentación, a más del doble del
-  tiempo real.</p>
+  PolarFire SoC. Probalo en vivo: el clip viaja hasta la placa, la decodifica el FPGA y cada
+  cuadro vuelve a esta página a medida que sale del decodificador.</p>
+
+  <section class="live" id="live">
+    <h2>Demo en vivo <span class="pill" id="pill">conectando…</span></h2>
+    <p class="small" id="liveintro" style="margin-top:0">Elegí un clip o subí un video propio.
+    Cualquier formato sirve: antes de mandarlo a la placa se lleva al régimen en el que se midió
+    el decodificador (MPEG-2 352×288, hasta 30 fps, primeros 20 s).</p>
+
+    <div class="controls">
+      <span id="presets"></span>
+      <label class="file" id="filelabel">Subir video…<input type="file" id="file" accept="video/*,.m2v,.mpg,.mpeg,.ts,.mkv"></label>
+      <label class="opt"><input type="checkbox" id="raw"> sin pérdida (~60 Mbit/s)</label>
+    </div>
+
+    <div class="screen">
+      <canvas id="screen" width="352" height="288"></canvas>
+      <progress id="progress" value="0" max="1" hidden></progress>
+    </div>
+    <div class="transport" id="transport" hidden>
+      <button id="play">Pausa</button>
+      <input type="range" id="seek" min="0" max="0" value="0" aria-label="posición">
+      <span class="counter" id="counter"></span>
+    </div>
+    <p id="status"></p>
+
+    <div class="stats" id="livestats" hidden>
+      <div class="stat"><b id="s-fps">–</b><span>cuadros/s recibidos (decodificador + red)</span></div>
+      <div class="stat"><b id="s-rt">–</b><span>respecto del tiempo real</span></div>
+      <div class="stat"><b id="s-mad">–</b><span>MAD frente a la referencia, este cuadro / medio</span></div>
+      <div class="stat"><b id="s-peak">–</b><span>error pico (de 255)</span></div>
+    </div>
+    <canvas id="madchart" hidden></canvas>
+
+    <p class="small">Las métricas se calculan sobre la salida cruda del decodificador (I420),
+    cuadro por cuadro, contra el mismo stream decodificado en software (libavcodec). Para el
+    viaje hasta tu navegador cada cuadro se comprime a JPEG, salvo en modo <em>sin pérdida</em>:
+    lo que ves puede tener artefactos de JPEG, las métricas no. Tu video se procesa y se descarta;
+    no se guarda nada. La placa es una sola: si hay alguien usándola, quedás en cola.</p>
+  </section>
+
+  <h2>Resultado verificado</h2>
+  <p class="lede">Si la demo en vivo está apagada, esto es lo que hace: el mismo decodificador,
+  medido y comparado contra el decodificador de referencia.</p>
 
   <figure class="hero">
     <video src="media/fpga.mp4" poster="media/poster.jpg" controls muted loop playsinline preload="metadata"></video>
@@ -100,11 +171,267 @@ footer { margin-top: 48px; padding-top: 16px; border-top: 1px solid var(--line);
   </div>
 
   <footer>
-    Contenido del clip: <em>Tears of Steel</em>, © Blender Foundation | mango.blender.org,
+    Clips: <em>Tears of Steel</em>, © Blender Foundation | mango.blender.org,
     licencia <a href="https://creativecommons.org/licenses/by/3.0/">CC BY 3.0</a>.
-    Fragmento 0:18–0:38, reescalado a 352×288 y codificado en MPEG-2, sin audio.
+    Fragmentos 0:18–0:38 y 7:38–7:58, reescalados a 352×288 y codificados en MPEG-2, sin audio.
     Núcleo decodificador: <em>mpeg2fpga</em>, Koen De Vleeschauwer.
   </footer>
 </main>
+
+<script>
+// The relay (demo/live_relay.py) behind a Tailscale Funnel; ?backend=URL to test another.
+const BACKEND = new URLSearchParams(location.search).get("backend")
+  || "https://localhost-0.tail5099f3.ts.net";
+const $ = (id) => document.getElementById(id);
+const screen = $("screen"), ctx = screen.getContext("2d");
+
+let frames = [], mads = [], meta = null, busy = false;
+let playing = false, position = 0, timer = null, shown = 0;
+let received = 0, t0 = 0, tFirst = 0, peakMax = 0, madSum = 0, madN = 0;
+
+function setStatus(text, bad) { $("status").textContent = text; $("status").className = bad ? "bad" : ""; }
+function setPill(text, cls) { $("pill").textContent = text; $("pill").className = "pill " + cls; }
+function setBusy(b) {
+  busy = b;
+  document.querySelectorAll("#presets button").forEach((x) => x.disabled = b);
+  $("file").disabled = b;
+  $("filelabel").classList.toggle("disabled", b);
+}
+
+// --- health -------------------------------------------------------------------
+
+async function health() {
+  try {
+    const r = await fetch(BACKEND + "/api/health", { cache: "no-store" });
+    const h = await r.json();
+    if (!h.ok) throw new Error("placa no disponible");
+    setPill(h.queued ? `en línea · ${h.queued} en uso` : "en línea", h.queued ? "busy" : "up");
+    return h;
+  } catch (e) {
+    setPill("apagada", "down");
+    return null;
+  }
+}
+
+(async () => {
+  const h = await health();
+  if (!h) {
+    $("liveintro").textContent = "La demo en vivo está apagada en este momento (necesita la " +
+      "placa y una PC prendidas). Más abajo está el resultado grabado y verificado.";
+    $("presets").hidden = true; $("filelabel").hidden = true;
+    $("raw").parentElement.hidden = true;
+    return;
+  }
+  for (const p of h.presets) {
+    const b = document.createElement("button");
+    b.className = "primary"; b.textContent = p.label;
+    b.onclick = () => decode(`preset=${encodeURIComponent(p.id)}`, null, p.label);
+    $("presets").append(b);
+  }
+  $("file").onchange = () => {
+    const f = $("file").files[0];
+    if (!f) return;
+    if (f.size > h.max_upload_mb * 1048576) {
+      setStatus(`El archivo pesa más de ${h.max_upload_mb} MB.`, true); return;
+    }
+    decode("", f, f.name);
+    $("file").value = "";
+  };
+  setStatus(`Placa en línea: bitstream ${h.versions.bitstream}.`);
+  setInterval(() => { if (!busy) health(); }, 15000);
+})();
+
+// --- wire format: [magic][u32 len][payload]; frame header 24 bytes ---------------
+
+class RecordReader {
+  constructor() { this.buf = new Uint8Array(0); }
+  push(b) {
+    const m = new Uint8Array(this.buf.length + b.length);
+    m.set(this.buf); m.set(b, this.buf.length); this.buf = m;
+  }
+  *records() {
+    while (this.buf.length >= 8) {
+      const len = new DataView(this.buf.buffer, this.buf.byteOffset).getUint32(4, true);
+      if (this.buf.length < 8 + len) return;
+      const magic = String.fromCharCode(...this.buf.subarray(0, 4));
+      const payload = this.buf.slice(8, 8 + len);
+      this.buf = this.buf.subarray(8 + len);
+      yield { magic, payload };
+    }
+  }
+}
+
+function header(p) {
+  const v = new DataView(p.buffer, p.byteOffset);
+  return { index: v.getUint32(0, true), type: String.fromCharCode(p[8]),
+           width: v.getUint16(12, true), height: v.getUint16(14, true),
+           mad: v.getFloat32(16, true), peak: p[20] };
+}
+
+function i420ToImage(p, w, h) {                       // BT.601, limited range
+  const cw = w >> 1, Y = p.subarray(24, 24 + w * h);
+  const U = p.subarray(24 + w * h, 24 + w * h + cw * (h >> 1)), V = p.subarray(24 + w * h + cw * (h >> 1));
+  const img = new ImageData(w, h), px = img.data;
+  for (let y = 0; y < h; y++) {
+    const cr = (y >> 1) * cw;
+    for (let x = 0; x < w; x++) {
+      const c = 1.164 * (Y[y * w + x] - 16), u = U[cr + (x >> 1)] - 128, v = V[cr + (x >> 1)] - 128;
+      const o = (y * w + x) * 4;
+      px[o] = c + 1.596 * v; px[o + 1] = c - 0.813 * v - 0.391 * u; px[o + 2] = c + 2.018 * u; px[o + 3] = 255;
+    }
+  }
+  return img;
+}
+
+// --- playback at the stream's frame rate ------------------------------------------
+
+function present(i) {
+  const bm = frames[i];
+  if (!bm) return;
+  ctx.drawImage(bm, 0, 0, screen.width, screen.height);
+  $("seek").value = i;
+  $("counter").textContent = `${i + 1} / ${frames.length}`;
+}
+
+function startPlayback() {
+  if (timer) clearInterval(timer);
+  playing = true; $("play").textContent = "Pausa"; $("transport").hidden = false;
+  timer = setInterval(() => {
+    if (!playing) return;
+    const next = (position + 1) % frames.length;
+    if (!frames[next]) return;          // wait for the decoder rather than skip
+    position = next; present(position);
+  }, 1000 / (meta.frame_rate || 25));
+}
+$("play").onclick = () => { playing = !playing; $("play").textContent = playing ? "Pausa" : "Reproducir"; };
+$("seek").oninput = (e) => {
+  playing = false; $("play").textContent = "Reproducir";
+  position = Number(e.target.value); present(position);
+};
+
+// --- live numbers -----------------------------------------------------------------
+
+function fmt(x, d) { return x == null ? "–" : x.toFixed(d); }
+
+function updateStats(last) {
+  const now = performance.now();
+  const fps = received > 1 ? (received - 1) / ((now - tFirst) / 1000) : 0;
+  $("s-fps").textContent = fps ? fmt(fps, 1) : "–";
+  $("s-rt").textContent = fps && meta.frame_rate ? `${fmt(fps / meta.frame_rate, 2)}×` : "–";
+  $("s-mad").textContent = `${fmt(last.mad, 2)} / ${fmt(madN ? madSum / madN : null, 3)}`;
+  $("s-peak").textContent = String(peakMax);
+}
+
+function drawChart() {
+  const c = $("madchart"), dpr = window.devicePixelRatio || 1;
+  const w = c.clientWidth, h = c.clientHeight;
+  c.width = w * dpr; c.height = h * dpr;
+  const g = c.getContext("2d"); g.scale(dpr, dpr);
+  const css = getComputedStyle(document.documentElement);
+  const top = Math.max(0.25, ...mads.filter((m) => m != null));
+  g.strokeStyle = css.getPropertyValue("--line"); g.lineWidth = 1;
+  g.beginPath(); g.moveTo(0, h - 0.5); g.lineTo(w, h - 0.5); g.stroke();
+  g.fillStyle = css.getPropertyValue("--muted"); g.font = "11px system-ui";
+  g.fillText(`MAD por cuadro (máx. de la escala ${top.toFixed(2)})`, 2, 11);
+  g.strokeStyle = css.getPropertyValue("--accent"); g.lineWidth = 1.5; g.beginPath();
+  const n = Math.max(frames.length, 1);
+  mads.forEach((m, i) => {
+    if (m == null) return;
+    const x = (i / (n - 1 || 1)) * w, y = h - 2 - (m / top) * (h - 18);
+    i ? g.lineTo(x, y) : g.moveTo(x, y);
+  });
+  g.stroke();
+}
+
+// --- one decode -------------------------------------------------------------------
+
+async function decode(query, file, label) {
+  if (busy) return;
+  setBusy(true);
+  frames = []; mads = []; meta = null; shown = 0; position = 0; playing = false;
+  received = 0; peakMax = 0; madSum = 0; madN = 0;
+  if (timer) { clearInterval(timer); timer = null; }
+  $("transport").hidden = true; $("livestats").hidden = true; $("madchart").hidden = true;
+  const raw = $("raw").checked ? "raw=1" : "";
+  const q = [query, raw].filter(Boolean).join("&");
+  setStatus(file ? `Subiendo ${label} (${(file.size / 1048576).toFixed(1)} MB)…` : `Pidiendo ${label}…`);
+  let lastDraw = 0;
+  try {
+    t0 = performance.now();
+    const resp = await fetch(BACKEND + "/api/decode" + (q ? "?" + q : ""), {
+      method: "POST", body: file || new Uint8Array(0),
+      headers: { "Content-Type": "application/octet-stream" },
+    });
+    if (!resp.ok) {
+      let msg = `El servidor respondió ${resp.status}`;
+      try { msg = (await resp.json()).error || msg; } catch (e) {}
+      setStatus(msg, true); return;
+    }
+    const reader = resp.body.getReader(), rr = new RecordReader();
+    let done = null, failed = false;
+    for (;;) {
+      const { value, done: end } = await reader.read();
+      if (end) break;
+      rr.push(value);
+      for (const r of rr.records()) {
+        if (r.magic === "M2HD") {
+          const e = JSON.parse(new TextDecoder().decode(r.payload));
+          if (e.kind === "queued") setStatus(`La placa está ocupada: estás en la posición ${e.position} de la cola…`);
+          else if (e.kind === "normalizing") setStatus("Convirtiendo el video a MPEG-2 352×288…");
+          else if (e.kind === "start") {
+            meta = e;
+            frames = new Array(e.pictures); mads = new Array(e.pictures).fill(null);
+            $("seek").max = Math.max(0, e.pictures - 1);
+            $("progress").max = e.pictures; $("progress").value = 0; $("progress").hidden = false;
+            $("livestats").hidden = false; $("madchart").hidden = false;
+            const src = e.source ? `${e.source.width}×${e.source.height} ${e.source.codec} a ` +
+              `${e.source.frame_rate} fps → ` : "";
+            setStatus(`${src}MPEG-2 352×288 a ${e.frame_rate} fps, ${e.pictures} cuadros: decodificando en el FPGA…`);
+          } else if (e.kind === "error") { setStatus(e.error, true); failed = true; }
+          else if (e.kind === "done") done = e;
+        } else if (r.magic === "M2JP" || r.magic === "M2RW") {
+          const hd = header(r.payload);
+          frames[hd.index] = r.magic === "M2JP"
+            ? await createImageBitmap(new Blob([r.payload.subarray(24)], { type: "image/jpeg" }))
+            : await createImageBitmap(i420ToImage(r.payload, hd.width, hd.height));
+          if (!received) tFirst = performance.now();
+          received++;
+          if (hd.mad >= 0) { mads[hd.index] = hd.mad; madSum += hd.mad; madN++; }
+          peakMax = Math.max(peakMax, hd.peak);
+          $("progress").value = received;
+          if (!playing) {                     // follow the decoder until playback starts
+            while (shown < frames.length && frames[shown]) { present(shown); position = shown; shown++; }
+          }
+          if (received === 12) startPlayback();
+          const now = performance.now();
+          if (now - lastDraw > 150) { updateStats(hd); drawChart(); lastDraw = now; }
+        }
+      }
+    }
+    $("progress").hidden = true;
+    if (done) {
+      drawChart();
+      const rt = done.frame_rate ? (received - 1) / ((performance.now() - tFirst) / 1000) / done.frame_rate : 0;
+      updateStats({ mad: mads[received - 1] ?? null });
+      const issues = [];
+      if (!done.complete) issues.push("decodificación incompleta");
+      if (done.decoder.error) issues.push("el decodificador reportó un error de stream");
+      if (done.decoder.watchdog) issues.push("watchdog");
+      setStatus(`Listo: ${received} cuadros; el FPGA entregó ${done.fps.toFixed(1)} cuadros/s ` +
+        `(${(done.fps / done.frame_rate).toFixed(2)}× tiempo real), a tu navegador llegaron a ` +
+        `${rt.toFixed(2)}× tiempo real. MAD medio ${done.mad_mean.toFixed(3)}, pico ${done.peak_max}.` +
+        (issues.length ? " Atención: " + issues.join(", ") + "." : ""), issues.length > 0);
+      if (received && !playing) startPlayback();
+    } else if (!failed) {
+      setStatus("La conexión se cortó antes de terminar.", true);
+    }
+  } catch (err) {
+    setStatus("No se pudo conectar con la demo: " + err.message, true);
+  } finally {
+    setBusy(false);
+    health();
+  }
+}
+</script>
 </body>
 </html>
