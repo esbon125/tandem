@@ -16,6 +16,7 @@
           --card: #1d1d1b; --accent: #5fbfa5; --warn: #f2867c; --wait: #e3b341; }
 }
 * { box-sizing: border-box; }
+[hidden] { display: none !important; }
 body { margin: 0; background: var(--bg); color: var(--fg);
   font: 16px/1.55 system-ui, -apple-system, "Segoe UI", sans-serif; }
 main { max-width: 920px; margin: 0 auto; padding: 40px 16px 64px; }
@@ -56,8 +57,10 @@ button:disabled, .file.disabled { opacity: .45; cursor: default; }
 .file input { display: none; }
 #presets { display: contents; }
 .opt { color: var(--muted); font-size: .88rem; display: flex; gap: 6px; align-items: center; }
+.opt select { font: inherit; padding: 4px 6px; border-radius: 6px; border: 1px solid var(--line);
+  background: var(--bg); color: var(--fg); }
 .screen { position: relative; max-width: 640px; }
-canvas#screen { width: 100%; aspect-ratio: 4 / 3; display: block; background: #000;
+canvas#screen, video#vscreen { width: 100%; aspect-ratio: 4 / 3; display: block; background: #000;
   border-radius: 6px; }
 progress { width: 100%; height: 4px; display: block; margin-top: 6px; accent-color: var(--accent); }
 #status { font-size: .92rem; margin: 8px 0 0; min-height: 1.5em; }
@@ -87,14 +90,20 @@ canvas#madchart { width: 100%; height: 70px; display: block; margin-top: 10px; }
     <div class="controls">
       <span id="presets"></span>
       <label class="file" id="filelabel">Subir video…<input type="file" id="file" accept="video/*,.m2v,.mpg,.mpeg,.ts,.mkv"></label>
-      <label class="opt"><input type="checkbox" id="raw"> sin pérdida (necesita ~30 Mbit/s)</label>
+      <label class="opt">transporte
+        <select id="transport">
+          <option value="h264">H.264 (~1 Mbit/s)</option>
+          <option value="jpeg">JPEG (~4 Mbit/s)</option>
+          <option value="raw">sin pérdida (~30 Mbit/s)</option>
+        </select></label>
     </div>
 
     <div class="screen">
       <canvas id="screen" width="352" height="288"></canvas>
+      <video id="vscreen" muted playsinline disableremoteplayback hidden></video>
       <progress id="progress" value="0" max="1" hidden></progress>
     </div>
-    <div class="transport" id="transport" hidden>
+    <div class="transport" id="transport-bar" hidden>
       <button id="play">Pausa</button>
       <input type="range" id="seek" min="0" max="0" value="0" aria-label="posición">
       <span class="counter" id="counter"></span>
@@ -111,8 +120,8 @@ canvas#madchart { width: 100%; height: 70px; display: block; margin-top: 10px; }
 
     <p class="small">Las métricas se calculan sobre la salida cruda del decodificador (I420),
     cuadro por cuadro, contra el mismo stream decodificado en software (libavcodec). Para el
-    viaje hasta tu navegador cada cuadro se comprime a JPEG, salvo en modo <em>sin pérdida</em>:
-    lo que ves puede tener artefactos de JPEG, las métricas no. La placa decodifica a su
+    viaje hasta tu navegador los cuadros se recomprimen (H.264 o JPEG), salvo en modo
+    <em>sin pérdida</em>: lo que ves puede tener artefactos de esa compresión, las métricas no. La placa decodifica a su
     velocidad sin esperar a la red; si tu conexión es más lenta que el video, la página carga un
     buffer antes de reproducir. Tu video se procesa y se descarta;
     no se guarda nada. La placa es una sola: si hay alguien usándola, quedás en cola.</p>
@@ -185,10 +194,16 @@ canvas#madchart { width: 100%; height: 70px; display: block; margin-top: 10px; }
 const BACKEND = new URLSearchParams(location.search).get("backend")
   || "https://localhost-0.tail5099f3.ts.net";
 const $ = (id) => document.getElementById(id);
-const screen = $("screen"), ctx = screen.getContext("2d");
+const screen = $("screen"), ctx = screen.getContext("2d"), video = $("vscreen");
+// H.264 over Media Source when the browser has it (ManagedMediaSource on iOS 17+)
+const MS = window.ManagedMediaSource || window.MediaSource;
+const MP4_TYPE = 'video/mp4; codecs="avc1.42C01E"';
+if (!MS || !MS.isTypeSupported(MP4_TYPE)) {
+  $("transport").querySelector('[value="h264"]').remove();
+}
 
 let frames = [], mads = [], meta = null, busy = false;
-let playing = false, position = 0, timer = null, shown = 0;
+let position = 0, timer = null;
 let received = 0, t0 = 0, tFirst = 0, tLast = 0, peakMax = 0, madSum = 0, madN = 0;
 
 function setStatus(text, bad) { $("status").textContent = text; $("status").className = bad ? "bad" : ""; }
@@ -221,7 +236,7 @@ async function health() {
     $("liveintro").textContent = "La demo en vivo está apagada en este momento (necesita la " +
       "placa y una PC prendidas). Más abajo está el resultado grabado y verificado.";
     $("presets").hidden = true; $("filelabel").hidden = true;
-    $("raw").parentElement.hidden = true;
+    $("transport").parentElement.hidden = true;
     return;
   }
   for (const p of h.presets) {
@@ -292,32 +307,43 @@ function i420ToImage(p, w, h) {                       // BT.601, limited range
 // frames; like any video player, wait up front instead, just long enough that
 // the rest arrives before it is due: with N frames, arrival rate r and frame
 // rate f, playing from p needs (N - p)(1 - r/f) frames already buffered.
+//
+// Two players behind it: a canvas fed frame by frame (JPEG, raw) and a <video>
+// fed fragmented MP4 through Media Source (H.264). avail() and pos() hide which.
 
-let waiting = true, userPaused = false, allReceived = false;
+let waiting = true, userPaused = false, allReceived = false, mode = "jpeg";
+let ms = null, sb = null, appendQueue = [], streamEnded = false, bytesIn = 0;
+
+function fps() { return (meta && meta.frame_rate) || 25; }
+function avail() {                       // frames playable from the start
+  if (mode !== "h264") return received;
+  const b = video.buffered;
+  return b.length ? Math.round(b.end(b.length - 1) * fps()) : 0;
+}
+function pos() { return mode === "h264" ? Math.floor(video.currentTime * fps() + 1e-6) : position; }
 
 function present(i) {
   const bm = frames[i];
   if (!bm) return;
   ctx.drawImage(bm, 0, 0, screen.width, screen.height);
-  $("seek").value = i;
-  $("counter").textContent = `${i + 1} / ${frames.length}`;
 }
 
 function arrivalRate() {
   const s = ((allReceived ? tLast : performance.now()) - tFirst) / 1000;
-  return received > 1 && s > 0 ? (received - 1) / s : 0;
+  const n = avail();
+  return n > 1 && s > 0 ? (n - 1) / s : 0;
 }
 
 function framesNeeded(p) {
   if (allReceived) return 0;
-  const r = arrivalRate(), f = meta.frame_rate || 25;
+  const r = arrivalRate(), f = fps();
   if (!r || performance.now() - tFirst < 1000) return Infinity;   // still measuring
   return Math.max(12, Math.ceil((frames.length - p) * Math.max(0, 1 - r / f) * 1.15));
 }
 
 function bufferStatus() {
-  const r = arrivalRate(), f = meta.frame_rate || 25;
-  const need = framesNeeded(position), have = received - position;
+  const r = arrivalRate(), f = fps();
+  const need = framesNeeded(pos()), have = avail() - pos();
   if (!r || need === Infinity) return "Midiendo tu conexión…";
   const eta = Math.max(0, (need - have) / r);
   return r < f
@@ -328,29 +354,66 @@ function bufferStatus() {
 
 function tick() {
   if (!meta || userPaused) return;
+  const p = pos();
+  $("seek").value = p;
+  $("counter").textContent = `${Math.min(p + 1, frames.length)} / ${frames.length}`;
   if (waiting) {
-    if (received - position >= framesNeeded(position) || allReceived) {
-      waiting = false; $("transport").hidden = false;
+    if (avail() - p >= framesNeeded(p) || (allReceived && avail() > 0)) {
+      waiting = false; $("transport-bar").hidden = false;
+      if (mode === "h264") video.play().catch(() => {});
       if (!allReceived) setStatus("Reproduciendo a tiempo real mientras siguen llegando cuadros…");
     } else { if (!allReceived) setStatus(bufferStatus()); return; }
   }
+  if (mode === "h264") return;           // the <video> advances itself
   let next = position + 1;
   if (next >= frames.length) { if (!allReceived) return; next = 0; }
   if (!frames[next]) { waiting = true; return; }     // fell behind: rebuffer
   position = next; present(position);
 }
 
+video.addEventListener("waiting", () => {            // ran dry: rebuffer
+  if (!allReceived && !userPaused) { video.pause(); waiting = true; }
+});
+
 function startClock() {
   if (timer) clearInterval(timer);
-  timer = setInterval(tick, 1000 / (meta.frame_rate || 25));
+  timer = setInterval(tick, 1000 / fps());
 }
 $("play").onclick = () => {
   userPaused = !userPaused; $("play").textContent = userPaused ? "Reproducir" : "Pausa";
+  if (mode === "h264") userPaused ? video.pause() : (!waiting && video.play().catch(() => {}));
 };
 $("seek").oninput = (e) => {
   userPaused = true; $("play").textContent = "Reproducir";
-  position = Number(e.target.value); present(position);
+  const i = Number(e.target.value);
+  if (mode === "h264") { video.pause(); video.currentTime = (i + 0.5) / fps(); }
+  else { position = i; present(i); }
+  $("counter").textContent = `${i + 1} / ${frames.length}`;
 };
+
+// Media Source plumbing: fragments are appended in order as they arrive.
+function mseOpen() {
+  appendQueue = []; streamEnded = false; sb = null;
+  ms = new MS();
+  video.src = URL.createObjectURL(ms);
+  video.loop = false;
+  ms.addEventListener("sourceopen", () => {
+    sb = ms.addSourceBuffer(MP4_TYPE);
+    sb.addEventListener("updateend", pump);
+    pump();
+  }, { once: true });
+}
+function pump() {
+  if (!sb || sb.updating) return;
+  if (appendQueue.length) {
+    const n = appendQueue.reduce((a, c) => a + c.length, 0), all = new Uint8Array(n);
+    let o = 0; for (const c of appendQueue) { all.set(c, o); o += c.length; }
+    appendQueue = [];
+    sb.appendBuffer(all);
+  } else if (streamEnded && ms.readyState === "open") {
+    ms.endOfStream(); video.loop = true;
+  }
+}
 
 // --- live numbers -----------------------------------------------------------------
 //
@@ -380,12 +443,12 @@ function updateStats() {
   $("s-board").textContent = board.fps && f ? `${fmt(board.fps / f, 2)}×` : "–";
   $("s-board-n").textContent = meta ? `${board.count} / ${frames.length} cuadros` +
     (board.fps ? `, ${fmt(board.fps, 1)} cuadros/s` : "") : "";
-  const r = arrivalRate();
+  const r = arrivalRate(), secs = ((allReceived ? tLast : performance.now()) - t0) / 1000;
   $("s-net").textContent = r && f ? `${fmt(r / f, 2)}×` : "–";
-  $("s-net-n").textContent = meta ? `${received} / ${frames.length} cuadros` +
-    (r ? `, ${fmt(r, 1)} cuadros/s` : "") : "";
-  const last = received ? mads[received - 1] : null;
-  $("s-mad").textContent = `${fmt(last, 2)} / ${fmt(madN ? madSum / madN : null, 3)}`;
+  $("s-net-n").textContent = meta ? `${allReceived ? frames.length : Math.min(avail(), frames.length)} / ${frames.length} cuadros` +
+    (secs > 0 ? `, ${fmt(bytesIn * 8 / 1e6 / secs, 1)} Mbit/s` : "") : "";
+  const p = Math.min(pos(), mads.length - 1);
+  $("s-mad").textContent = `${fmt(p >= 0 ? mads[p] : null, 2)} / ${fmt(madN ? madSum / madN : null, 3)}`;
   $("s-peak").textContent = String(peakMax);
 }
 
@@ -415,21 +478,25 @@ function drawChart() {
 async function decode(query, file, label) {
   if (busy) return;
   setBusy(true);
-  frames = []; mads = []; meta = null; shown = 0; position = 0;
+  frames = []; mads = []; meta = null; position = 0;
   waiting = true; userPaused = false; allReceived = false;
-  received = 0; peakMax = 0; madSum = 0; madN = 0;
+  received = 0; peakMax = 0; madSum = 0; madN = 0; bytesIn = 0; tFirst = 0;
   board = { count: 0, fps: null, summary: null };
   if (timer) { clearInterval(timer); timer = null; }
   if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+  mode = $("transport").value;
+  video.pause(); video.removeAttribute("src"); video.load();
+  video.hidden = mode !== "h264"; screen.hidden = mode === "h264";
+  if (mode === "h264") mseOpen();
+  else ctx.clearRect(0, 0, screen.width, screen.height);
   $("play").textContent = "Pausa";
-  $("transport").hidden = true; $("livestats").hidden = true; $("madchart").hidden = true;
-  const raw = $("raw").checked ? "raw=1" : "";
-  const q = [query, raw].filter(Boolean).join("&");
+  $("transport-bar").hidden = true; $("livestats").hidden = true; $("madchart").hidden = true;
+  const q = [query, `transport=${mode}`].filter(Boolean).join("&");
   setStatus(file ? `Subiendo ${label} (${(file.size / 1048576).toFixed(1)} MB)…` : `Pidiendo ${label}…`);
   let lastDraw = 0;
   try {
     t0 = performance.now();
-    const resp = await fetch(BACKEND + "/api/decode" + (q ? "?" + q : ""), {
+    const resp = await fetch(BACKEND + "/api/decode?" + q, {
       method: "POST", body: file || new Uint8Array(0),
       headers: { "Content-Type": "application/octet-stream" },
     });
@@ -450,7 +517,7 @@ async function decode(query, file, label) {
           if (e.kind === "queued") setStatus(`La placa está ocupada: estás en la posición ${e.position} de la cola…`);
           else if (e.kind === "normalizing") setStatus("Convirtiendo el video a MPEG-2 352×288…");
           else if (e.kind === "start") {
-            meta = e;
+            meta = e; t0 = performance.now();
             frames = new Array(e.pictures); mads = new Array(e.pictures).fill(null);
             $("seek").max = Math.max(0, e.pictures - 1);
             $("progress").max = e.pictures; $("progress").value = 0; $("progress").hidden = false;
@@ -463,23 +530,33 @@ async function decode(query, file, label) {
             startClock();
           } else if (e.kind === "error") { setStatus(e.error, true); failed = true; }
           else if (e.kind === "done") done = e;
-        } else if (r.magic === "M2JP" || r.magic === "M2RW") {
-          const hd = header(r.payload);
+          continue;
+        }
+        bytesIn += r.payload.length + 8;
+        if (!tFirst) tFirst = performance.now();
+        tLast = performance.now();
+        if (r.magic === "M2MP") {                 // a piece of fragmented MP4
+          appendQueue.push(r.payload); pump();
+          continue;
+        }
+        const hd = header(r.payload);             // M2MT, M2JP, M2RW: one frame
+        if (hd.mad >= 0) { mads[hd.index] = hd.mad; madSum += hd.mad; madN++; }
+        peakMax = Math.max(peakMax, hd.peak);
+        if (r.magic === "M2JP" || r.magic === "M2RW") {
           frames[hd.index] = r.magic === "M2JP"
             ? await createImageBitmap(new Blob([r.payload.subarray(24)], { type: "image/jpeg" }))
             : await createImageBitmap(i420ToImage(r.payload, hd.width, hd.height));
-          if (!received) { tFirst = performance.now(); present(0); }
-          received++; tLast = performance.now();
-          if (hd.mad >= 0) { mads[hd.index] = hd.mad; madSum += hd.mad; madN++; }
-          peakMax = Math.max(peakMax, hd.peak);
-          $("progress").value = received;
-          const now = performance.now();
-          if (now - lastDraw > 150) { updateStats(); drawChart(); lastDraw = now; }
+          if (!received) present(0);
+          received++;
         }
+        $("progress").value = avail();
+        const now = performance.now();
+        if (now - lastDraw > 150) { updateStats(); drawChart(); lastDraw = now; }
       }
     }
     $("progress").hidden = true;
     if (done) {
+      streamEnded = true; pump();
       allReceived = true;
       board.summary = done; board.fps = done.fps; board.count = done.frames;
       drawChart(); updateStats();
