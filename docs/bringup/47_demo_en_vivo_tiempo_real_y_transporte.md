@@ -164,6 +164,12 @@ Chrome headless con la red emulada (CDP `emulateNetworkConditions`):
 | H.264, batalla, 1 Mbit/s | 2.06x | 1.12x | 1.5 s | 0 |
 | H.264, página publicada, por la IP pública del Funnel (NY), 2.4 Mbit/s | 2.02–2.05x | 1.98–2.01x | 2.3 s | 0 |
 
+Y con un cliente externo real: el mismo escritorio remoto que antes había
+visto 0.9x, abriendo la página publicada, con el clip de la batalla en H.264
+(2026-10-14): **placa 2.12x (50.9 fps), llegada 2.06x (1.8 Mbit/s promedio,
+contando la ráfaga inicial)**, MAD medio 0.081, pico 3. Captura en
+`docs/informe/figuras/demo_web/demo_cliente_remoto_batalla.png`.
+
 Con H.264 el techo vuelve a ser el decoder, no la red. El modo sin pérdida
 (~30 Mbit/s a tiempo real) por internet no llega; con el buffer se reproduce
 fluido después de esperar.

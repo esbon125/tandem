@@ -27,6 +27,7 @@ NODE_PATH=<dir con puppeteer-core>/node_modules node capture_screenshots.js OUTD
 | `demo_video_subido.png` | un .mov H.264 1280x534 de 30 s, con audio, normalizado a MPEG-2 352x288 24 fps, 20 s | Un video arbitrario subido por el usuario se normaliza al régimen medido antes de mandarlo a la placa. |
 | `demo_comparacion_referencia.png` | FPGA, mpeg2decode y diferencia x32, cuadro de los 14 s | Salida del FPGA (izq.), decodificador de referencia mpeg2decode (centro) y diferencia absoluta amplificada x32 (der.). |
 | `demo_movil.png` | la demo en un celular (390 px) | La demo en un celular. |
+| `demo_cliente_remoto_batalla.png` | captura manual (tema oscuro) desde un escritorio remoto, fuera de la red de la placa, 2026-10-14: placa 2.12x, llegada 2.06x | Desde una red externa, el clip de la batalla llega a 2.06x tiempo real; con la primera versión (cuadros en JPEG y el decoder frenado por la red) el mismo cliente veía 0.9x. |
 
 Nota para el texto: lo que se ve en el video llega recomprimido (H.264) para el
 viaje hasta el navegador; MAD y error pico se calculan sobre la salida cruda del
