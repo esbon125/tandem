@@ -87,7 +87,7 @@ canvas#madchart { width: 100%; height: 70px; display: block; margin-top: 10px; }
     <div class="controls">
       <span id="presets"></span>
       <label class="file" id="filelabel">Subir video…<input type="file" id="file" accept="video/*,.m2v,.mpg,.mpeg,.ts,.mkv"></label>
-      <label class="opt"><input type="checkbox" id="raw"> sin pérdida (~60 Mbit/s)</label>
+      <label class="opt"><input type="checkbox" id="raw"> sin pérdida (necesita ~30 Mbit/s)</label>
     </div>
 
     <div class="screen">
@@ -102,8 +102,8 @@ canvas#madchart { width: 100%; height: 70px; display: block; margin-top: 10px; }
     <p id="status"></p>
 
     <div class="stats" id="livestats" hidden>
-      <div class="stat"><b id="s-fps">–</b><span>cuadros/s recibidos (decodificador + red)</span></div>
-      <div class="stat"><b id="s-rt">–</b><span>respecto del tiempo real</span></div>
+      <div class="stat"><b id="s-board">–</b><span>decodificación en la placa, respecto del tiempo real<br><span id="s-board-n"></span></span></div>
+      <div class="stat"><b id="s-net">–</b><span>llegada a tu navegador, respecto del tiempo real<br><span id="s-net-n"></span></span></div>
       <div class="stat"><b id="s-mad">–</b><span>MAD frente a la referencia, este cuadro / medio</span></div>
       <div class="stat"><b id="s-peak">–</b><span>error pico (de 255)</span></div>
     </div>
@@ -112,7 +112,9 @@ canvas#madchart { width: 100%; height: 70px; display: block; margin-top: 10px; }
     <p class="small">Las métricas se calculan sobre la salida cruda del decodificador (I420),
     cuadro por cuadro, contra el mismo stream decodificado en software (libavcodec). Para el
     viaje hasta tu navegador cada cuadro se comprime a JPEG, salvo en modo <em>sin pérdida</em>:
-    lo que ves puede tener artefactos de JPEG, las métricas no. Tu video se procesa y se descarta;
+    lo que ves puede tener artefactos de JPEG, las métricas no. La placa decodifica a su
+    velocidad sin esperar a la red; si tu conexión es más lenta que el video, la página carga un
+    buffer antes de reproducir. Tu video se procesa y se descarta;
     no se guarda nada. La placa es una sola: si hay alguien usándola, quedás en cola.</p>
   </section>
 
@@ -187,7 +189,7 @@ const screen = $("screen"), ctx = screen.getContext("2d");
 
 let frames = [], mads = [], meta = null, busy = false;
 let playing = false, position = 0, timer = null, shown = 0;
-let received = 0, t0 = 0, tFirst = 0, peakMax = 0, madSum = 0, madN = 0;
+let received = 0, t0 = 0, tFirst = 0, tLast = 0, peakMax = 0, madSum = 0, madN = 0;
 
 function setStatus(text, bad) { $("status").textContent = text; $("status").className = bad ? "bad" : ""; }
 function setPill(text, cls) { $("pill").textContent = text; $("pill").className = "pill " + cls; }
@@ -283,7 +285,15 @@ function i420ToImage(p, w, h) {                       // BT.601, limited range
   return img;
 }
 
-// --- playback at the stream's frame rate ------------------------------------------
+// --- playback: real time, after a buffer sized to the visitor's connection -------
+//
+// Frames arrive in display order at whatever rate the network allows. If that is
+// below the stream's frame rate, starting right away means stalling every few
+// frames; like any video player, wait up front instead, just long enough that
+// the rest arrives before it is due: with N frames, arrival rate r and frame
+// rate f, playing from p needs (N - p)(1 - r/f) frames already buffered.
+
+let waiting = true, userPaused = false, allReceived = false;
 
 function present(i) {
   const bm = frames[i];
@@ -293,32 +303,89 @@ function present(i) {
   $("counter").textContent = `${i + 1} / ${frames.length}`;
 }
 
-function startPlayback() {
-  if (timer) clearInterval(timer);
-  playing = true; $("play").textContent = "Pausa"; $("transport").hidden = false;
-  timer = setInterval(() => {
-    if (!playing) return;
-    const next = (position + 1) % frames.length;
-    if (!frames[next]) return;          // wait for the decoder rather than skip
-    position = next; present(position);
-  }, 1000 / (meta.frame_rate || 25));
+function arrivalRate() {
+  const s = ((allReceived ? tLast : performance.now()) - tFirst) / 1000;
+  return received > 1 && s > 0 ? (received - 1) / s : 0;
 }
-$("play").onclick = () => { playing = !playing; $("play").textContent = playing ? "Pausa" : "Reproducir"; };
+
+function framesNeeded(p) {
+  if (allReceived) return 0;
+  const r = arrivalRate(), f = meta.frame_rate || 25;
+  if (!r || performance.now() - tFirst < 1000) return Infinity;   // still measuring
+  return Math.max(12, Math.ceil((frames.length - p) * Math.max(0, 1 - r / f) * 1.15));
+}
+
+function bufferStatus() {
+  const r = arrivalRate(), f = meta.frame_rate || 25;
+  const need = framesNeeded(position), have = received - position;
+  if (!r || need === Infinity) return "Midiendo tu conexión…";
+  const eta = Math.max(0, (need - have) / r);
+  return r < f
+    ? `Tu conexión trae ${(r / f).toFixed(2)}× tiempo real: cargando ${eta.toFixed(0)} s de ` +
+      `buffer para reproducir sin cortes…`
+    : "Cargando…";
+}
+
+function tick() {
+  if (!meta || userPaused) return;
+  if (waiting) {
+    if (received - position >= framesNeeded(position) || allReceived) {
+      waiting = false; $("transport").hidden = false;
+      if (!allReceived) setStatus("Reproduciendo a tiempo real mientras siguen llegando cuadros…");
+    } else { if (!allReceived) setStatus(bufferStatus()); return; }
+  }
+  let next = position + 1;
+  if (next >= frames.length) { if (!allReceived) return; next = 0; }
+  if (!frames[next]) { waiting = true; return; }     // fell behind: rebuffer
+  position = next; present(position);
+}
+
+function startClock() {
+  if (timer) clearInterval(timer);
+  timer = setInterval(tick, 1000 / (meta.frame_rate || 25));
+}
+$("play").onclick = () => {
+  userPaused = !userPaused; $("play").textContent = userPaused ? "Reproducir" : "Pausa";
+};
 $("seek").oninput = (e) => {
-  playing = false; $("play").textContent = "Reproducir";
+  userPaused = true; $("play").textContent = "Reproducir";
   position = Number(e.target.value); present(position);
 };
 
 // --- live numbers -----------------------------------------------------------------
+//
+// Two rates, kept apart on purpose: the board's, polled from the relay on its own
+// connection, and the network's, measured here. The first is the decoder; the
+// second is only how fast this page can be fed.
 
 function fmt(x, d) { return x == null ? "–" : x.toFixed(d); }
 
-function updateStats(last) {
-  const now = performance.now();
-  const fps = received > 1 ? (received - 1) / ((now - tFirst) / 1000) : 0;
-  $("s-fps").textContent = fps ? fmt(fps, 1) : "–";
-  $("s-rt").textContent = fps && meta.frame_rate ? `${fmt(fps / meta.frame_rate, 2)}×` : "–";
-  $("s-mad").textContent = `${fmt(last.mad, 2)} / ${fmt(madN ? madSum / madN : null, 3)}`;
+let board = { count: 0, fps: null, summary: null }, tBoard = 0, pollTimer = null;
+
+async function poll(id) {
+  try {
+    const r = await fetch(`${BACKEND}/api/progress?id=${id}`, { cache: "no-store" });
+    if (!r.ok) return;
+    const p = await r.json();
+    board.count = p.decoded;
+    if (p.summary) { board.summary = p.summary; board.fps = p.summary.fps; }
+    else if (p.decoded > 1) board.fps = p.decoded / ((performance.now() - tBoard) / 1000);
+    if (p.summary || p.error) { clearInterval(pollTimer); pollTimer = null; }
+    updateStats();
+  } catch (e) { /* the frame stream reports failures */ }
+}
+
+function updateStats() {
+  const f = meta ? meta.frame_rate : 0;
+  $("s-board").textContent = board.fps && f ? `${fmt(board.fps / f, 2)}×` : "–";
+  $("s-board-n").textContent = meta ? `${board.count} / ${frames.length} cuadros` +
+    (board.fps ? `, ${fmt(board.fps, 1)} cuadros/s` : "") : "";
+  const r = arrivalRate();
+  $("s-net").textContent = r && f ? `${fmt(r / f, 2)}×` : "–";
+  $("s-net-n").textContent = meta ? `${received} / ${frames.length} cuadros` +
+    (r ? `, ${fmt(r, 1)} cuadros/s` : "") : "";
+  const last = received ? mads[received - 1] : null;
+  $("s-mad").textContent = `${fmt(last, 2)} / ${fmt(madN ? madSum / madN : null, 3)}`;
   $("s-peak").textContent = String(peakMax);
 }
 
@@ -348,9 +415,13 @@ function drawChart() {
 async function decode(query, file, label) {
   if (busy) return;
   setBusy(true);
-  frames = []; mads = []; meta = null; shown = 0; position = 0; playing = false;
+  frames = []; mads = []; meta = null; shown = 0; position = 0;
+  waiting = true; userPaused = false; allReceived = false;
   received = 0; peakMax = 0; madSum = 0; madN = 0;
+  board = { count: 0, fps: null, summary: null };
   if (timer) { clearInterval(timer); timer = null; }
+  if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+  $("play").textContent = "Pausa";
   $("transport").hidden = true; $("livestats").hidden = true; $("madchart").hidden = true;
   const raw = $("raw").checked ? "raw=1" : "";
   const q = [query, raw].filter(Boolean).join("&");
@@ -387,6 +458,9 @@ async function decode(query, file, label) {
             const src = e.source ? `${e.source.width}×${e.source.height} ${e.source.codec} a ` +
               `${e.source.frame_rate} fps → ` : "";
             setStatus(`${src}MPEG-2 352×288 a ${e.frame_rate} fps, ${e.pictures} cuadros: decodificando en el FPGA…`);
+            tBoard = performance.now();
+            if (e.session) pollTimer = setInterval(() => poll(e.session), 500);
+            startClock();
           } else if (e.kind === "error") { setStatus(e.error, true); failed = true; }
           else if (e.kind === "done") done = e;
         } else if (r.magic === "M2JP" || r.magic === "M2RW") {
@@ -394,34 +468,31 @@ async function decode(query, file, label) {
           frames[hd.index] = r.magic === "M2JP"
             ? await createImageBitmap(new Blob([r.payload.subarray(24)], { type: "image/jpeg" }))
             : await createImageBitmap(i420ToImage(r.payload, hd.width, hd.height));
-          if (!received) tFirst = performance.now();
-          received++;
+          if (!received) { tFirst = performance.now(); present(0); }
+          received++; tLast = performance.now();
           if (hd.mad >= 0) { mads[hd.index] = hd.mad; madSum += hd.mad; madN++; }
           peakMax = Math.max(peakMax, hd.peak);
           $("progress").value = received;
-          if (!playing) {                     // follow the decoder until playback starts
-            while (shown < frames.length && frames[shown]) { present(shown); position = shown; shown++; }
-          }
-          if (received === 12) startPlayback();
           const now = performance.now();
-          if (now - lastDraw > 150) { updateStats(hd); drawChart(); lastDraw = now; }
+          if (now - lastDraw > 150) { updateStats(); drawChart(); lastDraw = now; }
         }
       }
     }
     $("progress").hidden = true;
     if (done) {
-      drawChart();
-      const rt = done.frame_rate ? (received - 1) / ((performance.now() - tFirst) / 1000) / done.frame_rate : 0;
-      updateStats({ mad: mads[received - 1] ?? null });
+      allReceived = true;
+      board.summary = done; board.fps = done.fps; board.count = done.frames;
+      drawChart(); updateStats();
+      const f = done.frame_rate, net = arrivalRate() / f, dec = done.fps / f;
       const issues = [];
       if (!done.complete) issues.push("decodificación incompleta");
       if (done.decoder.error) issues.push("el decodificador reportó un error de stream");
       if (done.decoder.watchdog) issues.push("watchdog");
-      setStatus(`Listo: ${received} cuadros; el FPGA entregó ${done.fps.toFixed(1)} cuadros/s ` +
-        `(${(done.fps / done.frame_rate).toFixed(2)}× tiempo real), a tu navegador llegaron a ` +
-        `${rt.toFixed(2)}× tiempo real. MAD medio ${done.mad_mean.toFixed(3)}, pico ${done.peak_max}.` +
+      setStatus(`Listo. La placa decodificó los ${done.frames} cuadros a ${dec.toFixed(2)}× tiempo real ` +
+        `(${done.fps.toFixed(1)} cuadros/s); a tu navegador llegaron a ${net.toFixed(2)}× ` +
+        (dec >= 1 && net < 1 ? "(el límite fue la red, no el decodificador)" : "tiempo real") +
+        `. MAD medio ${done.mad_mean.toFixed(3)}, pico ${done.peak_max}.` +
         (issues.length ? " Atención: " + issues.join(", ") + "." : ""), issues.length > 0);
-      if (received && !playing) startPlayback();
     } else if (!failed) {
       setStatus("La conexión se cortó antes de terminar.", true);
     }

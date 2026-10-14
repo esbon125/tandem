@@ -40,6 +40,7 @@ versions.
 import argparse
 import collections
 import io
+import queue
 import json
 import os
 import shutil
@@ -215,6 +216,8 @@ class Admission:
 
     def done(self, ticket):
         with self.lock:
+            if ticket < self.serving or ticket in self.finished:
+                return                          # already released
             self.finished.add(ticket)
             while self.serving in self.finished:
                 self.finished.remove(self.serving)
@@ -274,6 +277,14 @@ class Handler(BaseHTTPRequestHandler):
         path = urllib.parse.urlparse(self.path).path
         if path == "/api/health":
             return self._json(200, self.server.health())
+        if path == "/api/progress":
+            sid = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query).get("id", [""])[0]
+            st = self.server.sessions.get(sid)
+            if st is None:
+                return self._json(404, {"error": "no existe esa sesión"})
+            return self._json(200, {"decoded": st["count"], "total": st["total"],
+                                    "summary": st.get("summary"),
+                                    "error": "error" in st})
         self._json(404, {"error": "no existe"})
 
     def do_POST(self):
@@ -284,6 +295,7 @@ class Handler(BaseHTTPRequestHandler):
         preset = query.get("preset", [None])[0]
         raw = query.get("raw", ["0"])[0] == "1"
         work = None
+        self.producer_owns_ticket = False   # one handler serves a keep-alive connection
         try:
             length = int(self.headers.get("Content-Length") or 0)
             if preset is not None and preset not in self.server.presets:
@@ -314,11 +326,62 @@ class Handler(BaseHTTPRequestHandler):
         except (ConnectionError, BrokenPipeError):
             pass
         finally:
-            self.server.admission.done(ticket)
+            # once the producer runs it owns the board and releases it as soon
+            # as the decode ends -- not when this visitor's network catches up,
+            # and not earlier if this visitor hangs up mid-decode
+            if not self.producer_owns_ticket:
+                self.server.admission.done(ticket)
             if work:
                 shutil.rmtree(work, ignore_errors=True)
 
     # -- the streamed reply --------------------------------------------------
+
+    def produce(self, data, ref, raw, info, ticket, frames, decoded):
+        """Pull every frame off the board as fast as it comes, score it against
+        the reference on the raw I420, pack it for the wire, queue it."""
+        mads, peaks = [], []
+        try:
+            t0 = time.monotonic()
+            first = None
+            result = self.server.device.decode(data)
+            for f in result:
+                if first is None:
+                    first = time.monotonic() - t0
+                i420 = np.frombuffer(bytes(f.y) + bytes(f.u) + bytes(f.v), np.uint8)
+                if f.display_index < len(ref):
+                    d = np.abs(i420.astype(np.int16) - ref[f.display_index])
+                    mad, peak = float(d.mean()), int(d.max())
+                else:
+                    mad, peak = -1.0, 255
+                mads.append(mad)
+                peaks.append(peak)
+                head = FRAME_HEADER.pack(f.display_index, f.decode_index,
+                                         ord(f.picture_type[0]), f.width, f.height,
+                                         mad, min(peak, 255))
+                if raw:
+                    frames.put(record(b"M2RW", head + i420.tobytes()))
+                else:
+                    frames.put(record(b"M2JP", head + jpeg(i420)))
+                decoded["count"] = len(mads)
+            seconds = time.monotonic() - t0
+            n = len(mads)
+            ok = [m for m in mads if m >= 0]
+            summary = result.summary
+            decoded["summary"] = dict(
+                frames=n, seconds=round(seconds, 3),
+                first_frame_s=round(first or 0, 3),
+                fps=round(n / seconds, 2) if seconds else 0.0,
+                frame_rate=info["frame_rate"], complete=summary.complete,
+                decoder=dict(summary.decoder),
+                mad_mean=sum(ok) / len(ok) if ok else None,
+                mad_max=max(ok) if ok else None,
+                peak_max=max(peaks) if peaks else None,
+                bitstream=self.server.versions.get("bitstream"))
+        except Exception as exc:                # noqa: BLE001 - handed to stream()
+            decoded["error"] = exc
+        finally:
+            self.server.admission.done(ticket)
+            frames.put(None)
 
     def stream(self, ticket, preset, work, raw):
         self.send_response(200)
@@ -352,47 +415,32 @@ class Handler(BaseHTTPRequestHandler):
             info = check_stream(data)
             ref = reference_frames(self.server.preset_paths[preset] if preset
                                    else os.path.join(work, "clip.m2v"))
+            sid = self.server.new_session(info["pictures"])
             event(kind="start", source=source, preset=label, bytes=len(data),
-                  reference_frames=len(ref), **info)
+                  reference_frames=len(ref), session=sid, **info)
 
-            mads, peaks = [], []
-            t0 = time.monotonic()
-            first = None
-            result = self.server.device.decode(data)
-            for f in result:
-                if first is None:
-                    first = time.monotonic() - t0
-                i420 = np.frombuffer(bytes(f.y) + bytes(f.u) + bytes(f.v), np.uint8)
-                if f.display_index < len(ref):
-                    d = np.abs(i420.astype(np.int16) - ref[f.display_index])
-                    mad, peak = float(d.mean()), int(d.max())
-                else:
-                    mad, peak = -1.0, 255
-                mads.append(mad)
-                peaks.append(peak)
-                head = FRAME_HEADER.pack(f.display_index, f.decode_index,
-                                         ord(f.picture_type[0]), f.width, f.height,
-                                         mad, min(peak, 255))
-                if raw:
-                    chunk(record(b"M2RW", head + i420.tobytes()))
-                else:
-                    chunk(record(b"M2JP", head + jpeg(i420)))
-            seconds = time.monotonic() - t0
-            n = len(mads)
-            ok = [m for m in mads if m >= 0]
-            summary = result.summary
-            event(kind="done", frames=n, seconds=round(seconds, 3),
-                  first_frame_s=round(first or 0, 3),
-                  fps=round(n / seconds, 2) if seconds else 0.0,
-                  frame_rate=info["frame_rate"], complete=summary.complete,
-                  decoder=dict(summary.decoder),
-                  mad_mean=sum(ok) / len(ok) if ok else None,
-                  mad_max=max(ok) if ok else None,
-                  peak_max=max(peaks) if peaks else None,
-                  bitstream=self.server.versions.get("bitstream"))
+            # The board is drained at full speed into memory, never at the
+            # network's pace: protocol v1 has flow control, so a slow reader
+            # here would freeze the decoder (sec. 4) and the page would be
+            # measuring the visitor's connection and calling it the FPGA.
+            frames = queue.Queue()
+            decoded = self.server.sessions[sid]
+            self.producer_owns_ticket = True    # it releases the board when done
+            producer = threading.Thread(
+                target=self.produce, daemon=True,
+                args=(data, ref, raw, info, ticket, frames, decoded))
+            producer.start()
+            while True:
+                item = frames.get()
+                if item is None:
+                    break
+                chunk(item)
+            if "error" in decoded:
+                raise decoded["error"]
+            event(kind="done", **decoded["summary"])
             sys.stderr.write("[live] %s decoded %s: %d frames %.1f fps mad %.3f\n" % (
-                self.client(), preset or "upload", n, n / seconds if seconds else 0,
-                sum(ok) / len(ok) if ok else -1))
+                self.client(), preset or "upload", decoded["summary"]["frames"],
+                decoded["summary"]["fps"], decoded["summary"]["mad_mean"] or -1))
         except Rejected as exc:
             event(kind="error", error=str(exc))
         except subprocess.TimeoutExpired:
@@ -429,6 +477,20 @@ class Relay(ThreadingHTTPServer):
             self.presets[key] = (label, data)
         self.versions = {}
         self._health = (0.0, None)
+        # decoder-side progress by session id, polled on its own connection:
+        # in the frame stream it would queue behind megabytes of socket and
+        # tunnel buffers and arrive long after the board finished
+        self.sessions = {}
+        self.sessions_lock = threading.Lock()
+
+    def new_session(self, total):
+        sid = os.urandom(9).hex()
+        now = time.time()
+        with self.sessions_lock:
+            for k in [k for k, v in self.sessions.items() if now - v["created"] > 900]:
+                del self.sessions[k]
+            self.sessions[sid] = {"created": now, "total": total, "count": 0}
+        return sid
 
     def health(self):
         at, cached = self._health
