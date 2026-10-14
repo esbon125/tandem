@@ -5,6 +5,33 @@ un fragmento de *Tears of Steel* en MPEG-2 352x288 a 24 fps, decodificado por
 el FPGA, junto con la comparación contra el decodificador de referencia y lo
 medido.
 
+## Demo en vivo
+
+La página tiene arriba una demo en vivo: clips precargados o un video propio,
+decodificados por la placa en el momento. La página es estática (GitHub Pages);
+el backend es `demo/live_relay.py`, en una PC al lado de la placa, publicado
+con Tailscale Funnel en https://localhost-0.tail5099f3.ts.net (la URL está en
+`site/index.html`; `?backend=URL` en la página la cambia para probar).
+
+```
+navegador ──HTTPS──► Tailscale Funnel ──► live_relay.py (PC) ──LAN, token──► mpeg2fpgad (placa)
+```
+
+El relay normaliza cualquier video que lea ffmpeg al régimen medido acá
+(MPEG-2 352x288, hasta 30 fps, primeros 20 s, sin matrices cargadas), lo
+decodifica en la placa, compara cada cuadro crudo contra libavcodec y recién
+después lo comprime a JPEG para el navegador (`?raw=1`: I420 sin pérdida,
+~60 Mbit/s). Un decode a la vez con cola visible, uploads de hasta 64 MB,
+12 decodes cada 10 min por dirección, CORS solo para esbon125.github.io.
+Se instala como servicio de usuario con `demo/live-relay.service` (ver el
+encabezado de ese archivo). Si está apagado, la página lo dice y queda la
+grabación verificada.
+
+Medido (2026-10-13, bitstream 0.1.0+8004bc9, navegador headless en la misma
+LAN): presets a 2.1x tiempo real recibidos en el navegador, MAD 0.075-0.081
+contra libavcodec; un video vertical de 60 fps sale a 30 fps con pillarbox,
+1.66x tiempo real.
+
 ## Rearmar la página
 
 Hace falta: ffmpeg con libx264, numpy, el dispositivo con `mpeg2fpgad`
@@ -46,7 +73,7 @@ actualizarlas con lo que den `bench_decode.py` y `build_site.sh`.
 | `capture_clip.py` | decodifica por el daemon con el cliente (`api/python`), guarda I420 y mide fps de punta a punta |
 | `compare_clip.py` | MAD, error pico y PSNR por cuadro contra la salida de `mpeg2decode -o0` |
 | `make_media.sh` | videos H.264 para el navegador: `fpga.mp4` y `compare.mp4` (FPGA, referencia, diferencia x32) |
-| `site/index.html` | la página |
+| `site/index.html` | la página (demo en vivo + resultado grabado) |
 
 ## Medido (bitstream 0.1.0+8004bc9, 2026-10-13)
 
