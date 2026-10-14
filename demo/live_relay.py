@@ -17,16 +17,22 @@ What it does with a clip:
      the regime tools/demo-clip measured (> 2x real time, MAD < 0.2). Presets
      are already in that form and skip this step.
   2. reference: the same normalized stream decoded in software (libavcodec).
-  3. decode it on the board (protocol v1) and, for every frame as it comes
-     back, compute MAD and peak error against the reference on the raw I420
-     the decoder produced; only then compress it to JPEG for the trip to the
-     browser. The metrics are the decoder's; the JPEG is transport only.
-     ?raw=1 sends the I420 itself instead.
+  3. decode it on the board (protocol v1) at full speed into memory, never
+     at the network's pace, and for every frame compute MAD and peak error
+     against the reference on the raw I420 the decoder produced; only then
+     recompress it for the trip to the browser. The metrics are the
+     decoder's; the recompression is transport only. ?transport=h264
+     (default, fragmented MP4, ~0.5-0.9 Mbit/s), jpeg (~4 Mbit/s) or raw
+     (I420, ~30 Mbit/s at real time).
 
 To the browser: chunked HTTP, records of [4-byte magic][u32 length][payload]
-  M2HD  JSON events: queued, normalizing, start, done, error
+  M2HD  JSON events: queued, normalizing, start (with a session id), done,
+        error
+  M2MT  frame metadata only (h264): the 24-byte header
+  M2MP  a piece of fragmented MP4 (h264), in order
   M2JP  frame: 24-byte header + JPEG
   M2RW  frame: 24-byte header + I420
+GET /api/progress?id=SESSION: decoder-side progress, on its own connection.
   header: u32 display_index, u32 decode_index, u8 picture type (ASCII),
           3 pad, u16 width, u16 height, f32 MAD, u8 peak, 3 pad
 
@@ -171,6 +177,52 @@ def to_rgb(i420):
     return np.clip(rgb, 0, 255).astype(np.uint8)
 
 
+TRANSPORTS = ("h264", "jpeg", "raw")
+
+
+class H264Transport:
+    """The decoder's frames recompressed for the trip to the browser: fragmented
+    MP4 (H.264 Constrained Baseline 3.0, what every MediaSource plays), one
+    fragment per GOP of half a second, queued as M2MP records as ffmpeg emits
+    them. Roughly a third of the JPEG bytes at similar quality. Transport
+    only: the metrics were already taken on the raw I420 (M2MT records)."""
+
+    def __init__(self, frame_rate, frames):
+        rate = next((r for v, r in RATES if abs(v - frame_rate) < 0.01), "25")
+        gop = str(max(1, round(frame_rate / 2)))
+        self.proc = subprocess.Popen(
+            ["ffmpeg", "-nostdin", "-hide_banner", "-loglevel", "error",
+             "-f", "rawvideo", "-pix_fmt", "yuv420p", "-s", "%dx%d" % (WIDTH, HEIGHT),
+             "-r", rate, "-i", "-", "-vf", "setsar=12/11",
+             "-c:v", "libx264", "-preset", "veryfast", "-tune", "zerolatency",
+             "-profile:v", "baseline", "-level", "3.0", "-pix_fmt", "yuv420p",
+             "-crf", "21", "-maxrate", "1800k", "-bufsize", "1800k",
+             "-g", gop, "-keyint_min", gop, "-sc_threshold", "0",
+             "-movflags", "frag_keyframe+empty_moov+default_base_moof",
+             "-f", "mp4", "-"],
+            stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+        self.reader = threading.Thread(target=self._read, args=(frames,), daemon=True)
+        self.reader.start()
+
+    def _read(self, frames):
+        while True:
+            chunk = self.proc.stdout.read1(1 << 16)
+            if not chunk:
+                break
+            frames.put(record(b"M2MP", chunk))
+
+    def write(self, i420):
+        self.proc.stdin.write(i420.tobytes())
+
+    def close(self):
+        try:
+            self.proc.stdin.close()
+        except OSError:
+            pass
+        self.reader.join(30)
+        self.proc.wait(10)
+
+
 def jpeg(i420):
     out = io.BytesIO()
     Image.fromarray(to_rgb(i420), "RGB").save(out, "JPEG", quality=JPEG_QUALITY)
@@ -293,7 +345,11 @@ class Handler(BaseHTTPRequestHandler):
             return self._json(404, {"error": "no existe"})
         query = urllib.parse.parse_qs(url.query)
         preset = query.get("preset", [None])[0]
-        raw = query.get("raw", ["0"])[0] == "1"
+        transport = query.get("transport", ["h264"])[0]
+        if query.get("raw", ["0"])[0] == "1":
+            transport = "raw"
+        if transport not in TRANSPORTS:
+            return self._json(400, {"error": "transport: h264, jpeg o raw"})
         work = None
         self.producer_owns_ticket = False   # one handler serves a keep-alive connection
         try:
@@ -322,7 +378,7 @@ class Handler(BaseHTTPRequestHandler):
                             raise ConnectionError("upload cut short")
                         fp.write(chunk)
                         left -= len(chunk)
-            self.stream(ticket, preset, work, raw)
+            self.stream(ticket, preset, work, transport)
         except (ConnectionError, BrokenPipeError):
             pass
         finally:
@@ -336,11 +392,14 @@ class Handler(BaseHTTPRequestHandler):
 
     # -- the streamed reply --------------------------------------------------
 
-    def produce(self, data, ref, raw, info, ticket, frames, decoded):
+    def produce(self, data, ref, transport, info, ticket, frames, decoded):
         """Pull every frame off the board as fast as it comes, score it against
         the reference on the raw I420, pack it for the wire, queue it."""
         mads, peaks = [], []
+        encoder = None
         try:
+            if transport == "h264":
+                encoder = H264Transport(info["frame_rate"], frames)
             t0 = time.monotonic()
             first = None
             result = self.server.device.decode(data)
@@ -358,10 +417,13 @@ class Handler(BaseHTTPRequestHandler):
                 head = FRAME_HEADER.pack(f.display_index, f.decode_index,
                                          ord(f.picture_type[0]), f.width, f.height,
                                          mad, min(peak, 255))
-                if raw:
+                if transport == "raw":
                     frames.put(record(b"M2RW", head + i420.tobytes()))
-                else:
+                elif transport == "jpeg":
                     frames.put(record(b"M2JP", head + jpeg(i420)))
+                else:
+                    frames.put(record(b"M2MT", head))
+                    encoder.write(i420)
                 decoded["count"] = len(mads)
             seconds = time.monotonic() - t0
             n = len(mads)
@@ -381,9 +443,11 @@ class Handler(BaseHTTPRequestHandler):
             decoded["error"] = exc
         finally:
             self.server.admission.done(ticket)
+            if encoder:
+                encoder.close()                 # flushes the last fragments first
             frames.put(None)
 
-    def stream(self, ticket, preset, work, raw):
+    def stream(self, ticket, preset, work, transport):
         self.send_response(200)
         self.cors()
         self.send_header("Content-Type", "application/octet-stream")
@@ -428,7 +492,7 @@ class Handler(BaseHTTPRequestHandler):
             self.producer_owns_ticket = True    # it releases the board when done
             producer = threading.Thread(
                 target=self.produce, daemon=True,
-                args=(data, ref, raw, info, ticket, frames, decoded))
+                args=(data, ref, transport, info, ticket, frames, decoded))
             producer.start()
             while True:
                 item = frames.get()

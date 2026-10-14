@@ -19,18 +19,25 @@ navegador ──HTTPS──► Tailscale Funnel ──► live_relay.py (PC) ─
 
 El relay normaliza cualquier video que lea ffmpeg al régimen medido acá
 (MPEG-2 352x288, hasta 30 fps, primeros 20 s, sin matrices cargadas), lo
-decodifica en la placa, compara cada cuadro crudo contra libavcodec y recién
-después lo comprime a JPEG para el navegador (`?raw=1`: I420 sin pérdida,
-~60 Mbit/s). Un decode a la vez con cola visible, uploads de hasta 64 MB,
+decodifica en la placa a máxima velocidad (nunca al ritmo de la red: el
+control de flujo del protocolo congelaría el decoder y la página mediría la
+conexión del visitante como si fuera la FPGA), compara cada cuadro crudo contra
+libavcodec y recién después lo recomprime para el viaje: H.264 en MP4
+fragmentado por Media Source (por defecto, 0.5-0.9 Mbit/s, PSNR-Y 39-43 dB
+contra la salida de la FPGA), JPEG (~4 Mbit/s) o I420 sin pérdida (~30 Mbit/s).
+La página muestra aparte la tasa de la placa (por `/api/progress`) y la de
+llegada, y carga un buffer de (N - p)(1 - r/f) cuadros antes de reproducir
+para no trabarse. Un decode a la vez con cola visible, uploads de hasta 64 MB,
 12 decodes cada 10 min por dirección, CORS solo para esbon125.github.io.
 Se instala como servicio de usuario con `demo/live-relay.service` (ver el
 encabezado de ese archivo). Si está apagado, la página lo dice y queda la
 grabación verificada.
 
-Medido (2026-10-13, bitstream 0.1.0+8004bc9, navegador headless en la misma
-LAN): presets a 2.1x tiempo real recibidos en el navegador, MAD 0.075-0.081
-contra libavcodec; un video vertical de 60 fps sale a 30 fps con pillarbox,
-1.66x tiempo real.
+Medido (2026-10-13, bitstream 0.1.0+8004bc9, Chrome headless con la red
+emulada): la placa a 2.06-2.11x tiempo real en todos los casos; con H.264, a
+1 Mbit/s llega a 1.12x y a 2.4 Mbit/s a 2.0x, sin cortes; con JPEG a 2.4 Mbit/s
+llegaba a 0.60x (15 s de buffer, sin cortes). La entrada del Funnel está en
+Nueva York (~176 ms de RTT desde Argentina).
 
 ## Rearmar la página
 
