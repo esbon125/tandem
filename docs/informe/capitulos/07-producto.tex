@@ -1,20 +1,306 @@
-\chapter{El producto: propiedad intelectual, producción y distribución}
+\chapter[El producto]{El producto: propiedad intelectual, producción y distribución}
+\label{cap:producto}
+
+Los capítulos anteriores describen cómo se construyó un decodificador que
+funciona. Este describe lo que hace falta para que ese decodificador sea un
+\emph{producto}: saber qué partes lo componen y bajo qué condiciones legales
+puede distribuirse cada una, cómo se fabrica una unidad, cómo llega una
+versión nueva a quien la usa y qué se le entrega. Son las preguntas que el
+Reglamento resume como los aspectos \enquote{legales y de mercado relativos al
+producto final} \citep[punto 1.2]{UTN_FRLR_2023_reglamento}, y que en un
+trabajo académico suelen quedar implícitas.
+
+\section{Qué es el producto}
+
+El producto no es solo el núcleo decodificador. Es un sistema de referencia
+completo, con cuatro capas que se distribuyen por caminos distintos
+(figura~\ref{fig:capas-producto}):
+
+\begin{description}[style=nextline, leftmargin=1.5em]
+  \item[Bitstream de la FPGA] El núcleo mpeg2fpga adaptado, la lógica de
+    integración propia (puentes AXI y APB, DMA, interrupción de imagen,
+    identificador de versión) y el diseño base de la placa. Se entrega como un
+    archivo \cmd{.job} que se programa en la memoria de configuración de la
+    FPGA.
+  \item[Software de la placa] Linux, el driver de kernel \cmd{mpeg2fpga.ko}
+    y el servicio \cmd{mpeg2fpgad}, que expone el protocolo de red.
+  \item[Contrato de interfaz] El protocolo de red v1 (\cmd{PROTOCOL-v1.md}).
+    Es la frontera estable del producto: un cliente de cualquier versión
+    funciona con un dispositivo de cualquier versión dentro de v1, porque el
+    protocolo solo crece por adición.
+  \item[Software del cliente] La biblioteca en Python, que se instala con
+    \cmd{pip}, y la documentación para el usuario.
+\end{description}
+
+\begin{figure}[ht]
+  \centering
+  \begin{tikzpicture}[
+      lic/.style={blk, minimum width=34mm, minimum height=10mm, font=\sffamily\footnotesize},
+      perm/.style={lic, draw=m2teal, fill=m2teal!10},
+      copy/.style={lic, draw=m2amber, fill=m2amber!15},
+      prop/.style={lic, draw=m2grey, fill=m2grey!12},
+      tbd/.style={lic, draw=m2red, fill=m2red!8, dashed},
+      capa/.style={font=\sffamily\small\bfseries, color=m2navy, anchor=east, align=right},
+      node distance=4mm and 3mm]
+    % FPGA
+    \node[perm] (core) {Núcleo mpeg2fpga\\BSD};
+    \node[tbd, right=of core] (integ) {Integración propia\\a definir};
+    \node[perm, right=of integ] (ref) {Diseño de referencia\\MIT};
+    \node[prop, below=of integ] (ip) {IP generada por Libero\\licencia Microchip};
+    \node[capa, left=6mm of core] {Bitstream};
+    % Placa
+    \node[copy, above=9mm of core] (linux) {Linux\\GPL-2.0};
+    \node[copy, right=of linux] (drv) {Driver\\GPL-2.0};
+    \node[perm, right=of drv] (daemon) {Servicio mpeg2fpgad\\MIT};
+    \node[capa, left=6mm of linux] {Placa};
+    % Interfaz
+    \node[blk, above=9mm of drv, minimum width=108mm, draw=m2blue, fill=m2blue!8,
+      font=\sffamily\footnotesize] (proto) {Protocolo de red v1 --- contrato estable};
+    \node[capa, left=6mm of proto.west] {Interfaz};
+    % Cliente
+    \node[perm, above=9mm of proto.north -| drv] (lib) {Biblioteca Python\\MIT};
+    \node[perm, right=of lib] (demo) {Demostración web\\MIT};
+    \node[capa, left=6mm of lib -| core.west] {Cliente};
+    % leyenda
+    \node[below=7mm of ip, font=\sffamily\scriptsize, color=m2grey, align=center] {%
+      \textcolor{m2teal}{\rule{2.5mm}{2.5mm}} permisiva\quad
+      \textcolor{m2amber}{\rule{2.5mm}{2.5mm}} copyleft\quad
+      \textcolor{m2grey}{\rule{2.5mm}{2.5mm}} propietaria\quad
+      \textcolor{m2red}{\rule{2.5mm}{2.5mm}} sin licencia declarada};
+  \end{tikzpicture}
+  \caption{Capas del producto y licencia de cada componente.}
+  \label{fig:capas-producto}
+\end{figure}
 
 \section{Licencias de los componentes}
-\pendiente{Núcleo mpeg2fpga (tipo BSD), Linux y driver (GPL) y oferta de
-código fuente, herramientas propietarias (Libero SoC), contenido de prueba
-(Tears of Steel, CC-BY 3.0). Qué puede quedar cerrado (bitstream) y qué no.}
+\label{sec:licencias}
+
+\begin{table}[ht]
+  \centering\small
+  \begin{tabularx}{\linewidth}{@{}l l X@{}}
+    \toprule
+    \textbf{Componente} & \textbf{Licencia} & \textbf{Consecuencia} \\
+    \midrule
+    Núcleo mpeg2fpga & BSD & Se puede modificar y distribuir, también
+      en forma cerrada, conservando el aviso de autoría. \\
+    Lógica de integración propia & a definir & Hoy sin licencia
+      declarada; ver sección~\ref{sec:licencia-pendiente}. \\
+    Diseño de referencia de la placa & MIT & Permisiva; base del proyecto
+      Libero. \\
+    IP generada por Libero (CCC, MSS, FIC) & Microchip & Uso ligado a
+      dispositivos Microchip; no condiciona el resto. \\
+    Linux & GPL-2.0 & Quien distribuya la imagen debe ofrecer el código
+      fuente. \\
+    Driver \cmd{mpeg2fpga.ko} & GPL-2.0 & Ídem; además es obligatoria para
+      usar las interfaces del kernel exportadas solo a módulos GPL. \\
+    Servicio, biblioteca, demostración & MIT & Permisiva. \\
+    Clip de demostración & CC-BY 3.0 & Uso libre con atribución a la
+      Blender Foundation. \\
+    \bottomrule
+  \end{tabularx}
+  \caption{Licencias de los componentes del producto.}
+  \label{tab:licencias}
+\end{table}
+
+\subsection{El núcleo de partida}
+
+El proyecto mpeg2fpga se publica en OpenCores con licencia BSD
+\citep{De_Vleeschauwer_2017}. Conviene registrar un matiz que aparece al leer
+los archivos: los encabezados de las fuentes Verilog contienen el aviso de
+copyright y la cláusula de exención de garantía, pero no el párrafo que
+otorga explícitamente el permiso de redistribución; ese párrafo sí aparece,
+completo, en la licencia de la documentación del autor. La licencia declarada
+por el autor en el sitio de publicación es la que rige, y el proyecto la
+respeta conservando intactos los avisos originales en cada archivo
+modificado. Esta es una de las razones por las que los cambios al núcleo se
+mantuvieron mínimos y localizados (capítulo~\ref{cap:hardware}): además de
+reducir riesgo técnico, facilitan distinguir qué es obra del autor original y
+qué es obra derivada.
+
+La licencia BSD es permisiva: no obliga a publicar las modificaciones. Por
+eso el bitstream del producto podría distribuirse cerrado si un modelo de
+negocio lo requiriera. En este trabajo se optó por lo contrario y todo el
+código fuente es público.
+
+\subsection{Componentes con copyleft}
+
+Linux y el driver tienen licencia GPL-2.0. La obligación que esto impone es
+concreta: quien entregue una placa con esa imagen, o el paquete que instala
+el driver, debe ofrecer el código fuente correspondiente. Como el repositorio
+del proyecto es público, la obligación se cumple publicando, en cada
+versión, el código exacto del que se compiló. La GPL del driver no se
+\enquote{contagia} al resto del producto: el servicio y la biblioteca se
+comunican con él a través de interfaces del sistema operativo (archivos de
+dispositivo y \emph{sysfs}), no enlazándose con él.
+
+\subsection{Herramientas propietarias}
+
+La síntesis, la ubicación y el ruteo para PolarFire solo pueden hacerse con
+Libero SoC, la herramienta propietaria de Microchip, que requiere una
+licencia. \pendiente{Indicar qué licencia de Libero se usó (Silver gratuita,
+evaluación, académica) y sus condiciones \citep{Microchip_licensing}.} Esto
+tiene una consecuencia de diseño en el proceso de liberación: la síntesis no
+se repite en cada versión, sino que se hace una vez por cambio de RTL, y el
+bitstream resultante queda fijado por su suma de verificación
+(sección~\ref{sec:distribucion}). El resto de la cadena, desde la simulación
+hasta la documentación, usa herramientas libres
+(sección~\ref{sec:herramientas}).
+
+\subsection{Una tarea pendiente: declarar la licencia del código propio}
+\label{sec:licencia-pendiente}
+
+El análisis mostró un hueco que es, en sí, una lección. Los archivos del
+driver declaran su licencia con un identificador SPDX y la biblioteca la
+declara en su paquete, pero el repositorio no tiene un archivo de licencia en
+la raíz, y los módulos Verilog escritos para este proyecto
+(\cmd{stream\_dma.v}, \cmd{mem2axi\_bridge.v}, el puente APB, entre otros) no
+declaran ninguna. Un código público sin licencia no es libre: por defecto, el
+autor conserva todos los derechos y nadie más puede reutilizarlo legalmente.
+\pendiente{Elegir la licencia del RTL propio (BSD, para ser coherente con el
+núcleo, o una copyleft para hardware como CERN-OHL-S), agregar los archivos
+LICENSE y los encabezados SPDX, e incluir un aviso de terceros en cada
+versión.}
+
 \section{Patentes de MPEG-2}
-\pendiente{Vencimiento de las patentes del pool MPEG LA y su efecto sobre la
-viabilidad del producto.}
-\section{Propiedad intelectual del trabajo final}
-\pendiente{Reglamento 4.1 (propiedad del autor) y 4.3 (depósito en el RIA,
-cesión no exclusiva).}
+\label{sec:patentes}
+
+Las licencias de derecho de autor no son la única restricción. El núcleo
+original incluye un aviso que advierte que cualquier uso conforme a la norma
+MPEG-2 requiere una licencia de las patentes del consorcio administrado por
+MPEG~LA. Durante años, ese aviso fue lo que hizo inviable comercializar un
+decodificador MPEG-2 propio sin pagar regalías.
+
+Esa situación cambió. La última patente estadounidense del consorcio, la
+7\,334\,248, venció el 13 de febrero de 2018 \citep{TechRepublic_2018}, y la
+lista vigente del consorcio, hoy administrado por Via~LA, informa patentes
+activas solo en Malasia \citep{ViaLA_mpeg2_patentes}. En la práctica, un
+decodificador MPEG-2 puede fabricarse y venderse hoy sin regalías en casi
+todo el mundo, incluida la Argentina. Antes de comercializar en un país
+determinado conviene verificar la lista actualizada.
+
+Esto convierte a MPEG-2 en una elección especialmente adecuada para un
+proyecto pedagógico de producto. Los códecs posteriores, como H.264 o HEVC,
+son técnicamente superiores, pero todavía tienen patentes vigentes
+administradas por consorcios. MPEG-2 sigue en uso, en particular en la
+televisión digital terrestre y en archivos de video, y su estado legal
+permite recorrer el ciclo completo de un producto sin esa barrera.
+
+\begin{nota}[El transporte H.264 de la demostración]
+La demostración pública (capítulo~\ref{cap:firmware}) recodifica en H.264 las
+imágenes ya decodificadas por la FPGA, solo para enviarlas por Internet a un
+navegador. Esa etapa está fuera del producto: el protocolo v1 entrega las
+imágenes sin comprimir.
+\end{nota}
+
+\section{Propiedad intelectual del Trabajo Final}
+
+Según el Reglamento, salvo que exista un auspiciante que financie el
+desarrollo, la propiedad intelectual del producto es exclusiva de los
+miembros del grupo de desarrollo \citep[punto 4.1]{UTN_FRLR_2023_reglamento}.
+Este proyecto no tuvo auspiciantes ni financiamiento de la Universidad: fue
+financiado por el autor. Tampoco existen acuerdos de confidencialidad, por lo
+que no corresponde la doble versión del informe que prevé el punto 4.2. El
+trabajo se depositará en el Repositorio Institucional Abierto mediante una
+cesión no exclusiva de derechos (punto 4.3), lo que es compatible con la
+publicación del código bajo licencias libres.
+
 \section{Producción}
-\pendiente{Imagen de fábrica, programación del dispositivo.}
+\label{sec:produccion}
+
+Producir una unidad consiste en programar dos medios de almacenamiento:
+
+\begin{enumerate}
+  \item \textbf{La memoria de configuración de la FPGA}, con el bitstream de
+    la versión, por JTAG mediante FlashPro Express. Es una memoria no volátil:
+    la FPGA arranca configurada sin intervención del procesador.
+  \item \textbf{La tarjeta microSD}, con la imagen de Linux de la placa,
+    sobre la que el paquete de la versión instala el driver, el servicio y
+    las unidades de \emph{systemd} que los ponen en marcha al arrancar.
+\end{enumerate}
+
+Al arrancar, el driver lee el identificador de versión que el proceso de
+síntesis graba en el propio bitstream (por ejemplo \cmd{0.1.0+8004bc9}: la
+versión y el \emph{commit} exacto del RTL), y el servicio lo informa por la
+red. Así cada unidad puede identificar, sin acceso físico, qué hardware y qué
+software tiene cargados.
+
+\begin{advertencia}[Requisito para una placa de producto]
+PolarFire SoC permite actualizar el bitstream en campo (\emph{In-Application
+Programming} y \emph{Auto Update}), pero ambos mecanismos requieren una
+memoria flash SPI conectada al controlador de sistema del chip, que la
+Discovery Kit no tiene. En la placa de desarrollo el bitstream solo se
+actualiza por JTAG, con acceso físico. Una placa diseñada como producto
+debería incluir esa memoria.
+\end{advertencia}
+
 \section{Distribución y actualizaciones}
-\pendiente{Releases versionadas, paquete de actualización firmado, CI,
-calificación (release/qualify.sh).}
+\label{sec:distribucion}
+
+Cada versión del producto se publica como una \emph{release} del repositorio
+público, identificada con versionado semántico. El proceso está
+automatizado y tiene una regla central: \textbf{una versión se publica solo
+si pasó la calificación en el hardware real}. La ejecución, disparada a mano
+con el número de versión, corre en una computadora conectada a la placa y
+sigue estos pasos:
+
+\begin{enumerate}
+  \item verifica que la placa responda y tenga cargados el bitstream y el
+    kernel que fija el manifiesto de la versión;
+  \item compila el driver, el conversor nativo y el decodificador de
+    referencia, y los instala en la placa;
+  \item corre la regresión completa: conformidad contra la línea de base,
+    determinismo, robustez ante datos dañados y velocidad de decodificación;
+  \item prueba el sistema de punta a punta, a través del servicio y la
+    biblioteca: cada imagen debe ser idéntica byte a byte a la línea de base
+    grabada, y la mediana de cuadros por segundo debe superar un piso;
+  \item solo entonces genera los artefactos, integra en la rama principal
+    exactamente los \emph{commits} calificados de las tres ramas del
+    repositorio, los etiqueta y publica la versión.
+\end{enumerate}
+
+Si cualquier paso falla, no se publica nada y el informe de la falla queda
+disponible para su análisis. La primera versión publicada por este proceso,
+la \cmd{v0.1.0-rc2} del 9 de octubre de 2026, se calificó con el bitstream
+\cmd{0.1.0+8004bc9}.
+\pendiente{Actualizar con la versión final que acompañe la entrega.}
+
+Cada parte se actualiza por su propio camino: el bitstream por JTAG, el
+software de la placa por red con el instalador del paquete, y la biblioteca
+cliente con \cmd{pip}. Cada versión publica un archivo \cmd{SHA256SUMS} que
+permite verificar la integridad de lo descargado.
+\pendiente{La integridad no garantiza la autenticidad: falta firmar los
+paquetes de actualización (por ejemplo con una clave del proyecto) para que
+la placa rechace un paquete que no provenga del fabricante.}
+
 \section{Entregables}
-\pendiente{Dispositivo programado, guía de usuario, nota de aplicación,
-documentación Doxygen, notas de versión con informe de conformidad.}
+\label{sec:entregables}
+
+\begin{table}[ht]
+  \centering\small
+  \begin{tabularx}{\linewidth}{@{}X l l@{}}
+    \toprule
+    \textbf{Entregable} & \textbf{Destinatario} & \textbf{Estado} \\
+    \midrule
+    Bitstream (\cmd{.job}) y paquete de la placa & integrador & publicado \\
+    Biblioteca cliente en Python (\cmd{.whl}) & desarrollador & publicado \\
+    Especificación del protocolo v1 & desarrollador & publicado \\
+    Guía de usuario, en castellano e inglés & usuario & publicado \\
+    Notas de versión e informe de regresión & integrador & publicado \\
+    Sumas de verificación (\cmd{SHA256SUMS}) & todos & publicado \\
+    Nota de aplicación técnica & integrador & \pendiente{} \\
+    Documentación del código (Doxygen) & desarrollador & \pendiente{} \\
+    Código fuente completo & todos & público \\
+    Demostración pública en línea & todos & publicada \\
+    Este Informe Final & cátedra & en redacción \\
+    \bottomrule
+  \end{tabularx}
+  \caption{Entregables del producto.}
+  \label{tab:entregables}
+\end{table}
+
+La guía de usuario cumple el rol del Manual de Usuario que pide el
+Reglamento \citep[punto 2.4.2]{UTN_FRLR_2023_reglamento}. El Manual de
+Mantenimiento previsto en el punto 2.4.3 no corresponde a este producto: no
+hay un equipo con partes reparables, sino una placa comercial y software. Su
+función, documentar el producto para un técnico de la especialidad, la
+cumplen la nota de aplicación y la documentación del código.

@@ -2,47 +2,48 @@
 % Estructura según el Reglamento de Proyecto Final (sección 3).
 % Compilar con `make` (Tectonic).
 \documentclass[a4paper,11pt,oneside]{report}
-\input{preambulo/mypreamble.tex}
 \usepackage{estilo-informe}
 
-\newcommand{\titulotrabajo}{Decodificador MPEG-2 en MPSoC FPGA con Linux}
+\newcommand{\titulotrabajo}{Decodificador de video MPEG-2 en SoC FPGA con Linux}
+\newcommand{\subtitulotrabajo}{Desarrollo integral de un producto de propiedad intelectual}
 \newcommand{\autor}{Esteban Adriel Bustamante}
 \newcommand{\tutor}{Ing.~Ricardo Maldonado}
+\hypersetup{pdftitle={\titulotrabajo}, pdfauthor={\autor}}
 
 \begin{document}
 \pagenumbering{roman}
 \input{portada/portada.tex}
-\include{capitulos/00-agradecimientos}
-\include{capitulos/00-resumen}
+\clearpage\input{capitulos/00-agradecimientos}
+\clearpage\input{capitulos/00-resumen}
 \tableofcontents
 \listoffigures
 \listoftables
-\include{capitulos/00-siglas}
+\clearpage\input{capitulos/00-siglas}
 
 \cleardoublepage
 \pagenumbering{arabic}
-\include{capitulos/01-introduccion}
-\include{capitulos/02-objetivos}
-\include{capitulos/03-marco-teorico}
-\include{capitulos/04-metodologia}
-\include{capitulos/05-hardware}
-\include{capitulos/06-firmware}
-\include{capitulos/07-producto}
-\include{capitulos/08-economico}
-\include{capitulos/09-modelo-experimental}
-\include{capitulos/10-resultados}
-\include{capitulos/11-conclusiones}
+\clearpage\input{capitulos/01-introduccion}
+\clearpage\input{capitulos/02-objetivos}
+\clearpage\input{capitulos/03-marco-teorico}
+\clearpage\input{capitulos/04-metodologia}
+\clearpage\input{capitulos/05-hardware}
+\clearpage\input{capitulos/06-firmware}
+\clearpage\input{capitulos/07-producto}
+\clearpage\input{capitulos/08-economico}
+\clearpage\input{capitulos/09-modelo-experimental}
+\clearpage\input{capitulos/10-resultados}
+\clearpage\input{capitulos/11-conclusiones}
 
 \bibliographystyle{apacite}
 \bibliography{bibliografia}
 
 \appendix
-\include{anexos/a-registros}
-\include{anexos/b-protocolo}
-\include{anexos/c-regresion}
-\include{anexos/d-bitacoras}
-\include{anexos/e-potencia}
-\include{anexos/f-herramientas}
+\clearpage\input{anexos/a-registros}
+\clearpage\input{anexos/b-protocolo}
+\clearpage\input{anexos/c-regresion}
+\clearpage\input{anexos/d-bitacoras}
+\clearpage\input{anexos/e-potencia}
+\clearpage\input{anexos/f-herramientas}
 
 \input{portada/licencia-ria.tex}
 \end{document}
