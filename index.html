@@ -230,11 +230,21 @@ async function health() {
   }
 }
 
+// an empty black box reads as broken: say what goes there
+function placeholder(text) {
+  ctx.fillStyle = "#000"; ctx.fillRect(0, 0, screen.width, screen.height);
+  ctx.fillStyle = "#9a9893"; ctx.font = "15px system-ui, sans-serif";
+  ctx.textAlign = "center"; ctx.textBaseline = "middle";
+  ctx.fillText(text, screen.width / 2, screen.height / 2);
+}
+placeholder("Conectando con la placa…");
+
 (async () => {
   const h = await health();
   if (!h) {
     $("liveintro").textContent = "La demo en vivo está apagada en este momento (necesita la " +
       "placa y una PC prendidas). Más abajo está el resultado grabado y verificado.";
+    placeholder("Demo en vivo apagada");
     $("presets").hidden = true; $("filelabel").hidden = true;
     $("transport").parentElement.hidden = true;
     return;
@@ -254,6 +264,7 @@ async function health() {
     decode("", f, f.name);
     $("file").value = "";
   };
+  placeholder("Elegí un clip o subí un video");
   setStatus(`Placa en línea: bitstream ${h.versions.bitstream}.`);
   setInterval(() => { if (!busy) health(); }, 15000);
 })();
