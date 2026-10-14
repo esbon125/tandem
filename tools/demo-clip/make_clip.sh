@@ -1,0 +1,29 @@
+#!/bin/sh
+# Codifica el fragmento de Tears of Steel que usa la demo como MPEG-2 MP@ML.
+#
+#   make_clip.sh tears_of_steel_720p.mov tos_cif.m2v
+#
+# La fuente es https://download.blender.org/demo/movies/ToS/tears_of_steel_720p.mov
+# (CC BY 3.0). Bajarla UNA vez con curl: el servidor está detrás de Cloudflare y
+# responde 429 si se le hacen varios seeks por HTTP (ffmpeg -ss sobre la URL).
+#
+# 352x288 con letterbox (la película es 2.39:1; 160 líneas de imagen con
+# píxeles 12:11), 24 fps nativos para no duplicar cuadros, GOP corto, y sin
+# matrices de cuantización cargadas: ffmpeg no las escribe salvo que se le
+# pidan, y el núcleo aplica mal las matrices cargadas (plan, ítem 1b).
+set -eu
+src=$1; out=$2
+ffmpeg -hide_banner -loglevel error -ss 18 -t 20 -i "$src" -an \
+    -vf "scale=352:160:flags=lanczos,pad=352:288:0:64,setsar=12/11" \
+    -pix_fmt yuv420p -c:v mpeg2video -g 12 -bf 2 \
+    -b:v 1500k -maxrate 2500k -bufsize 1835008 -aspect 4:3 \
+    -f mpeg2video -y "$out"
+python3 - "$out" <<'PY'
+import sys
+d = open(sys.argv[1], "rb").read()
+i = d.find(b"\x00\x00\x01\xb3")
+flags = d[i + 11]
+if flags & 2 or flags & 1:
+    sys.exit("el sequence header carga una matriz de cuantización")
+print(sys.argv[1], len(d), "bytes, sin matrices cargadas")
+PY

@@ -18,6 +18,8 @@
 !driver/**
 !renode
 !renode/**
+!tools
+!tools/**
 !webserver
 !webserver/**
 !.github

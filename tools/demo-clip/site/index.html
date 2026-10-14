@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>mpeg2fpga en PolarFire SoC</title>
+<meta name="description" content="Decodificador MPEG-2 (ISO/IEC 13818-2) en FPGA PolarFire SoC: demo en tiempo real a 352x288.">
+<style>
+:root {
+  --bg: #fbfaf8; --fg: #1d1d1b; --muted: #6b6a66; --line: #e2e0db;
+  --card: #ffffff; --accent: #1f6f5c;
+}
+@media (prefers-color-scheme: dark) {
+  :root { --bg: #151514; --fg: #ecebe8; --muted: #a09e98; --line: #2e2d2b;
+          --card: #1d1d1b; --accent: #5fbfa5; }
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--fg);
+  font: 16px/1.55 system-ui, -apple-system, "Segoe UI", sans-serif; }
+main { max-width: 920px; margin: 0 auto; padding: 40px 16px 64px; }
+h1 { font-size: 1.9rem; line-height: 1.2; margin: 0 0 8px; }
+h2 { font-size: 1.15rem; margin: 40px 0 10px; }
+p { margin: 0 0 12px; }
+.lede { color: var(--muted); max-width: 62ch; }
+video { width: 100%; height: auto; display: block; background: #000; border-radius: 6px; }
+.hero { max-width: 640px; }
+figure { margin: 0; }
+figcaption { color: var(--muted); font-size: .88rem; margin-top: 6px; }
+.stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px; margin: 20px 0 8px; }
+.stat { background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 14px 16px; }
+.stat b { display: block; font-size: 1.6rem; font-variant-numeric: tabular-nums; color: var(--accent); }
+.stat span { color: var(--muted); font-size: .88rem; }
+table { border-collapse: collapse; width: 100%; font-size: .92rem; font-variant-numeric: tabular-nums; }
+th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--line); }
+th { color: var(--muted); font-weight: 600; }
+.scroll { overflow-x: auto; }
+code { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: .88em; }
+a { color: var(--accent); }
+footer { margin-top: 48px; padding-top: 16px; border-top: 1px solid var(--line);
+  color: var(--muted); font-size: .85rem; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Decodificador MPEG-2 en FPGA PolarFire SoC</h1>
+  <p class="lede">Port de <em>mpeg2fpga</em> (ISO/IEC 13818-2, Main Profile) a un Microchip
+  PolarFire SoC. El video de abajo lo decodificó el hardware: el clip MPEG-2 entra por red al
+  dispositivo y los cuadros vuelven por red, en orden de presentación, a más del doble del
+  tiempo real.</p>
+
+  <figure class="hero">
+    <video src="media/fpga.mp4" poster="media/poster.jpg" controls muted loop playsinline preload="metadata"></video>
+    <figcaption>Salida del decodificador en FPGA, 352×288 a 24 fps, 480 cuadros (20 s).
+    Para mostrarlo en el navegador se recodificó a H.264 (CRF 14); los cuadros decodificados
+    originales están verificados con las sumas de abajo.</figcaption>
+  </figure>
+
+  <div class="stats">
+    <div class="stat"><b>53.6 fps</b><span>decodificación en el FPGA (3 corridas, ±0.9)</span></div>
+    <div class="stat"><b>50 fps</b><span>de punta a punta por red, cliente Python → dispositivo → cliente</span></div>
+    <div class="stat"><b>24 fps</b><span>frame rate del stream: tiempo real con 2.1× de margen</span></div>
+    <div class="stat"><b>0.07</b><span>MAD medio frente al decodificador de referencia (pico 3/255)</span></div>
+  </div>
+
+  <h2>Comparación con el decodificador de referencia</h2>
+  <figure>
+    <video src="media/compare.mp4" controls muted loop playsinline preload="metadata"></video>
+    <figcaption>Izquierda: FPGA. Centro: <code>mpeg2decode</code> (decodificador de referencia
+    MPEG-2, en software). Derecha: diferencia absoluta amplificada ×32. Recortado a la zona
+    con imagen (sin las bandas negras).</figcaption>
+  </figure>
+
+  <div class="scroll">
+  <table>
+    <tr><th>Métrica (480 cuadros, Y+Cb+Cr)</th><th>Valor</th></tr>
+    <tr><td>MAD medio / máximo por cuadro</td><td>0.073 / 0.162</td></tr>
+    <tr><td>Error pico</td><td>3 niveles de 255</td></tr>
+    <tr><td>PSNR de luma, mínimo / mediana</td><td>55.8 dB / 58.6 dB</td></tr>
+    <tr><td>Repetibilidad (3 corridas de punta a punta)</td><td>idénticas byte a byte</td></tr>
+  </table>
+  </div>
+  <p class="lede" style="margin-top:12px">La pequeña diferencia restante es del núcleo
+  <em>mpeg2fpga</em> original, no del port: en las secuencias de conformidad verificadas, el mismo
+  diseño simulado en Icarus Verilog da cuadros idénticos byte a byte a los del hardware. La IDCT
+  cumple IEEE 1180-1990.</p>
+
+  <h2>Cómo se midió</h2>
+  <div class="scroll">
+  <table>
+    <tr><th></th><th></th></tr>
+    <tr><td>Stream</td><td>MPEG-2 MP@ML, 352×288, 24 fps progresivo, GOP 12 (IBBP), 1.5 Mb/s,
+      2.0 MB — <a href="media/tos_cif.m2v">descargar .m2v</a></td></tr>
+    <tr><td>Decodificación</td><td>desde el inicio del DMA hasta la última escritura en el framestore</td></tr>
+    <tr><td>Punta a punta</td><td>cliente Python en una PC por Ethernet (protocolo v1, sin TLS), del primer al último cuadro recibido</td></tr>
+    <tr><td>Bitstream / software</td><td><code>0.1.0+8004bc9</code>, daemon y driver 0.1.0</td></tr>
+    <tr><td>Datos</td><td><a href="media/framecmp.json">framecmp.json</a> ·
+      <a href="media/e2e_run.json">e2e_run.json</a> · <a href="media/SHA256SUMS">SHA256SUMS</a></td></tr>
+  </table>
+  </div>
+
+  <footer>
+    Contenido del clip: <em>Tears of Steel</em>, © Blender Foundation | mango.blender.org,
+    licencia <a href="https://creativecommons.org/licenses/by/3.0/">CC BY 3.0</a>.
+    Fragmento 0:18–0:38, reescalado a 352×288 y codificado en MPEG-2, sin audio.
+    Núcleo decodificador: <em>mpeg2fpga</em>, Koen De Vleeschauwer.
+  </footer>
+</main>
+</body>
+</html>
