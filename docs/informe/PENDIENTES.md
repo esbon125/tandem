@@ -6,8 +6,8 @@ Lista viva: se actualiza cada vez que se cierra o aparece algo. Las marcas
 
 ## A cargo del autor
 
-- [ ] Agradecimientos (`capitulos/00-agradecimientos.tex`, plantilla con guía) — en curso
-- [ ] Mes de entrega (portada y firma de agradecimientos)
+- [x] Agradecimientos
+- [x] Mes de entrega: automático, siempre el mes en curso al compilar (`\fechaentrega` en `informe.tex`)
 - [ ] Portada de Scribus → exportar a PDF e integrar en `portada/portada.tex`
 - [ ] Texto oficial de la licencia del RIA (Ordenanza 1514), con firma (`portada/licencia-ria.tex`)
 
@@ -27,4 +27,4 @@ Lista viva: se actualiza cada vez que se cierra o aparece algo. Las marcas
 - [x] Siglas y convenciones
 - [x] Sin referencias a plazos/cronograma del Anteproyecto (recomendación del tutor)
 - [ ] Revisión general de redacción y consistencia
-- [ ] Verificar las licencias de terceros del anexo F (u-dma-buf, mpeg2decode, etc.)
+- [x] Licencias de terceros del anexo F (revisadas por el autor)

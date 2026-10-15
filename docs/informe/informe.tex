@@ -8,6 +8,11 @@
 \newcommand{\subtitulotrabajo}{Desarrollo integral de un producto de propiedad intelectual}
 \newcommand{\autor}{Esteban Adriel Bustamante}
 \newcommand{\tutor}{Ing.~Ricardo Maldonado}
+% Fecha de entrega: siempre el mes en curso, al compilar.
+\newcommand{\mesactual}{\ifcase\month\or enero\or febrero\or marzo\or abril\or
+  mayo\or junio\or julio\or agosto\or septiembre\or octubre\or noviembre\or
+  diciembre\fi}
+\newcommand{\fechaentrega}{\mesactual{} de \the\year}
 \hypersetup{pdftitle={\titulotrabajo}, pdfauthor={\autor}}
 
 \begin{document}
