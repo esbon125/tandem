@@ -2,11 +2,133 @@
 \label{cap:conclusiones}
 
 \section{Cumplimiento de los objetivos}
-\pendiente{Tabla: objetivo del anteproyecto, resultado, observación.}
+
+La tabla~\ref{tab:cumplimiento} evalúa cada objetivo específico resultante
+(tabla~\ref{tab:objetivos-trazabilidad}) contra lo logrado.
+
+\begin{table}[ht]
+  \centering\small
+  \begin{tabularx}{\linewidth}{@{}l >{\raggedright}X l >{\raggedright\arraybackslash}X@{}}
+    \toprule
+    & \textbf{Objetivo} & \textbf{Estado} & \textbf{Evidencia} \\
+    \midrule
+    1 & Evolución de la compresión MPEG & cumplido & Capítulo~\ref{cap:marco} \\
+    2 & Arquitecturas VLSI de MPEG-2 & cumplido & Secciones~\ref{sec:arquitecturas-vlsi} y~\ref{sec:mpeg2fpga} \\
+    3 & La norma y sus consecuencias para un producto & cumplido & Sección~\ref{sec:norma}; patentes, sección~\ref{sec:patentes} \\
+    4 & Port del núcleo e integración con el MSS & cumplido & Equivalencia bit a bit con la simulación \\
+    5 & Linux como plataforma del firmware & cumplido & Sección~\ref{sec:linux} \\
+    6 & Diseño del firmware & cumplido & Driver, servicio y protocolo v1 \\
+    7 & Implementación y verificación del firmware & cumplido & KUnit; prueba de punta a punta en cada versión \\
+    8 & Optimización de rendimiento y robustez & parcial & 3,1 veces más rápido; robusto; tiempo real en CIF, no en definición estándar \\
+    9 & Licencias, producción, distribución y entregables & cumplido, con pendientes & Capítulo~\ref{cap:producto} \\
+    \bottomrule
+  \end{tabularx}
+  \caption{Cumplimiento de los objetivos específicos.}
+  \label{tab:cumplimiento}
+\end{table}
+
+\paragraph{Objetivo general}
+Se cumplió. El decodificador funciona en el SoC FPGA, se controla desde
+Linux, decodifica de forma idéntica al diseño original y se distribuye como
+un producto versionado, documentado y calificado en el hardware, con todo su
+código bajo licencias libres.
+
+\paragraph{Lo que quedó parcial}
+La optimización llevó la tasa de 7,2 a 22--23 imágenes por segundo en
+definición estándar, y se localizó con precisión el límite restante: la
+etapa de reconstrucción del núcleo original. Superarlo exige modificar la
+lógica central de un diseño de terceros, y se decidió no hacerlo dentro de
+este proyecto. En el objetivo de producto quedan tareas concretas antes de
+una versión 1.0: firmar los paquetes de actualización, declarar la licencia
+del software en la raíz del repositorio y repetir la verificación de
+temporización con las restricciones de reloj.
+
 \section{Planificación prevista y real}
-\pendiente{Gantt del anteproyecto frente al real (criterio 3.6 e).}
+\label{sec:plan-real}
+
+El Anteproyecto planificó unos 280 días a dedicación parcial a partir de
+junio de 2025, en cuatro bloques: investigación (4 semanas), diseño del
+firmware y del sistema operativo (2 meses), implementación de ambos (2 meses)
+y documentación (4 semanas).
+
+La ejecución real se apartó de ese plan en duración y en contenido:
+
+\begin{itemize}
+  \item El \textbf{port del núcleo y su integración con el procesador}, que
+    el plan no contemplaba, ocupó la mayor parte del esfuerzo. Solo la
+    investigación de por qué el núcleo integrado no decodificaba
+    (fase~7) llevó unas tres semanas y veinticinco bitácoras.
+  \item El \textbf{sistema operativo propio} se reemplazó por Linux en
+    febrero de 2026 (sección~\ref{sec:redef-so}), lo que liberó los dos
+    bloques de diseño e implementación del sistema operativo.
+  \item Se agregó la \textbf{dimensión de producto}: protocolo, proceso de
+    liberación, licencias y demostración pública.
+\end{itemize}
+
+El registro del repositorio muestra la forma del trabajo real: la
+documentación inicial en 2025; la incorporación del núcleo y su primera
+simulación funcional en la primera mitad de 2026; y, desde julio de 2026,
+el período más intenso, con la puesta en marcha de la placa, la integración,
+el firmware y el producto, documentado en las bitácoras del
+anexo~\ref{anx:bitacoras}.
+\pendiente{Completar con la fecha de aprobación del Anteproyecto, el plazo
+reglamentario de 12 meses y, si corresponde, la prórroga; agregar el
+diagrama de Gantt previsto frente al real.}
+
 \section{Lecciones aprendidas}
-\pendiente{}
+
+\begin{enumerate}
+  \item \textbf{Verificar en la capa más barata, pero confirmar en la real.}
+    La simulación encontró rápido los errores de lógica; ninguno de los
+    errores de integración fue visible en ella. Un banco de prueba en verde
+    solo prueba que el código coincide con la propia hipótesis.
+  \item \textbf{Que la herramienta no dé error no significa que hizo lo
+    pedido.} Restricciones de pines que no se aplicaban, un parámetro
+    reinterpretado con signo, un atributo que silenciaba un aviso sin cambiar
+    nada, una verificación de temporización sin relojes: todos terminaron
+    \enquote{sin errores}. El criterio de éxito es el resultado verificado,
+    en la netlist o en la placa.
+  \item \textbf{La instrumentación también puede mentir.} Registros de
+    depuración optimizados por la síntesis sostuvieron una teoría falsa
+    durante dos síntesis. La lectura directa por JTAG la desmintió.
+  \item \textbf{Medir antes de optimizar.} Los contadores mostraron que la
+    memoria no era el límite cuando parecía serlo, y dos experimentos
+    negativos ahorraron una optimización inútil.
+  \item \textbf{Las licencias son parte del diseño.} Revisarlas mostró
+    código propio publicado sin licencia y un núcleo cuyos archivos no
+    traían la cláusula de permiso. Resolverlo al final cuesta más que
+    decidirlo al principio.
+  \item \textbf{Acotar a tiempo.} Reemplazar el sistema operativo propio por
+    Linux permitió terminar un producto completo en lugar de dos prototipos
+    a medio hacer.
+\end{enumerate}
+
 \section{Trabajo futuro}
-\pendiente{Matrices de cuantización, rendimiento de motcomp\_recon, salida
-de video, flujos de baja resolución en vivo.}
+
+\begin{itemize}
+  \item \textbf{Conformidad}: corregir la carga de matrices de cuantización,
+    ya localizada en el núcleo, e investigar los tres flujos que no producen
+    imágenes.
+  \item \textbf{Tiempo real en definición estándar}: optimizar la etapa de
+    reconstrucción por compensación de movimiento del núcleo.
+  \item \textbf{Producto}: firmar las actualizaciones, cerrar la verificación
+    de temporización, publicar la nota de aplicación y la documentación del
+    código, y llegar a una versión 1.0.
+  \item \textbf{Placa propia}: con memoria flash para actualizar el bitstream
+    en campo, salida de video para aprovechar la cadena de visualización ya
+    presente en el núcleo y monitores de consumo para medir la potencia.
+  \item \textbf{Nuevos usos}: decodificación en vivo de flujos de baja
+    resolución, como los de cámaras de vigilancia, que el sistema ya procesa
+    a más del doble del tiempo real; y una biblioteca cliente en C.
+\end{itemize}
+
+\section{Conclusión final}
+
+El proyecto partió de un núcleo abierto pensado para otra plataforma y
+terminó en un producto: un decodificador MPEG-2 que corre en un SoC FPGA,
+se usa por la red desde cualquier computadora, se libera con versiones
+calificadas en el hardware y se distribuye con su código, su documentación y
+sus licencias. En el camino quedó documentado, con sus errores incluidos,
+todo lo que separa un prototipo que funciona de un producto que otro puede
+usar. Ese recorrido, más que el decodificador en sí, es el resultado que este
+trabajo quiere dejar.
