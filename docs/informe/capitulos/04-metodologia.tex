@@ -266,7 +266,8 @@ principales, sin las cuales el proyecto no habría sido posible tal como se
 hizo, de las secundarias, que cumplieron un rol puntual o reemplazable. Las
 herramientas propietarias se muestran aparte: se reducen a las de Microchip
 para implementar y depurar el diseño en la FPGA, que no tienen alternativa
-libre para esta familia, y a los servicios de alojamiento.
+libre para esta familia, a los servicios de alojamiento y al asistente de
+programación (sección~\ref{sec:asistente-ia}).
 
 \newcommand{\herr}[4]{% x, y, estilo, texto
   \node[#3] at (#1,#2) {#4};}
@@ -324,7 +325,8 @@ libre para esta familia, y a los servicios de alojamiento.
     \herr{36}{-74}{sec}{GNU Screen}
     \herr{12}{-82}{sec}{Emacs}
     \herr{36}{-82}{sec}{Bash}
-    \herr{24}{-98}{prop}{GitHub}
+    \herr{12}{-98}{prop}{GitHub}
+    \herr{36}{-98}{prop}{Claude Code}
     % ---- Verificación y liberación (58,-60)
     \draw[grupo] (52,-60) rectangle (100,-104);
     \node[tit] at (53,-59.5) {Verificación y liberación};
@@ -352,7 +354,7 @@ libre para esta familia, y a los servicios de alojamiento.
     \node[sec, minimum width=16mm] at (66,-113) {libre};
     \node[lbl, anchor=west] at (75,-113) {secundaria};
     \node[prop, minimum width=16mm] at (108,-113) {propietaria};
-    \node[lbl, anchor=west] at (117,-113) {sin alternativa libre};
+    \node[lbl, anchor=west] at (117,-113) {propietaria o servicio};
   \end{tikzpicture}
   \caption{Herramientas usadas en el proyecto, por área. La descripción de
     cada una está en el anexo~\ref{anx:herramientas}.}
