@@ -1,14 +1,102 @@
 \chapter*{Símbolos y convenciones}
 \addcontentsline{toc}{chapter}{Símbolos y convenciones}
-\begin{description}[style=nextline, leftmargin=7em, labelwidth=6em]
-  \item[APB] \emph{Advanced Peripheral Bus}.
-  \item[AXI] \emph{Advanced eXtensible Interface}.
-  \item[CCC] \emph{Clock Conditioning Circuit} (PLL de PolarFire).
-  \item[DMA] \emph{Direct Memory Access}.
-  \item[FIC] \emph{Fabric Interface Controller}.
+
+\section*{Siglas}
+
+\begin{description}[style=sameline, leftmargin=8.5em, labelwidth=8em, itemsep=1pt]
+  \item[APB] \emph{Advanced Peripheral Bus}: bus de periféricos de la
+    familia AMBA, usado para los registros del decodificador.
+  \item[AXI4] \emph{Advanced eXtensible Interface}, versión 4: bus de alto
+    rendimiento de la familia AMBA, usado para el acceso a memoria.
+  \item[BSD] Familia de licencias de software permisivas.
+  \item[CCC] \emph{Clock Conditioning Circuit}: bloque de PolarFire que
+    contiene el PLL y genera los relojes.
+  \item[CDC] \emph{Clock Domain Crossing}: cruce de señales entre dominios
+    de reloj.
+  \item[CERN-OHL-S] \emph{CERN Open Hardware Licence}, variante fuertemente
+    recíproca.
+  \item[CIF] \emph{Common Intermediate Format}: resolución de
+    $352 \times 288$ píxeles.
+  \item[DCT] Transformada discreta del coseno.
+  \item[DDR4] Memoria dinámica de doble tasa de datos, cuarta generación.
+  \item[DMA] Acceso directo a memoria.
+  \item[E/S] Entrada y salida.
+  \item[FIC] \emph{Fabric Interface Controller}: interfaz entre el MSS y el
+    tejido FPGA.
+  \item[FIFO] Memoria de cola, \emph{first in, first out}.
+  \item[FPGA] Arreglo de compuertas programable en campo.
+  \item[GOP] \emph{Group of Pictures}: grupo de imágenes de un flujo MPEG.
+  \item[GPL, LGPL] \emph{GNU General Public License} y su variante
+    \emph{Lesser}: licencias de software libre con copyleft.
+  \item[HEVC] \emph{High Efficiency Video Coding} (H.265).
+  \item[HSS] \emph{Hart Software Services}: firmware de arranque del
+    PolarFire SoC.
+  \item[HTTP] Protocolo de transferencia de hipertexto.
+  \item[I420] Formato de imagen YUV 4:2:0 con los tres planos consecutivos.
   \item[IDCT] Transformada discreta del coseno inversa.
+  \item[IEC] Comisión Electrotécnica Internacional.
+  \item[IEEE] Instituto de Ingenieros Eléctricos y Electrónicos.
+  \item[IP] Propiedad intelectual; por extensión, un bloque de diseño
+    reutilizable (\emph{IP core}).
+  \item[IRQ] Pedido de interrupción.
+  \item[ISO] Organización Internacional de Normalización.
+  \item[JSON] \emph{JavaScript Object Notation}: formato de datos de texto.
+  \item[JTAG] Interfaz de prueba y programación (IEEE 1149.1).
+  \item[KUnit] Marco de pruebas unitarias del kernel Linux.
+  \item[L2] Memoria caché de segundo nivel.
+  \item[LSRAM, uSRAM] Bloques de memoria grandes y micro-RAM de PolarFire.
+  \item[LUT] Tabla de búsqueda: celda lógica básica de una FPGA.
   \item[MAD] Error absoluto medio (\emph{Mean Absolute Difference}).
-  \item[MSS] \emph{Microprocessor Subsystem} del PolarFire SoC.
+  \item[MIT] Licencia de software permisiva del Instituto Tecnológico de
+    Massachusetts.
+  \item[MP@ML] \emph{Main Profile at Main Level}: perfil y nivel de MPEG-2
+    para definición estándar.
+  \item[MPEG] \emph{Moving Picture Experts Group}.
+  \item[MSS] \emph{Microprocessor Subsystem}: subsistema de procesadores del
+    PolarFire SoC.
+  \item[MSSG] \emph{MPEG Software Simulation Group}, autor del
+    decodificador de referencia.
+  \item[OSD] \emph{On-Screen Display}: superposición de gráficos sobre el
+    video.
+  \item[PLIC] \emph{Platform-Level Interrupt Controller}: controlador de
+    interrupciones de RISC-V.
+  \item[PLL] Lazo de enganche de fase.
+  \item[RAM] Memoria de acceso aleatorio.
+  \item[RISC-V] Arquitectura de conjunto de instrucciones abierta.
+  \item[RTL] \emph{Register Transfer Level}: descripción de hardware a nivel
+    de registros, en este caso en Verilog.
+  \item[RTOS] Sistema operativo de tiempo real.
+  \item[SD, microSD] Formato de tarjeta de memoria.
+  \item[SoC] \emph{System on Chip}: sistema en un chip.
+  \item[SPDX] \emph{Software Package Data Exchange}: identificadores
+    normalizados de licencias.
+  \item[SPI] \emph{Serial Peripheral Interface}: bus serie.
+  \item[TCP] Protocolo de control de transmisión.
+  \item[TDD] Desarrollo guiado por pruebas (\emph{Test-Driven Development}).
+  \item[TLS] \emph{Transport Layer Security}: cifrado de conexiones.
+  \item[UART] Transmisor-receptor asíncrono universal: puerto serie.
+  \item[UIO] \emph{Userspace I/O}: acceso a un dispositivo desde espacio de
+    usuario en Linux.
+  \item[UML] \emph{User-Mode Linux}: kernel Linux que corre como proceso.
+  \item[USB] Bus serie universal.
   \item[VLD] Decodificación de longitud variable.
+  \item[VLSI] Integración a muy gran escala.
+  \item[YUV, RGB] Espacios de color: luminancia y dos diferencias de color;
+    rojo, verde y azul.
 \end{description}
-\pendiente{Completar a medida que se redactan los capítulos.}
+
+\section*{Convenciones}
+
+\begin{itemize}
+  \item Los nombres de archivos, módulos, señales, registros y comandos se
+    escriben en \cmd{tipografía monoespaciada}.
+  \item Los números decimales usan coma (0,073); los valores hexadecimales
+    llevan el prefijo \cmd{0x}.
+  \item Las resoluciones se expresan como ancho $\times$ alto en píxeles.
+  \item Los errores de imagen (MAD y error pico) están en niveles de 0 a 255.
+  \item Las tasas se expresan en imágenes por segundo, o como múltiplo del
+    tiempo real del flujo ($2{,}2\times$ significa 2,2 veces más rápido que
+    la tasa nominal del video).
+  \item KiB y MiB son potencias de 2 (1\,024 y 1\,048\,576 bytes); MB y
+    Mbit/s, potencias de 10.
+\end{itemize}

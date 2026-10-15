@@ -43,38 +43,6 @@ una versión 1.0: firmar los paquetes de actualización, declarar la licencia
 del software en la raíz del repositorio y repetir la verificación de
 temporización con las restricciones de reloj.
 
-\section{Planificación prevista y real}
-\label{sec:plan-real}
-
-El Anteproyecto planificó unos 280 días a dedicación parcial a partir de
-junio de 2025, en cuatro bloques: investigación (4 semanas), diseño del
-firmware y del sistema operativo (2 meses), implementación de ambos (2 meses)
-y documentación (4 semanas).
-
-La ejecución real se apartó de ese plan en duración y en contenido:
-
-\begin{itemize}
-  \item El \textbf{port del núcleo y su integración con el procesador}, que
-    el plan no contemplaba, ocupó la mayor parte del esfuerzo. Solo la
-    investigación de por qué el núcleo integrado no decodificaba
-    (fase~7) llevó unas tres semanas y veinticinco bitácoras.
-  \item El \textbf{sistema operativo propio} se reemplazó por Linux en
-    febrero de 2026 (sección~\ref{sec:redef-so}), lo que liberó los dos
-    bloques de diseño e implementación del sistema operativo.
-  \item Se agregó la \textbf{dimensión de producto}: protocolo, proceso de
-    liberación, licencias y demostración pública.
-\end{itemize}
-
-El registro del repositorio muestra la forma del trabajo real: la
-documentación inicial en 2025; la incorporación del núcleo y su primera
-simulación funcional en la primera mitad de 2026; y, desde julio de 2026,
-el período más intenso, con la puesta en marcha de la placa, la integración,
-el firmware y el producto, documentado en las bitácoras del
-anexo~\ref{anx:bitacoras}.
-\pendiente{Completar con la fecha de aprobación del Anteproyecto, el plazo
-reglamentario de 12 meses y, si corresponde, la prórroga; agregar el
-diagrama de Gantt previsto frente al real.}
-
 \section{Lecciones aprendidas}
 
 \begin{enumerate}
