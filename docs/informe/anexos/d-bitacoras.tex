@@ -1,3 +1,69 @@
-\chapter{Índice de bitácoras de bring-up}
+\chapter{Índice de bitácoras}
 \label{anx:bitacoras}
-\pendiente{}
+
+Bitácoras de ingeniería del proyecto (sección~\ref{sec:bitacoras}), en
+\cmd{docs/bringup/} de la rama \cmd{docs} del repositorio. La fecha es la de
+la bitácora o, si no la declara, la de su incorporación al repositorio; todas
+corresponden a 2026. Los títulos se reproducen como fueron escritos.
+
+\small
+\begin{longtable}{@{}r c p{118mm}@{}}
+  \toprule
+  \textbf{N.º} & \textbf{Fecha} & \textbf{Título} \\
+  \midrule
+  \endfirsthead
+  \toprule
+  \textbf{N.º} & \textbf{Fecha} & \textbf{Título} \\
+  \midrule
+  \endhead
+  01 & 30/07 & Fase 1 — Hello World en PolarFire SoC Discovery Kit \\
+  02 & 01/08 & Fase 2 — Arranque de Linux vía microSD en PolarFire SoC Discovery Kit \\
+  03 & 03/08 & Fase 3 — Ethernet desde Linux en PolarFire SoC Discovery Kit \\
+  04 & 03/08 & Fase 4 — Entorno TDD para el driver Linux de mpeg2fpga \\
+  05 & 05/08 & Fase 5a — Puente APB3$\leftrightarrow$regfile de mpeg2fpga, test-first (Icarus Verilog) \\
+  06 & 05/08 & Fase 5b — Integración de mpeg2fpga en la MSS vía Libero headless \\
+  07 & 14/08 & Fase 5c — Síntesis, Place \& Route y cierre de timing \\
+  08 & 15/08 & Fase 5c (continuación) — El bitstream real: bug de pines sin fijar, boot loop resuelto \\
+  09 & 15/08 & Fase 5d — Overlay de device tree real: hang de hardware en el primer acceso real a mpeg2fpga (cerrada) \\
+  10 & 16/08 & Fase 6a — Bridge mpeg2video $\leftrightarrow$ AXI4 para la DDR real \\
+  11 & 16/08 & Fase 6b — Cablear mem2axi\_bridge en el diseño Libero \\
+  12 & 16/08 & Fase 6c — Síntesis, P\&R y generación de bitstream con el bridge DDR real \\
+  13 & 16/08 & Fase 6d — Programación y verificación del bridge DDR en hardware real \\
+  14 & 16/08 & Fase 7a — Registro de push de stream por APB \\
+  15 & 16/08 & Fase 7a (seguimiento) — Investigación acotada del SIZE en 0 \\
+  16 & 16/08 & Fase 7b — Servidor web: patrón de prueba, canvas y push por APB \\
+  17 & 17/08 & Fase 7c — DMA streamer: diseño, TDD, hardware, y un bug abierto \\
+  18 & 17/08 & Fase 7c (continuación) — investigación en vivo de PWDATA con SmartDebug \\
+  19 & 19/08 & Fase 7c (continuación) — captura libre de PWDATA, y un gotcha de build serio \\
+  20 & 20/08 & Fase 7c — causa raíz de PWDATA encontrada y corregida (PSTRB) \\
+  21 & 20/08 & Fase 7c — push end-to-end real, y un hallazgo nuevo: el VLD se traba (watchdog reset) \\
+  22 & 22/08 & Fase 7a — bug real de multiple-drivers en xfifo\_dc.v, y el bloqueo que revela: AXI4 nunca completaba una escritura \\
+  23 & 23/08 & Fase 7a — el fix de AXI4 funciona en hardware real (primera escritura completada del proyecto), y un bug nuevo: el reset por watchdog deja el fabric trabado \\
+  24 & 24/08 & Fase 7a — Fix de FWFT en las CoreFIFO y confirmación del wedge a nivel AXI4/interconnect \\
+  25 & 26/08 & Fase 7a: fix de drenaje gracioso confirmado en hardware, bug de reset CDC en CoreFIFO encontrado y arreglado, y causa raíz real aislada y reproducida en simulación \\
+  26 & 26/08 & Fase 7a: fix de gating de RE implementado, confirmado en simulación end-to-end, pero NO resuelve el stall real — hallazgo nuevo: \cmd{mem\_req\_rd\_empty} parece atascado en hardware real independientemente de RE \\
+  27 & 27/08 & Fase 7a: mem2axi\_bridge audit, the stale-FWFT-copy correction, and the reset-domain bug \\
+  28 & 27/08 & Fase 7a — Ground truth vía SmartDebug Active Probes: el stall real es un \cmd{BVALID} que nunca llega \\
+  29 & 30/08 & Fase 7a (cont.): reloj CCC corregido, MPU2(FIC1).STATUS, y simetría FIC0-3 \\
+  30 & 03/09 & Fase 7a RESUELTO: \cmd{DDR\_BASE} extendido con signo a \cmd{0x3f\_c8000000} \\
+  31 & 03/09 & Fase 7a: los tres udmabuf son UN solo buffer (y la L2 memory-side lo escondía) \\
+  32 & 04/09 & Fase 7a: qué cambia exactamente cuando NO decodifica \\
+  33 & 04/09 & Fase 7a: el VLD se saltea el primer start code \\
+  34 & 04/09 & Fase 7a: la primera palabra que recibe el VLD llega corrupta \\
+  35 & 05/09 & Fase 7a CAUSA RAÍZ: colisión read/write en \cmd{vbuf\_read\_fifo} \\
+  36 & 05/09 & Fase 7a: la escritura a la RAM del FIFO se completa a medias \\
+  37 & 05/09 & Fase 7a CAUSA RAÍZ: la RAM del FIFO usa los dos puertos para ancho \\
+  38 & 05/09 & Fase 7a RESUELTO: \cmd{syn\_ramstyle = "uram"} en \cmd{xfifo\_sc.v} \\
+  39 & 05/09 & Baseline post-fix y action items hasta el producto \\
+  40 & 05/09 & Una forma confiable de comparar frames, y lo que dice del hardware \\
+  41 & 06/09 & Pipelinear lecturas en mem2axi\_bridge: de 7.2 a \textasciitilde{}19-20 fps \\
+  42 & 07/09 & Pipelinear escrituras en mem2axi\_bridge, y un bug real que encontró el propio proceso \\
+  43 & 07/09 & No es FWD/BWD: el árbitro está idle el 90\% del tiempo \\
+  44 & 07/10 & El cuello de botella está en motcomp\_recon, no en memoria ni en el clock \\
+  45 & 08/10 & Regresión, robustez y benchmarks en hardware (ítem 7) \\
+  46a & 08/10 & Estimación de potencia con SmartPower (vectorless) \\
+  46b & 08/10 & Protocolo v1: bitstream nuevo, daemon y verificación de punta a punta \\
+  47 & 13/10 & Demo pública: un clip real en tiempo real, y la demo en vivo por internet \\
+  \bottomrule
+\end{longtable}
+\normalsize

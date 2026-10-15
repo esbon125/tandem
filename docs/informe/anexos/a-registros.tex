@@ -1,3 +1,107 @@
 \chapter{Mapa de registros}
 \label{anx:registros}
-\pendiente{}
+
+El periférico ocupa una ventana de 256 bytes en el bus APB de FIC~3, a partir
+de la dirección física \cmd{0x4000\_0400} del MSS. Cada registro es de 32
+bits; la tabla da el \emph{índice} del registro, y su desplazamiento en
+bytes es cuatro veces el índice. El driver es el único componente que
+accede a estos registros (sección~\ref{sec:driver}); sus definiciones están
+en el archivo \cmd{mpeg2fpga\_regs.h} del driver.
+
+\section{Registros del núcleo (índices \cmd{0x00}--\cmd{0x0F})}
+
+El banco de registros del núcleo original tiene una particularidad: la
+lectura y la escritura de un mismo índice acceden a dos registros distintos.
+No hay forma de releer lo escrito, y el driver guarda una copia de cada valor
+que escribe. La descripción completa de cada campo está en la guía del
+núcleo \citep{De_Vleeschauwer_2017}, capítulo~1.
+
+\begin{center}\small
+\begin{tabularx}{\linewidth}{@{}l l X@{}}
+  \toprule
+  \textbf{Índice} & \textbf{Lectura} & \textbf{Contenido} \\
+  \midrule
+  \cmd{0x0} & \cmd{VERSION} & Versión del núcleo original (\cmd{0x000c}) \\
+  \cmd{0x1} & \cmd{STATUS} & Coeficientes de matriz [15:8]; \emph{watchdog},
+    escritura de OSD, cabecera de imagen, fin de cuadro, cambio de video y
+    error [7:0], que se borran al leer \\
+  \cmd{0x2} & \cmd{SIZE} & Ancho [29:16] y alto [13:0] de la secuencia \\
+  \cmd{0x3} & \cmd{DISPLAY\_SIZE} & Tamaño de visualización, mismo formato \\
+  \cmd{0x4} & \cmd{FRAME\_RATE} & Relación de aspecto, secuencia progresiva,
+    extensiones y código de tasa de imágenes \\
+  \cmd{0xF} & \cmd{TESTPOINT} & Punto de prueba seleccionado \\
+  \bottomrule
+\end{tabularx}
+
+\medskip
+\begin{tabularx}{\linewidth}{@{}l l X@{}}
+  \toprule
+  \textbf{Índice} & \textbf{Escritura} & \textbf{Contenido} \\
+  \midrule
+  \cmd{0x0} & \cmd{STREAM} & Intervalo del \emph{watchdog} [15:8];
+    habilitación de OSD y de interrupciones [3:0] \\
+  \cmd{0x1}--\cmd{0x4} & \cmd{HORIZONTAL}, \ldots & Temporización de video
+    horizontal y vertical \\
+  \cmd{0x5} & \cmd{VIDEO\_MODE} & Modo de video \\
+  \cmd{0x6}--\cmd{0xA} & \cmd{OSD\_*} & Tabla de colores y datos del OSD \\
+  \cmd{0xB} & \cmd{TRICK\_MODE} & Desentrelazado [10], repetición de cuadro
+    [9:5] (31 = pausa), persistencia [4], fuente de visualización [3:1] y
+    vaciado del buffer de video [0] \\
+  \cmd{0xF} & \cmd{TESTPOINT} & Selección del punto de prueba \\
+  \bottomrule
+\end{tabularx}
+\end{center}
+
+Los registros de temporización de video y de OSD controlan la cadena de
+visualización, que en esta placa no tiene salida física
+(sección~\ref{sec:redef-video}).
+
+\section{Registros del puente (índices \cmd{0x10}--\cmd{0x3F})}
+
+Agregados por el puente APB de este proyecto. Son un mapa plano: cada
+registro es de solo lectura (L), solo escritura (E) o lectura y escritura
+(L/E).
+
+\begin{center}\small
+\begin{tabularx}{\linewidth}{@{}l l c X@{}}
+  \toprule
+  \textbf{Índice} & \textbf{Nombre} & & \textbf{Contenido} \\
+  \midrule
+  \cmd{0x10} & \cmd{STREAM\_PUSH} & E & Un byte del flujo por escritura
+    (mecanismo inicial, reemplazado por el DMA) \\
+  \cmd{0x11} & \cmd{DMA\_ADDR} & E & Desplazamiento en bytes dentro del
+    área de \emph{staging} \\
+  \cmd{0x12} & \cmd{DMA\_LEN} & E & Longitud de la transferencia en bytes \\
+  \cmd{0x13} & \cmd{DMA\_CTRL} & E & [0] inicia la transferencia; [1] no
+    agregar fin de secuencia (bloque intermedio) \\
+  \cmd{0x14} & \cmd{DMA\_STATUS} & L & Bytes transferidos [31:8];
+    terminado [1], que se borra al iniciar otra transferencia; ocupado [0] \\
+  \cmd{0x20} & \cmd{CORE\_ENABLE} & L/E & [0] libera el núcleo del \emph{reset} \\
+  \cmd{0x2B} & \cmd{BUILD\_VERSION} & L & Versión del bitstream: mayor [31:24],
+    menor [23:16], parche [15:0] \\
+  \cmd{0x2C} & \cmd{BUILD\_GIT} & L & \emph{Commit} del RTL [27:0]; [31]
+    indica cambios sin registrar al sintetizar \\
+  \cmd{0x2D} & \cmd{PIC\_IRQ} & L/E & Interrupción de imagen: pendiente [0],
+    habilitada [1], desborde [2], buffer de la imagen [6:4], contador
+    [31:16]. Escribir 1 en [0] borra pendiente y desborde \\
+  \bottomrule
+\end{tabularx}
+\end{center}
+
+\paragraph{Registros de depuración}
+Los índices restantes (\cmd{0x15}--\cmd{0x1F}, \cmd{0x21}--\cmd{0x2A},
+\cmd{0x31}--\cmd{0x3F}) son de solo lectura y exponen instrumentación: la
+posición de los punteros del buffer de video, el estado interno del
+analizador del flujo y contadores de ciclos del árbitro de memoria y de la
+tubería (atendiendo cada cliente, inactivo, decodificador detenido por cada
+causa). Con ellos se localizó el cuello de botella de la
+sección~\ref{sec:optimizacion}. No forman parte de la interfaz estable del
+producto.
+
+\begin{advertencia}[Límite de la ventana]
+La ventana del periférico está fijada en 256 bytes (índices hasta
+\cmd{0x3F}) por la configuración del bus en Libero y por los
+\emph{overlays} de árbol de dispositivos. Un registro agregado en el índice
+\cmd{0x40} o superior compila sin errores pero nunca recibe accesos: se
+lee como cero. Ocurrió durante el proyecto.
+\end{advertencia}

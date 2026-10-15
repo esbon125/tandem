@@ -1,3 +1,160 @@
 \chapter{Protocolo de red v1}
 \label{anx:protocolo}
-\pendiente{}
+
+Resumen normativo del protocolo descripto en la sección~\ref{sec:daemon}. La
+especificación completa es el archivo \cmd{api/PROTOCOL-v1.md} de la rama
+\cmd{firmware\_development}, que se publica con cada versión del producto.
+
+\section{Transporte y versionado}
+
+\begin{itemize}
+  \item HTTP/1.1 sobre TCP, puerto 8080 (8443 con TLS). Control y estado en
+    JSON (UTF-8); imágenes en un flujo binario propio, como respuesta HTTP
+    \emph{chunked}.
+  \item Todas las rutas llevan el prefijo \cmd{/v1}. Dentro de v1 solo hay
+    cambios aditivos: campos JSON, rutas y tipos de registro nuevos. Un
+    cliente v1 ignora lo que no conoce. Un cambio incompatible es \cmd{/v2}.
+  \item Hay un solo decodificador: una segunda petición de decode mientras
+    otra está en curso recibe \cmd{409} con \cmd{Retry-After}.
+\end{itemize}
+
+\section{Rutas}
+
+\begin{center}\small
+\begin{tabularx}{\linewidth}{@{}l X@{}}
+  \toprule
+  \textbf{Ruta} & \textbf{Descripción} \\
+  \midrule
+  \cmd{GET /v1/health} & \cmd{\{"ok": true\}}. Sin autenticación, para
+    monitoreo. \\
+  \cmd{GET /v1/device} & Producto, versión del protocolo, versiones de
+    servicio, driver, bitstream y núcleo; capacidades (entrada
+    \cmd{mpeg2-video-es}, salida \cmd{i420}, 4:2:0); límites (largo sin
+    límite, hasta $1920 \times 1088$); estado de TLS. \\
+  \cmd{GET /v1/status} & Estado (\cmd{idle}, \cmd{decoding}, \cmd{error}),
+    decode en curso, última cabecera de secuencia e indicadores del
+    decodificador. \\
+  \cmd{POST /v1/decode} & Cuerpo: el flujo elemental, con
+    \cmd{Content-Length} o \emph{chunked}. Parámetros opcionales:
+    \cmd{frames=all|last} y \cmd{max\_frames=N}. Si en el primer MiB no hay
+    una cabecera de secuencia, responde \cmd{400} sin tocar el
+    decodificador. Respuesta: \cmd{200} con el flujo binario y la cabecera
+    \cmd{X-Decode-Id}. \\
+  \cmd{POST /v1/reset} & Reinicia el núcleo y limpia la memoria de cuadros.
+    No es necesario entre videos. \\
+  \cmd{/v1/debug/...} & Diagnóstico, sin garantía de compatibilidad y
+    deshabilitado por defecto. \\
+  \bottomrule
+\end{tabularx}
+\end{center}
+
+\section{Errores}
+
+Todo error 4xx/5xx lleva un cuerpo
+\cmd{\{"error": \{"code", "message", "retryable"\}\}}.
+
+\begin{center}\small
+\begin{tabular}{@{}l l l@{}}
+  \toprule
+  \textbf{HTTP} & \textbf{Código} & \textbf{Cuándo} \\
+  \midrule
+  400 & \cmd{bad\_request} & parámetro inválido o cuerpo que no es MPEG-2 \\
+  401 & \cmd{unauthorized} & token ausente o incorrecto \\
+  404 & \cmd{not\_found} & ruta desconocida \\
+  409 & \cmd{busy} & ya hay un decode en curso \\
+  429 & \cmd{too\_many\_attempts} & demasiados tokens incorrectos seguidos \\
+  503 & \cmd{decoder\_unavailable} & el hardware no responde \\
+  \bottomrule
+\end{tabular}
+\end{center}
+
+Los errores que ocurren después de enviado el \cmd{200} se informan en el
+registro final del flujo binario.
+
+\section{Flujo binario de imágenes}
+
+Enteros \emph{little-endian}. El flujo es una sucesión de registros, cada uno
+con una cabecera común de 12 bytes. Para leer un registro: leer 12 bytes,
+leer los \cmd{header\_len - 12} bytes restantes de la cabecera (ignorando los
+campos desconocidos) y después \cmd{payload\_len} bytes.
+
+\begin{center}\small
+\begin{tabular}{@{}r l l l@{}}
+  \toprule
+  \textbf{Desplaz.} & \textbf{Tipo} & \textbf{Campo} & \textbf{Valor} \\
+  \midrule
+  0 & \cmd{char[4]} & \cmd{magic} & \cmd{"M2FR"} \\
+  4 & \cmd{u8}  & \cmd{type} & 1 = \cmd{FRAME}, 2 = \cmd{END}; otros se saltean \\
+  5 & \cmd{u8}  & \cmd{flags} & reservado, 0 \\
+  6 & \cmd{u16} & \cmd{header\_len} & largo total de la cabecera \\
+  8 & \cmd{u32} & \cmd{payload\_len} & bytes que siguen a la cabecera \\
+  \midrule
+  \multicolumn{4}{@{}l}{\emph{Registro \cmd{FRAME} (v1: \cmd{header\_len} = 32)}} \\
+  12 & \cmd{u32} & \cmd{display\_index} & orden de presentación, desde 0 \\
+  16 & \cmd{u32} & \cmd{decode\_index} & orden en el flujo \\
+  20 & \cmd{u16} & \cmd{width} & ancho en píxeles \\
+  22 & \cmd{u16} & \cmd{height} & alto en píxeles \\
+  24 & \cmd{u8}  & \cmd{picture\_type} & 1 = I, 2 = P, 3 = B \\
+  25 & \cmd{u8}  & \cmd{structure} & 0 = cuadro, 1 = par de campos \\
+  26--31 & & & reservado, 0 \\
+  \bottomrule
+\end{tabular}
+\end{center}
+
+La carga de un \cmd{FRAME} es la imagen en I420 compacto: el plano Y
+($\mathit{width} \times \mathit{height}$ bytes) seguido de Cb y Cr
+($\mathit{width}/2 \times \mathit{height}/2$ cada uno), sin relleno entre
+filas, con píxeles sin signo estándar.
+
+El registro \cmd{END} (\cmd{header\_len} = 12) es siempre el último. Su carga
+es un objeto JSON con el identificador del decode, bytes recibidos, imágenes
+enviadas e imágenes en el flujo, si el decode fue completo o abortado, los
+indicadores de error y \emph{watchdog} del decodificador, y la duración. Un
+flujo que termina sin \cmd{END} se considera fallido.
+
+\section{Seguridad}
+
+\begin{itemize}
+  \item \textbf{Token}: toda petición, salvo \cmd{/v1/health}, lleva
+    \cmd{Authorization: Bearer <token>}. El token es un secreto aleatorio de
+    256 bits generado en el primer arranque, legible solo por el servicio y
+    por el administrador de la placa, y se compara en tiempo constante.
+  \item \textbf{TLS}: opcional, con certificado autofirmado que el cliente
+    fija por su huella digital. Obligatorio fuera de una red de confianza.
+  \item \textbf{Defensas}: el servicio corre sin privilegios; hasta 8
+    conexiones simultáneas, cabeceras de hasta 16~KiB y 30~s de espera
+    máxima sin datos; después de 10 tokens incorrectos desde una misma
+    dirección, \cmd{429} durante 60~s. El contenido del video nunca se usa
+    como ruta, comando ni parámetro de sistema.
+\end{itemize}
+
+\begin{center}\small
+\begin{tabular}{@{}l r r@{}}
+  \toprule
+  \textbf{Modo} & \textbf{MB/s} & \textbf{Imágenes $704 \times 480$/s} \\
+  \midrule
+  HTTP sin cifrar           & 29,0 & $\sim$57 \\
+  TLS 1.2 ChaCha20-Poly1305 & 7,6  & $\sim$15 \\
+  TLS 1.2 AES-128-GCM       & 4,5  & $\sim$9 \\
+  \bottomrule
+\end{tabular}
+\end{center}
+
+El costo de TLS, medido en un núcleo U54 de la placa, explica por qué está
+apagado por defecto y por qué, cuando se activa, el servicio usa
+ChaCha20-Poly1305.
+
+\section{Ejemplo}
+
+\begin{lstlisting}[language=Python]
+from mpeg2fpga import Device
+
+dev = Device("192.168.18.5", token=open("token").read().strip())
+print(dev.info().versions.bitstream)          # p. ej. 0.1.0+8004bc9
+
+with open("clip.m2v", "rb") as f:
+    result = dev.decode(f)        # sube en paralelo; itera las imágenes
+    for frame in result:          # en orden de presentación
+        y, u, v = frame.y, frame.u, frame.v
+    print(result.summary.complete)
+\end{lstlisting}
