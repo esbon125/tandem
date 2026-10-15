@@ -1,17 +1,247 @@
 \chapter{Desarrollo de firmware}
-
 \label{cap:firmware}
+
+El hardware del capítulo anterior decodifica, pero por sí solo no es usable:
+alguien tiene que entregarle el video, saber cuándo hay una imagen lista y
+llevarla a quien la pidió. Este capítulo describe el software que lo hace,
+organizado en capas (figura~\ref{fig:capas-software}): Linux en el MSS, un
+driver de kernel que es el único dueño de los registros, un servicio que
+expone el decodificador por la red con un protocolo versionado, y una
+biblioteca para usarlo desde otra computadora.
+
+\begin{figure}[ht]
+  \centering
+  \begin{tikzpicture}[
+      c/.style={blk, minimum width=58mm, minimum height=9mm, font=\sffamily\footnotesize},
+      cn/.style={c, draw=m2amber, fill=m2amber!12},
+      ch/.style={c, draw=m2teal, fill=m2teal!8},
+      node distance=3mm]
+    \node[cn] (lib) {Biblioteca cliente (Python)};
+    \node[lbl, right=4mm of lib] {computadora del usuario};
+    \node[c, below=7mm of lib, draw=m2blue, fill=m2blue!8] (proto) {Protocolo de red v1 (HTTP)};
+    \node[cn, below=7mm of proto] (daemon) {Servicio \cmd{mpeg2fpgad}};
+    \node[cn, below=of daemon] (drv) {Driver \cmd{mpeg2fpga.ko}};
+    \node[c, below=of drv] (linux) {Linux · u-dma-buf · overlays};
+    \node[ch, below=7mm of linux] (hw) {Decodificador en el tejido FPGA};
+    \draw[arr, <->] (lib) -- (proto);
+    \draw[arr, <->] (proto) -- (daemon);
+    \draw[arr, <->] (linux) -- node[lbl, right=2mm] {registros, IRQ, DMA} (hw);
+    \node[fit=(daemon)(drv)(linux), draw=m2grey!60, dashed, rounded corners=4pt,
+      inner sep=3mm, label={[lbl]east:placa (MSS)}] {};
+  \end{tikzpicture}
+  \caption{Capas del software. En naranja, lo escrito en este proyecto.}
+  \label{fig:capas-software}
+\end{figure}
+
 \section{Linux en el MSS}
-\pendiente{Por qué Linux (ver sección~\ref{sec:redefinicion-alcance}):
-drivers, red y TLS disponibles; esfuerzo volcado al producto.}
+\label{sec:linux}
+
+\paragraph{Puesta en marcha}
+Las primeras fases del proyecto pusieron en marcha la placa por partes: una
+aplicación sin sistema operativo por la consola serie, después el arranque
+de Linux desde la tarjeta SD y por último la red. La cadena de arranque es la
+estándar de PolarFire SoC: el firmware del núcleo de monitoreo (HSS), OpenSBI,
+U-Boot y el kernel. Se usó la imagen de Linux precompilada que publica
+Microchip, sin necesidad de compilar una distribución propia, y el árbol de
+fuentes exacto de ese kernel para compilar el driver.
+
+\paragraph{Por qué Linux}
+La decisión y su justificación están en la sección~\ref{sec:redef-so}. En
+la práctica, Linux aportó sin esfuerzo adicional la pila de red, TLS,
+Python, el sistema de arranque de servicios y, sobre todo, un entorno donde
+el driver se pudo desarrollar con pruebas unitarias desde el primer día.
+
+\paragraph{Describir el hardware propio}
+El kernel no sabe que en el tejido hay un decodificador. Se lo describen dos
+\emph{overlays} de árbol de dispositivos, que agregan el periférico con su
+dirección y su interrupción al arrancar: uno para el driver propio y otro,
+alternativo, que lo expone por UIO para acceso directo desde espacio de
+usuario, útil durante la depuración. Una unidad de \emph{systemd} los aplica
+al arrancar y verifica que el dispositivo efectivamente apareció.
+
+\paragraph{Memoria compartida con el hardware}
+El DMA y el puente de memoria necesitan regiones de memoria física contigua
+que el software también pueda leer y escribir. Las provee u-dma-buf, un
+módulo de kernel libre que reserva esas regiones al arrancar y las expone
+como archivos de dispositivo. Ahí viven el área de \emph{staging} del flujo
+y la memoria de cuadros. Este es el lugar donde ocurrió el problema de
+solapamiento de memoria descripto en la sección~\ref{sec:problemas}: las
+regiones que parecían independientes eran la misma.
+
 \section{Driver de kernel}
-\pendiente{Mapa de registros, sysfs, dispositivo misc y eventos, overlays,
-KUnit.}
-\section{Daemon y protocolo v1}
-\pendiente{Contrato de red, seguridad (token, TLS opcional), streaming con
-control de flujo.}
-\section{Biblioteca cliente en Python}
-\pendiente{}
-\section{Demostración en vivo}
-\pendiente{Relay público, transporte H.264/MediaSource, capturas de
-figuras/demo\_web.}
+\label{sec:driver}
+
+El driver \cmd{mpeg2fpga.ko} es el único componente que toca los registros
+del decodificador. Ese fue un objetivo explícito: en las primeras versiones,
+los scripts de prueba escribían registros directamente, y el conocimiento del
+mapa de registros se copiaba de un script a otro.
+
+\paragraph{Estructura}
+El driver está dividido en dos partes. El \emph{núcleo lógico}
+(\cmd{mpeg2fpga\_core.c}) contiene todo lo que no depende del hardware:
+la interpretación de los registros, la validación de parámetros, las
+secuencias de inicialización. Recibe el acceso a registros como funciones
+inyectadas, de modo que en las pruebas se le pasa un banco de registros
+simulado. La parte de \emph{plataforma} (\cmd{mpeg2fpga\_platform.c}) une ese
+núcleo con el kernel real: el mapeo de la memoria del periférico, la
+interrupción, las interfaces hacia el espacio de usuario.
+
+\paragraph{Interfaces}
+El driver ofrece dos. Por \emph{sysfs}, un archivo por cada parámetro
+legible o configurable: habilitación, estado, geometría de la imagen,
+versión del bitstream, contadores de depuración. Y un dispositivo de
+caracteres, \cmd{/dev/mpeg2fpga}, del que el servicio lee un registro de
+evento por cada interrupción de imagen, con el número de buffer de la
+memoria de cuadros que la contiene y un contador de 16 bits que delata
+cualquier evento perdido. El mismo dispositivo inicia las transferencias
+del DMA por bloques, y rechaza los bloques que no empiezan alineados a 8
+bytes.
+
+\paragraph{Pruebas}
+El núcleo lógico tiene 25 casos de prueba en KUnit, que corren sobre un
+kernel compilado en modo usuario, sin placa, en segundos. Como se describió
+en la sección~\ref{sec:capa-barata}, cuando el driver llegó al hardware no
+hubo que depurar su lógica: el único problema fue de compatibilidad binaria
+con el kernel de la placa.
+
+\section{Servicio y protocolo de red}
+\label{sec:daemon}
+
+\subsection{El servicio \cmd{mpeg2fpgad}}
+
+El servicio corre en la placa y es la única puerta de entrada al
+decodificador desde la red. Está escrito en Python usando solo la biblioteca
+estándar, porque la imagen de la placa no trae bibliotecas numéricas, y
+habla con el hardware exclusivamente a través del driver.
+
+Su trabajo central es mover datos en dos sentidos sin perder nada y sin
+que la memoria crezca con el largo del video:
+
+\begin{itemize}
+  \item \textbf{Entrada}: el flujo llega por la red y se escribe en un
+    \emph{buffer} circular de dos mitades dentro del área de
+    \emph{staging}: el DMA vacía una mitad mientras el servicio llena la
+    otra. Si el decodificador es más lento que la red, el servicio deja de
+    leer del socket y el control de flujo de TCP frena al cliente.
+  \item \textbf{Salida}: cada interrupción de imagen dispara la lectura de
+    esa imagen de la memoria de cuadros, su conversión a formato I420 y su
+    envío. Si el cliente lee más lento de lo que el decodificador produce,
+    el servicio pausa el decodificador con el mecanismo de pausa propio del
+    núcleo, hasta que la cola de salida baje.
+\end{itemize}
+
+La conversión de cada imagen al formato de salida resultó ser un cuello de
+botella: en Python puro costaba unos 24~ms por imagen de $704 \times 480$ y
+bloqueaba los demás hilos del servicio. Se reescribió en una función en C,
+compilada sin biblioteca estándar para no depender de nada en la placa, que
+se carga desde Python y libera el intérprete mientras trabaja.
+
+\subsection{El protocolo v1}
+
+El protocolo es el contrato del producto con sus usuarios
+(capítulo~\ref{cap:producto}); su especificación completa está en el
+anexo~\ref{anx:protocolo}. Las decisiones principales fueron:
+
+\begin{itemize}
+  \item \textbf{HTTP/1.1 sobre TCP}, con mensajes de control en JSON. Se
+    descartaron WebSocket, gRPC y un protocolo propio: HTTP se implementa con
+    la biblioteca estándar, se prueba con \cmd{curl} y tiene clientes en
+    cualquier lenguaje.
+  \item \textbf{Un decode es una sola petición}: el video sube en el cuerpo
+    de la petición y las imágenes bajan en el cuerpo de la respuesta,
+    simultáneamente, como un flujo binario de registros. Cada registro lleva
+    su propio largo de cabecera, de modo que se le pueden agregar campos sin
+    romper clientes anteriores.
+  \item \textbf{Versionado aditivo}: todas las rutas llevan el prefijo
+    \cmd{/v1}, y dentro de v1 solo se agregan cosas. Un cambio incompatible
+    sería \cmd{/v2}, servido en paralelo.
+  \item \textbf{Seguridad}: un token de acceso obligatorio, TLS opcional y
+    defensas básicas, como el bloqueo temporal tras varios intentos fallidos.
+    TLS no se activa por defecto porque se midió su costo en la placa:
+    reduce la tasa de entrega a unas 15 imágenes por segundo en
+    $704 \times 480$. Es obligatorio fuera de una red de confianza.
+\end{itemize}
+
+\begin{table}[ht]
+  \centering\small
+  \begin{tabularx}{\linewidth}{@{}l X@{}}
+    \toprule
+    \textbf{Ruta} & \textbf{Función} \\
+    \midrule
+    \cmd{GET /v1/health}  & El servicio está vivo (sin token). \\
+    \cmd{GET /v1/device}  & Versiones de bitstream, driver y servicio; capacidades. \\
+    \cmd{GET /v1/status}  & Estado del decodificador y del decode en curso. \\
+    \cmd{POST /v1/decode} & Sube un video y recibe sus imágenes decodificadas. \\
+    \cmd{POST /v1/reset}  & Reinicia el decodificador. \\
+    \bottomrule
+  \end{tabularx}
+  \caption{Rutas del protocolo v1.}
+  \label{tab:protocolo-rutas}
+\end{table}
+
+\paragraph{Pruebas}
+El servicio se prueba contra una placa simulada en Python que imita el
+driver y la memoria de cuadros, lo que permite verificar el protocolo, el
+control de flujo y los casos de error sin hardware. La verificación en la
+placa es la prueba de punta a punta del proceso de liberación
+(sección~\ref{sec:distribucion}): cada imagen recibida a través del servicio
+y la biblioteca debe ser idéntica byte a byte a la línea de base.
+
+\section{Biblioteca cliente}
+\label{sec:biblioteca}
+
+La biblioteca \cmd{mpeg2fpga} para Python encapsula el protocolo. Tampoco
+tiene dependencias: usa NumPy solo si está instalado, para entregar las
+imágenes como matrices. Resuelve por dentro el único detalle delicado del
+protocolo, que es enviar y recibir en paralelo: un cliente que primero sube
+todo el video y después lee se bloquearía, porque el servicio deja de leer
+cuando su salida se llena. Se publica como paquete instalable con
+\cmd{pip} en cada versión del producto y tiene sus propias pruebas contra un
+dispositivo simulado.
+
+\section{Demostración pública}
+\label{sec:demo}
+
+Para mostrar el sistema funcionando a cualquiera, sin acceso a la placa, se
+armó una página web pública con dos partes. La primera presenta un resultado
+grabado y verificado. La segunda es una demostración en vivo: el visitante
+elige un clip o sube su propio video, que se decodifica en ese momento en la
+FPGA (figura~\ref{fig:demo-vivo}).
+
+\begin{figure}[ht]
+  \centering
+  \begin{subfigure}{0.49\linewidth}
+    \includegraphics[width=\linewidth]{demo_reproduciendo}
+    \caption{Reproducción mientras siguen llegando cuadros.}
+  \end{subfigure}\hfill
+  \begin{subfigure}{0.49\linewidth}
+    \includegraphics[width=\linewidth]{demo_buffer_red_lenta}
+    \caption{Red lenta: la placa sigue a 2,05$\times$.}
+  \end{subfigure}
+  \caption{Demostración en vivo. Contenido: \emph{Tears of Steel}
+    \citep{Blender_2012_tears}.}
+  \label{fig:demo-vivo}
+\end{figure}
+
+La página está alojada como sitio estático. Las peticiones en vivo llegan, por
+un túnel público, a un intermediario (\emph{relay}) que corre en la
+computadora conectada a la placa. El \emph{relay} normaliza el video subido al
+régimen medido ($352 \times 288$, hasta 24 imágenes por segundo, 20
+segundos), lo envía a la placa con la biblioteca cliente, compara cada imagen
+contra un decodificador de referencia y reenvía el resultado al navegador.
+
+La primera versión mostró un problema conceptual que vale registrar. Un
+visitante con una conexión lenta veía la demostración por debajo del tiempo
+real, y la página atribuía esa lentitud a la FPGA. En realidad, el control de
+flujo del protocolo frenaba el decodificador al ritmo de la red del visitante.
+Se corrigieron dos cosas. El \emph{relay} ahora vacía la placa a máxima
+velocidad, independientemente del visitante, y la página muestra por
+separado la tasa de la placa y la de llegada. Además, las imágenes viajan al
+navegador recomprimidas en H.264, que necesita entre 0,5 y 0,9~Mbit/s
+contra unos 4~Mbit/s en JPEG. Las métricas de calidad se calculan sobre la
+salida cruda del decodificador, antes de esa recompresión.
+
+Con esos cambios, desde una red externa a la de la placa, la decodificación
+corre a unas 2,1 veces el tiempo real y las imágenes llegan al navegador a
+unas 2,06 veces, sin cortes. Los resultados se analizan en el
+capítulo~\ref{cap:resultados}.
