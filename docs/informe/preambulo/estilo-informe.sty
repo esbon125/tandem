@@ -14,6 +14,7 @@
 \setmonofont{lmmono10}[Extension=.otf, UprightFont=*-regular, Scale=1.02]
 \RequirePackage[english, spanish, es-noshorthands, es-tabla]{babel}
 \RequirePackage{microtype}
+\addto\captionsspanish{\renewcommand{\appendixname}{Anexo}}
 \RequirePackage{csquotes}
 
 % ---- página ----------------------------------------------------------------------
@@ -34,18 +35,19 @@
 \setlist{itemsep=2pt, topsep=4pt}
 \setlength{\parskip}{5pt}
 \setlength{\parindent}{0pt}
+\setlength{\emergencystretch}{2em}
 \renewcommand{\arraystretch}{1.15}
 
 % ---- títulos -----------------------------------------------------------------------
 \RequirePackage{titlesec}
 \titleformat{\chapter}[display]
-  {\sffamily\color{m2navy}}
+  {\sffamily\color{m2navy}\raggedright}
   {\large\scshape\color{m2teal}\chaptertitlename~\thechapter}
   {2pt}
   {\bfseries\Huge}
   [\vspace{4pt}{\color{m2amber}\titlerule[1.4pt]}]
 \titleformat{name=\chapter, numberless}[display]
-  {\sffamily\color{m2navy}}{}{0pt}{\bfseries\Huge}
+  {\sffamily\color{m2navy}\raggedright}{}{0pt}{\bfseries\Huge}
   [\vspace{4pt}{\color{m2amber}\titlerule[1.4pt]}]
 \titlespacing*{\chapter}{0pt}{-8mm}{10mm}
 \titleformat{\section}{\sffamily\Large\bfseries\color{m2blue}}{\thesection}{0.8em}{}

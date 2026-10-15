@@ -88,7 +88,7 @@ flujo de video entra al núcleo por un motor de DMA implementado en hardware.
 El procesador configura registros, entrega bloques de datos a ese DMA, atiende
 una interrupción por imagen decodificada y transporta los resultados a la red.
 Ninguna de esas tareas tiene un plazo duro del orden de microsegundos: los
-búferes absorben la variación de latencia del sistema operativo. Con esa
+buffers absorben la variación de latencia del sistema operativo. Con esa
 división del trabajo, lo que el procesador sí necesita es lo que Linux ya
 ofrece maduro y probado: controladores de tarjeta SD y Ethernet, pila TCP/IP,
 TLS, un intérprete de Python, un marco de pruebas unitarias para el kernel
@@ -201,6 +201,6 @@ capítulo~\ref{cap:producto}.
 
 \paragraph{Limitaciones conocidas}
 La versión actual decodifica de forma incorrecta los flujos que cargan
-matrices de cuantización propias en la cabecera de secuencia: 11 de los 38
+matrices de cuantización propias en la cabecera de secuencia: 11 de los 39
 flujos de conformidad usados.
 \pendiente{Actualizar si se corrige antes de la entrega.}

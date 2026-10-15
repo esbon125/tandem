@@ -166,8 +166,8 @@ base de la región reservada para el decodificador.
 
 \subsection{DMA del flujo}
 
-La primera versión entregaba el flujo al núcleo de a una palabra por
-escritura APB desde el software, lo que resultó lento. El motor
+La primera versión entregaba el flujo al núcleo de a un byte por escritura
+APB desde el software, lo que resultó lento. El motor
 \cmd{stream\_dma.v} lo reemplazó: el software indica dirección y longitud, y
 el DMA lee la región de \emph{staging} con ráfagas AXI4 de 16 transferencias
 (128 bytes) y alimenta la entrada del núcleo respetando su control de flujo.
@@ -192,7 +192,7 @@ el script de síntesis lo actualiza automáticamente.
 \label{sec:verificacion-rtl}
 
 Cada bloque nuevo tiene su banco de prueba en Icarus Verilog, escrito antes
-que el bloque: el puente APB contra un banco de registros simulado; el puente
+que el bloque o junto con él: el puente APB contra un banco de registros simulado; el puente
 de memoria contra un modelo de esclavo AXI que reordena y demora las
 respuestas; el DMA contra un modelo de memoria; y la ruta de respuestas de
 memoria con el COREFIFO real. La IDCT original se verificó contra las seis

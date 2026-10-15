@@ -14,7 +14,7 @@ especificación completa es el archivo \cmd{api/PROTOCOL-v1.md} de la rama
   \item Todas las rutas llevan el prefijo \cmd{/v1}. Dentro de v1 solo hay
     cambios aditivos: campos JSON, rutas y tipos de registro nuevos. Un
     cliente v1 ignora lo que no conoce. Un cambio incompatible es \cmd{/v2}.
-  \item Hay un solo decodificador: una segunda petición de decode mientras
+  \item Hay un solo decodificador: una segunda petición de decodificación mientras
     otra está en curso recibe \cmd{409} con \cmd{Retry-After}.
 \end{itemize}
 
@@ -32,7 +32,7 @@ especificación completa es el archivo \cmd{api/PROTOCOL-v1.md} de la rama
     \cmd{mpeg2-video-es}, salida \cmd{i420}, 4:2:0); límites (largo sin
     límite, hasta $1920 \times 1088$); estado de TLS. \\
   \cmd{GET /v1/status} & Estado (\cmd{idle}, \cmd{decoding}, \cmd{error}),
-    decode en curso, última cabecera de secuencia e indicadores del
+    decodificación en curso, última cabecera de secuencia e indicadores del
     decodificador. \\
   \cmd{POST /v1/decode} & Cuerpo: el flujo elemental, con
     \cmd{Content-Length} o \emph{chunked}. Parámetros opcionales:
@@ -61,7 +61,7 @@ Todo error 4xx/5xx lleva un cuerpo
   400 & \cmd{bad\_request} & parámetro inválido o cuerpo que no es MPEG-2 \\
   401 & \cmd{unauthorized} & token ausente o incorrecto \\
   404 & \cmd{not\_found} & ruta desconocida \\
-  409 & \cmd{busy} & ya hay un decode en curso \\
+  409 & \cmd{busy} & ya hay una decodificación en curso \\
   429 & \cmd{too\_many\_attempts} & demasiados tokens incorrectos seguidos \\
   503 & \cmd{decoder\_unavailable} & el hardware no responde \\
   \bottomrule
@@ -107,8 +107,8 @@ La carga de un \cmd{FRAME} es la imagen en I420 compacto: el plano Y
 filas, con píxeles sin signo estándar.
 
 El registro \cmd{END} (\cmd{header\_len} = 12) es siempre el último. Su carga
-es un objeto JSON con el identificador del decode, bytes recibidos, imágenes
-enviadas e imágenes en el flujo, si el decode fue completo o abortado, los
+es un objeto JSON con el identificador de la decodificación, bytes recibidos, imágenes
+enviadas e imágenes en el flujo, si la decodificación fue completa o abortada, los
 indicadores de error y \emph{watchdog} del decodificador, y la duración. Un
 flujo que termina sin \cmd{END} se considera fallido.
 

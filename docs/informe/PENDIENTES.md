@@ -26,5 +26,5 @@ Lista viva: se actualiza cada vez que se cierra o aparece algo. Las marcas
 
 - [x] Siglas y convenciones
 - [x] Sin referencias a plazos/cronograma del Anteproyecto (recomendación del tutor)
-- [ ] Revisión general de redacción y consistencia
+- [x] Revisión general de redacción y consistencia (2026-10-15)
 - [x] Licencias de terceros del anexo F (revisadas por el autor)

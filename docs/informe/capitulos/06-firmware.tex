@@ -147,7 +147,7 @@ anexo~\ref{anx:protocolo}. Las decisiones principales fueron:
     descartaron WebSocket, gRPC y un protocolo propio: HTTP se implementa con
     la biblioteca estándar, se prueba con \cmd{curl} y tiene clientes en
     cualquier lenguaje.
-  \item \textbf{Un decode es una sola petición}: el video sube en el cuerpo
+  \item \textbf{Cada decodificación es una sola petición}: el video sube en el cuerpo
     de la petición y las imágenes bajan en el cuerpo de la respuesta,
     simultáneamente, como un flujo binario de registros. Cada registro lleva
     su propio largo de cabecera, de modo que se le pueden agregar campos sin
@@ -170,7 +170,7 @@ anexo~\ref{anx:protocolo}. Las decisiones principales fueron:
     \midrule
     \cmd{GET /v1/health}  & El servicio está vivo (sin token). \\
     \cmd{GET /v1/device}  & Versiones de bitstream, driver y servicio; capacidades. \\
-    \cmd{GET /v1/status}  & Estado del decodificador y del decode en curso. \\
+    \cmd{GET /v1/status}  & Estado del decodificador y de la decodificación en curso. \\
     \cmd{POST /v1/decode} & Sube un video y recibe sus imágenes decodificadas. \\
     \cmd{POST /v1/reset}  & Reinicia el decodificador. \\
     \bottomrule
