@@ -44,7 +44,7 @@ completo, con cuatro capas que se distribuyen por caminos distintos
       node distance=4mm and 3mm]
     % FPGA
     \node[perm] (core) {Núcleo mpeg2fpga\\BSD};
-    \node[tbd, right=of core] (integ) {Integración propia\\a definir};
+    \node[copy, right=of core] (integ) {Integración propia\\CERN-OHL-S-2.0};
     \node[perm, right=of integ] (ref) {Diseño de referencia\\MIT};
     \node[prop, below=of integ] (ip) {IP generada por Libero\\licencia Microchip};
     \node[capa, left=6mm of core] {Bitstream};
@@ -65,8 +65,7 @@ completo, con cuatro capas que se distribuyen por caminos distintos
     \node[below=7mm of ip, font=\sffamily\scriptsize, color=m2grey, align=center] {%
       \textcolor{m2teal}{\rule{2.5mm}{2.5mm}} permisiva\quad
       \textcolor{m2amber}{\rule{2.5mm}{2.5mm}} copyleft\quad
-      \textcolor{m2grey}{\rule{2.5mm}{2.5mm}} propietaria\quad
-      \textcolor{m2red}{\rule{2.5mm}{2.5mm}} sin licencia declarada};
+      \textcolor{m2grey}{\rule{2.5mm}{2.5mm}} propietaria};
   \end{tikzpicture}
   \caption{Capas del producto y licencia de cada componente.}
   \label{fig:capas-producto}
@@ -83,8 +82,9 @@ completo, con cuatro capas que se distribuyen por caminos distintos
     \midrule
     Núcleo mpeg2fpga & BSD & Se puede modificar y distribuir, también
       en forma cerrada, conservando el aviso de autoría. \\
-    Lógica de integración propia & a definir & Hoy sin licencia
-      declarada; ver sección~\ref{sec:licencia-pendiente}. \\
+    Lógica de integración propia & CERN-OHL-S-2.0 & Recíproca: un
+      producto derivado debe publicar su fuente completa; ver
+      sección~\ref{sec:licencia-propia}. \\
     Diseño de referencia de la placa & MIT & Permisiva; base del proyecto
       Libero. \\
     IP generada por Libero (CCC, MSS, FIC) & Microchip & Uso ligado a
@@ -137,8 +137,12 @@ dispositivo y \emph{sysfs}), no enlazándose con él.
 
 La síntesis, la ubicación y el ruteo para PolarFire solo pueden hacerse con
 Libero SoC, la herramienta propietaria de Microchip, que requiere una
-licencia. \pendiente{Indicar qué licencia de Libero se usó (Silver gratuita,
-evaluación, académica) y sus condiciones \citep{Microchip_licensing}.} Esto
+licencia. Se usó la licencia Silver, que Microchip otorga sin costo, con
+duración limitada y renovable, y que cubre los dispositivos de menor
+capacidad de cada familia, entre ellos el MPFS095T de la Discovery Kit
+\citep{Microchip_licensing}. El proyecto completo pudo hacerse, entonces, sin
+pagar licencias de software. La contracara es la dependencia: sin Libero no
+hay bitstream, y la licencia la renueva Microchip a su criterio. Esto
 tiene una consecuencia de diseño en el proceso de liberación: la síntesis no
 se repite en cada versión, sino que se hace una vez por cambio de RTL, y el
 bitstream resultante queda fijado por su suma de verificación
@@ -146,20 +150,40 @@ bitstream resultante queda fijado por su suma de verificación
 hasta la documentación, usa herramientas libres
 (sección~\ref{sec:herramientas}).
 
-\subsection{Una tarea pendiente: declarar la licencia del código propio}
-\label{sec:licencia-pendiente}
+\subsection{La licencia del hardware propio}
+\label{sec:licencia-propia}
 
-El análisis mostró un hueco que es, en sí, una lección. Los archivos del
-driver declaran su licencia con un identificador SPDX y la biblioteca la
-declara en su paquete, pero el repositorio no tiene un archivo de licencia en
-la raíz, y los módulos Verilog escritos para este proyecto
-(\cmd{stream\_dma.v}, \cmd{mem2axi\_bridge.v}, el puente APB, entre otros) no
-declaran ninguna. Un código público sin licencia no es libre: por defecto, el
-autor conserva todos los derechos y nadie más puede reutilizarlo legalmente.
-\pendiente{Elegir la licencia del RTL propio (BSD, para ser coherente con el
-núcleo, o una copyleft para hardware como CERN-OHL-S), agregar los archivos
-LICENSE y los encabezados SPDX, e incluir un aviso de terceros en cada
-versión.}
+El análisis de licencias mostró un hueco que es, en sí, una lección. Los
+archivos del driver declaraban su licencia con un identificador SPDX y la
+biblioteca la declaraba en su paquete, pero los módulos Verilog escritos para
+este proyecto (\cmd{stream\_dma.v}, \cmd{mem2axi\_bridge.v}, los puentes APB,
+\cmd{xfifo\_dc.v} y \cmd{build\_id.v}) no declaraban ninguna. Un código
+público sin licencia no es libre: por defecto el autor conserva todos los
+derechos, y nadie más puede reutilizarlo legalmente aunque pueda leerlo.
+
+Para esos módulos se eligió la licencia CERN-OHL-S, versión 2
+\citep{CERN_OHL_S_2020}, la variante \enquote{fuertemente recíproca} de la
+familia de licencias de hardware abierto del CERN. Es el equivalente de la GPL
+para descripciones de hardware: cualquiera puede estudiar, modificar y
+fabricar productos con estos módulos, pero quien distribuya un producto
+derivado debe publicar su fuente completa bajo la misma licencia. La elección
+es deliberada: el autor prefiere que el hardware se mantenga abierto, y que
+las mejoras que alguien le haga vuelvan a estar disponibles para todos.
+
+Con honestidad, no es probable que muchos reutilicen un puente AXI hecho a
+medida para un decodificador MPEG-2 cuyo diseño original es de 2007. Pero la
+licencia no se elige según cuántos la vayan a usar: declararla no cuesta
+nada, y no declararla deja el código en un limbo legal que ni siquiera el
+interesado más entusiasta podría resolver sin pedir permiso.
+
+La CERN-OHL-S convive sin conflicto con el resto del diseño. El núcleo BSD y
+la IP generada por Libero entran como \emph{componentes disponibles}, que la
+licencia permite incluir conservando sus propias licencias
+\citep[§1.7 y §4.1]{CERN_OHL_S_2020}. Cada archivo propio lleva ahora su
+encabezado SPDX y la ubicación de la fuente, y el archivo
+\cmd{rtl/LICENSES.md} asigna cada archivo del RTL a su autor y su licencia.
+\pendiente{Agregar un archivo de licencia en la raíz del repositorio para
+los componentes de software (MIT) y un aviso de terceros en cada versión.}
 
 \section{Patentes de MPEG-2}
 \label{sec:patentes}
