@@ -1,11 +1,23 @@
 \chapter{Análisis económico y de mercado}
+\label{cap:economico}
+
+El proyecto fue financiado íntegramente por el autor, sin auspiciantes ni
+aportes de la Universidad. Este capítulo resume lo que costó desarrollarlo y
+dónde podría ubicarse el resultado. El análisis es deliberadamente breve: la
+cifra más significativa no es un monto, sino que el costo de herramientas fue
+nulo.
 
 \section{Costo de materiales}
+
+El hardware se reduce a la placa de desarrollo y a una caja para protegerla
+durante el trabajo (tabla~\ref{tab:costo-materiales}). No se fabricó ninguna
+placa propia.
+
 \begin{table}[ht]
   \centering
   \begin{tabular}{lr}
     \toprule
-    Ítem & Costo (USD) \\
+    \textbf{Ítem} & \textbf{Costo (USD)} \\
     \midrule
     PolarFire SoC Discovery Kit & 128 \\
     Caja estanca de protección & 5 \\
@@ -16,11 +28,60 @@
   \caption{Costo de materiales del prototipo.}
   \label{tab:costo-materiales}
 \end{table}
-\section{Costo de ingeniería}
-\pendiente{Estimación: unas 2 horas por día hábil durante un año (del orden
-de 490 horas). Falta definir el valor hora de referencia.}
+
 \section{Costo de herramientas y licencias}
-\pendiente{Herramientas libres (costo cero) frente a licencias de Libero
-SoC.}
+
+Cero. Todas las herramientas libres del capítulo~\ref{cap:metodologia} son
+gratuitas, y la única herramienta imprescindible sin alternativa libre,
+Libero SoC, se usó con la licencia Silver, que Microchip otorga sin costo
+para los dispositivos de menor capacidad (sección~\ref{sec:licencias}). Los
+servicios de alojamiento del repositorio, de las versiones y de la
+demostración pública también se usaron en sus modalidades gratuitas.
+
+Este resultado no es un detalle: es lo que hace reproducible el proyecto.
+Cualquier estudiante con una placa de USD 128 puede repetir el desarrollo
+completo, desde la simulación hasta la liberación de una versión, sin pagar
+una sola licencia. Un producto comercial que requiriera un dispositivo más
+grande sí necesitaría una licencia paga de Libero.
+
+\section{Esfuerzo de ingeniería}
+
+El esfuerzo se estima en unas dos horas por día hábil durante un año, es
+decir, del orden de \textbf{490 horas} de trabajo, a cargo de una sola
+persona.
+
 \section{Análisis de mercado}
-\pendiente{Usos posibles, competidores, posicionamiento.}
+
+\paragraph{El contexto}
+MPEG-2 es un estándar maduro. Los códecs posteriores lo superan en
+eficiencia de compresión, y cualquier procesador moderno lo decodifica por
+software sin esfuerzo. Pero sigue presente en la televisión digital de
+varios países, en el DVD, en equipos de difusión y en grandes archivos de
+video. Y, desde el vencimiento de sus patentes en 2018
+(sección~\ref{sec:patentes}), es el único códec de video de uso masivo que
+puede implementarse en hardware sin pagar regalías en casi todo el mundo.
+
+\paragraph{Dónde tiene sentido este producto}
+No compite con los decodificadores integrados en circuitos de consumo, que
+cuestan centavos a escala, ni con la decodificación por software. Su lugar
+está en tres nichos:
+
+\begin{itemize}
+  \item \textbf{Formación}: una plataforma abierta, documentada y verificada
+    para enseñar decodificación de video en hardware, integración de un núcleo
+    de propiedad intelectual con un procesador y el ciclo completo de un
+    producto. Es el uso más natural, y el que motivó el proyecto.
+  \item \textbf{Sistemas embebidos con FPGA}: equipos que ya tienen una FPGA
+    y necesitan decodificar MPEG-2 con consumo bajo y comportamiento
+    determinista, sin agregar un procesador dedicado al video.
+  \item \textbf{Base para otros desarrollos}: un diseño de referencia libre
+    sobre el que portar el núcleo a otras FPGA o extenderlo, con un proceso
+    de verificación y de liberación ya resuelto.
+\end{itemize}
+
+\paragraph{Modelo}
+Las licencias elegidas definen el modelo: el producto es abierto, y su valor
+está en el diseño verificado, la documentación y el proceso, no en el
+secreto. La licencia recíproca del hardware propio
+(sección~\ref{sec:licencia-propia}) asegura que ese valor siga disponible
+para quien lo reutilice.
