@@ -6,7 +6,7 @@ archivo.
 
 | Componente | Dónde | Autor | Licencia |
 |---|---|---|---|
-| Servicio `mpeg2fpgad`, biblioteca Python, conversor nativo, demostración, herramientas, proceso de release, user guide | `daemon/`, `api/`, `demo/`, `tools/`, `webserver/`, `release/`, `user-guide/` | Esteban Bustamante | MIT (`LICENSE`) |
+| Servicio `mpeg2fpgad`, biblioteca Python, conversor nativo, demostración, herramientas, proceso de release, user guide | `daemon/`, `api/`, `demo/`, `tools/`, `webserver/`, `release/`, `user-guide/`, `doxygen/` | Esteban Bustamante | MIT (`LICENSE`) |
 | Driver de kernel `mpeg2fpga.ko` | `driver/` | Esteban Bustamante | GPL-2.0 (`SPDX-License-Identifier` en cada fuente) |
 | Módulos RTL propios (integración con PolarFire SoC) | `trunk/mpeg2fpga/rtl/` | Esteban Bustamante | CERN-OHL-S-2.0 (`trunk/mpeg2fpga/rtl/LICENSES.md`) |
 | Núcleo decodificador mpeg2fpga | `trunk/mpeg2fpga/` | Koen De Vleeschauwer | BSD (avisos originales en cada archivo) |

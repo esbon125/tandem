@@ -9,6 +9,8 @@
 !daemon/**
 !demo
 !demo/**
+!doxygen
+!doxygen/**
 !user-guide
 !user-guide/**
 !release

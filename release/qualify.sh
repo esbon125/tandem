@@ -155,6 +155,9 @@ make -s -C "$FW/user-guide" VERSION="$VERSION" > "$WORK/guide.log" 2>&1 \
     || { tail -30 "$WORK/guide.log"; exit 1; }
 cp "$FW/user-guide/build/mpeg2fpga-user-guide.pdf" "$DIST/mpeg2fpga-user-guide-$VERSION.pdf"
 cp "$FW/user-guide/build/mpeg2fpga-user-guide-en.pdf" "$DIST/mpeg2fpga-user-guide-$VERSION-en.pdf"
+{ make -s -C "$FW/doxygen" clean && make -s -C "$FW/doxygen" tarball VERSION="$VERSION"; } > "$WORK/refman.log" 2>&1 \
+    || { tail -30 "$WORK/refman.log"; exit 1; }
+cp "$FW/doxygen/build/mpeg2fpga-reference-manual-$VERSION.tar.gz" "$DIST/"
 cp "$BIT_JOB" "$DIST/mpeg2fpga-bitstream-$BIT_BUILD.job"
 cp "$FW/api/PROTOCOL-v1.md" "$DIST/"
 cp "$FW/LICENSE" "$FW/LICENSES.md" "$FW/THIRD_PARTY_NOTICES.md" "$DIST/"
@@ -207,6 +210,7 @@ to the recorded baseline and the median at or above {floor} fps.
 - `mpeg2fpga-board-{version}.tar.gz` -- driver and daemon, see its INSTALL
 - `mpeg2fpga-{version}-py3-none-any.whl` -- Python client (`pip install`)
 - `mpeg2fpga-user-guide-{version}.pdf` (Spanish), `mpeg2fpga-user-guide-{version}-en.pdf` (English)
+- `mpeg2fpga-reference-manual-{version}.tar.gz` -- Reference Manual (HTML, open index.html)
 - `PROTOCOL-v1.md` -- network protocol
 - `LICENSE`, `LICENSES.md`, `THIRD_PARTY_NOTICES.md` -- licences of each file and
   where its source is
