@@ -18,7 +18,7 @@ Lista viva: se actualiza cada vez que se cierra o aparece algo. Las marcas
 - [ ] Firma de actualizaciones con GPG (el autor genera la clave) — cap. 7, distribución
 - [ ] Bug de carga de matrices de cuantización — cap. 2 "Limitaciones conocidas" y cap. 10
 - [ ] Los 3 flujos "sin escritura" (mei-16-long, mei-16v2, tcela-15) — cap. 10
-- [ ] Nota de aplicación y documentación Doxygen — caps. 1 y 7 (tabla de entregables)
+- [ ] Manual de Referencia (Doxygen; reemplaza a la nota de aplicación) — firmware_development `doxygen/`; sumarlo a la release — caps. 1, 7 y 11
 - [ ] Release final: actualizar la versión citada — cap. 7; la tabla de
       entregables dice "próxima versión" para licencias y avisos de terceros
 - [x] Archivo de licencia en la raíz (`LICENSE` MIT, `LICENSES.md`,
