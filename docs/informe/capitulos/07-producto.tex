@@ -182,8 +182,19 @@ licencia permite incluir conservando sus propias licencias
 \citep[§1.7 y §4.1]{CERN_OHL_S_2020}. Cada archivo propio lleva ahora su
 encabezado SPDX y la ubicación de la fuente, y el archivo
 \cmd{rtl/LICENSES.md} asigna cada archivo del RTL a su autor y su licencia.
-\pendiente{Agregar un archivo de licencia en la raíz del repositorio para
-los componentes de software (MIT) y un aviso de terceros en cada versión.}
+
+El mismo hueco existía, en menor escala, en la raíz del repositorio: el
+software propio se declaraba MIT en un solo lugar, el paquete de la
+biblioteca, y no había ningún archivo de licencia que cubriera el resto. Se
+agregaron tres. \cmd{LICENSE} contiene el texto de la licencia MIT, que
+cubre todo lo que no indique otra. \cmd{LICENSES.md} es el mapa de licencias
+de todo el repositorio, el de la tabla~\ref{tab:licencias} en forma de
+archivo. \cmd{THIRD\_PARTY\_NOTICES.md} indica qué contiene cada archivo
+de una versión, bajo qué licencia y dónde está su fuente, y reproduce los
+avisos que las licencias BSD y MIT obligan a conservar. El proceso de
+liberación incluye esos archivos en cada versión y en el paquete que se
+instala en la placa, y la biblioteca de Python lleva el texto de su licencia
+dentro del paquete.
 
 \section{Patentes de MPEG-2}
 \label{sec:patentes}
@@ -311,6 +322,7 @@ la placa rechace un paquete que no provenga del fabricante.}
     Guía de usuario, en castellano e inglés & usuario & publicado \\
     Notas de versión e informe de regresión & integrador & publicado \\
     Sumas de verificación (\cmd{SHA256SUMS}) & todos & publicado \\
+    Licencias y avisos de terceros & todos & próxima versión \\
     Nota de aplicación técnica & integrador & \pendiente{} \\
     Documentación del código (Doxygen) & desarrollador & \pendiente{} \\
     Código fuente completo & todos & público \\
