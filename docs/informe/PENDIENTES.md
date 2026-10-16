@@ -8,7 +8,7 @@ Lista viva: se actualiza cada vez que se cierra o aparece algo. Las marcas
 
 - [x] Agradecimientos
 - [x] Mes de entrega: automático, siempre el mes en curso al compilar (`\fechaentrega` en `informe.tex`)
-- [ ] Portada de Scribus → exportar a PDF e integrar en `portada/portada.tex`
+- [x] Tapa de Scribus (`portada/tapa-scribus.pdf`, para imprenta; el informe usa solo el panel de la tapa, seguido de la portada interior del Anexo 5)
 - [ ] Texto oficial de la licencia del RIA (Ordenanza 1514), con firma (`portada/licencia-ria.tex`)
 
 ## Técnicos, antes de entregar

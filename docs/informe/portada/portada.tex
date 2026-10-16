@@ -1,6 +1,11 @@
-% Provisoria: se reemplaza por la portada hecha en Scribus, exportada a PDF:
-%   \includepdf[pages=1]{portada/portada.pdf}   (paquete pdfpages)
-% Contenido mínimo según el modelo del Anexo 5 del Reglamento.
+% Tapa diseñada en Scribus (tapa-scribus.pdf: contratapa, lomo y tapa en una
+% sola hoja para la encuadernación). Acá se usa solo la tapa: el panel
+% derecho, desde x = 596,5 pt, recortado 8 pt por lado para que mida lo mismo
+% que una A4 (595 pt) sin deformarse.
+\includepdf[pages=1, viewport=604.5 0 1199.5 841.89, clip]{portada/tapa-scribus.pdf}
+
+% Portada interior, con el contenido mínimo del modelo del Anexo 5 del
+% Reglamento (cátedra, docentes, tutor, fecha de examen) que la tapa no lleva.
 \begin{titlepage}
   \centering\sffamily
   {\color{m2grey} La Rioja, \fechaentrega\par}
