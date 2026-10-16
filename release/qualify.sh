@@ -157,6 +157,7 @@ cp "$FW/user-guide/build/mpeg2fpga-user-guide.pdf" "$DIST/mpeg2fpga-user-guide-$
 cp "$FW/user-guide/build/mpeg2fpga-user-guide-en.pdf" "$DIST/mpeg2fpga-user-guide-$VERSION-en.pdf"
 cp "$BIT_JOB" "$DIST/mpeg2fpga-bitstream-$BIT_BUILD.job"
 cp "$FW/api/PROTOCOL-v1.md" "$DIST/"
+cp "$FW/LICENSE" "$FW/LICENSES.md" "$FW/THIRD_PARTY_NOTICES.md" "$DIST/"
 
 B="$WORK/mpeg2fpga-board-$VERSION"
 mkdir -p "$B/driver" "$B/daemon"
@@ -164,7 +165,7 @@ cp -r "$FW/driver/mpeg2fpga/tools/." "$B/driver/"
 cp "$FW/driver/mpeg2fpga/mpeg2fpga.ko" "$B/driver/"
 cp -r "$FW/daemon/mpeg2fpgad" "$FW/daemon/systemd" "$FW/daemon/install-on-board.sh" "$B/daemon/"
 mkdir -p "$B/daemon/native/riscv64" && cp "$FW/daemon/native/riscv64/libm2fconv.so" "$B/daemon/native/riscv64/"
-cp "$FW/api/PROTOCOL-v1.md" "$B/"
+cp "$FW/api/PROTOCOL-v1.md" "$FW/LICENSE" "$FW/THIRD_PARTY_NOTICES.md" "$B/"
 find "$B" -name __pycache__ -prune -exec rm -rf {} +
 cat > "$B/INSTALL" <<EOF
 mpeg2fpga $VERSION -- board software (driver + mpeg2fpgad)
@@ -207,10 +208,12 @@ to the recorded baseline and the median at or above {floor} fps.
 - `mpeg2fpga-{version}-py3-none-any.whl` -- Python client (`pip install`)
 - `mpeg2fpga-user-guide-{version}.pdf` (Spanish), `mpeg2fpga-user-guide-{version}-en.pdf` (English)
 - `PROTOCOL-v1.md` -- network protocol
+- `LICENSE`, `LICENSES.md`, `THIRD_PARTY_NOTICES.md` -- licences of each file and
+  where its source is
 - `SHA256SUMS` -- check with `sha256sum -c SHA256SUMS`
 """
 open(os.path.join(dist, "release-notes.md"), "w").write(notes)
 EOF
-(cd "$DIST" && sha256sum -- *.whl *.tar.gz *.pdf *.job *.md e2e.json > SHA256SUMS)
+(cd "$DIST" && sha256sum -- *.whl *.tar.gz *.pdf *.job *.md LICENSE e2e.json > SHA256SUMS)
 step "release $VERSION qualified"
 ls -l "$DIST"

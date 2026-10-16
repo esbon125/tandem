@@ -1,5 +1,8 @@
 *
 # firmware_development additions first: master changes the end of this file
+!LICENSE
+!LICENSES.md
+!THIRD_PARTY_NOTICES.md
 !api
 !api/**
 !daemon
