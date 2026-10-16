@@ -10,10 +10,11 @@ set project_dir "$local_dir/$project_name"
 open_project -file $project_dir/$project_name.prjx
 
 # SmartPower takes its clock frequencies from the VERIFYTIMING constraint set
-# (power_analysis.sdc is built from it). build_mpeg2fpga_soc.tcl registers
-# only apb3_mpeg2fpga_bridge_cdc.sdc there, and organize_tool_files replaces
-# rather than appends, so the set carries no create_clock at all and every
-# fabric domain comes up at 0 MHz. Register the derived clocks too.
+# (power_analysis.sdc is built from it). Until 2026-10-16
+# build_mpeg2fpga_soc.tcl registered only apb3_mpeg2fpga_bridge_cdc.sdc there,
+# and organize_tool_files replaces rather than appends, so on a project built
+# before that every fabric domain came up at 0 MHz. Registering the derived
+# clocks here keeps such projects analysable.
 organize_tool_files \
     -tool {VERIFYTIMING} \
     -file "${project_dir}/constraint/MPFS_DISCOVERY_KIT_derived_constraints.sdc" \

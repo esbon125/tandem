@@ -26,3 +26,19 @@ set_false_path -from [ get_cells { FIC_3_PERIPHERALS_0/MPEG2FPGA_APB_PERIPHERAL_
 set_false_path -from [ get_cells { FIC_3_PERIPHERALS_0/MPEG2FPGA_APB_PERIPHERAL_0/u_bridge/apb_wdata_r* } ]
 set_false_path -from [ get_cells { FIC_3_PERIPHERALS_0/MPEG2FPGA_APB_PERIPHERAL_0/u_bridge/apb_write_r } ]
 set_false_path -from [ get_cells { FIC_3_PERIPHERALS_0/MPEG2FPGA_APB_PERIPHERAL_0/u_bridge/rdata_hold* } ]
+
+# 2026-10-16: PCLK (FIC_3, CLOCKS_AND_RESETS' CCC) and the decoder's three
+# clocks (u_mpeg2/u_ccc) come from two PLLs fed by the same 50 MHz reference,
+# so SmartTime derives a phase relationship between them and times every
+# crossing as a single-cycle path. There is none to time: every PCLK <->
+# decoder crossing is either a 2-FF synchronizer (req/ack toggles,
+# pwdata_sticky, the dbg_*_meta counters), a value held stable by that
+# handshake (the false paths above), or the reset, synchronized to core_clk
+# in mpeg2fpga_apb_peripheral.v. Without this, the first run with the real
+# clocks reported -3.5 ns of hold on ack_toggle -> ack_toggle_meta, i.e. the
+# synchronizer's own input. Paths inside each group are still timed.
+set_clock_groups -asynchronous \
+    -group [ get_clocks { CLOCKS_AND_RESETS_0/CCC_FIC_x_CLK/PF_CCC_C0_0/pll_inst_0/OUT3 } ] \
+    -group [ get_clocks { FIC_3_PERIPHERALS_0/MPEG2FPGA_APB_PERIPHERAL_0/u_mpeg2/u_ccc/PF_CCC_C0_0/pll_inst_0/OUT0 \
+                          FIC_3_PERIPHERALS_0/MPEG2FPGA_APB_PERIPHERAL_0/u_mpeg2/u_ccc/PF_CCC_C0_0/pll_inst_0/OUT1 \
+                          FIC_3_PERIPHERALS_0/MPEG2FPGA_APB_PERIPHERAL_0/u_mpeg2/u_ccc/PF_CCC_C0_0/pll_inst_0/OUT2 } ]
