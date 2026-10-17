@@ -1,10 +1,10 @@
 {
   "comment": "What a release is built and qualified against. Bump bitstream when a new one is synthesized (EXPORT_FPE its .job into $BITSTREAM_DIR/<dir>/).",
   "bitstream": {
-    "build": "0.1.0+8004bc9",
-    "dir": "8004bc9",
-    "job": "mpeg2fpga-0.1.0+8004bc9.job",
-    "sha256": "033b84240cc5b8f43784bacb264a2eaef02d92773bd8d6b8cf5a68e4a84f0537"
+    "build": "0.1.0+8a6d847",
+    "dir": "8a6d847",
+    "job": "mpeg2fpga-0.1.0+8a6d847.job",
+    "sha256": "2d6a63bbb1bc5c4c756e56bf3121f6b6ea92f2b6891267f481a731cd3465f2ee"
   },
   "board": {
     "kernel": "6.18.17-linux4microchip-2026.04.1-g7fbe4f69684d"
