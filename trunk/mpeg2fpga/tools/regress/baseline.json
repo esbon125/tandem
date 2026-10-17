@@ -6,7 +6,7 @@
    "exception": null,
    "height": 32,
    "pictures_sha1": "2f2fb9a4294fd6296cf82adcc2a76e996c1c17a1",
-   "settle_seconds": 0.52,
+   "settle_seconds": 0.521,
    "settled": true,
    "sha1": "c05aaa65378c0d103d4b4eebfdf8dcde46b903d5",
    "sticky": 14,
@@ -520,7 +520,7 @@
  },
  "ibm-bw": {
   "capture": {
-   "dma_seconds": 0.006,
+   "dma_seconds": 0.005,
    "error": false,
    "exception": null,
    "height": 480,
@@ -719,7 +719,7 @@
    "exception": null,
    "height": 240,
    "pictures_sha1": "da39a3ee5e6b4b0d3255bfef95601890afd80709",
-   "settle_seconds": 0.52,
+   "settle_seconds": 0.521,
    "settled": true,
    "sha1": "cda4d0228c175148d343e664813faf7675ae9538",
    "sticky": 14,
@@ -872,7 +872,7 @@
    "exception": null,
    "height": 576,
    "pictures_sha1": "4a4cc8f34b8ec57c3a78f9f49a53f13451dd1ba1",
-   "settle_seconds": 0.521,
+   "settle_seconds": 0.781,
    "settled": true,
    "sha1": "ac4cc77c8b365e28319cd76b3da29576280e19cb",
    "sticky": 14,
@@ -919,7 +919,7 @@
    "exception": null,
    "height": 576,
    "pictures_sha1": "d03cbf2e01a7717a2e83a131547dec4ba821eda6",
-   "settle_seconds": 0.781,
+   "settle_seconds": 1.041,
    "settled": true,
    "sha1": "b331a7abb7b99d62cdee4aa745b9f77cc7c135ed",
    "sticky": 14,
@@ -1173,7 +1173,7 @@
  },
  "sony-ct3": {
   "capture": {
-   "dma_seconds": 0.004,
+   "dma_seconds": 0.003,
    "error": false,
    "exception": null,
    "height": 480,
@@ -1231,7 +1231,7 @@
    "exception": null,
    "height": 576,
    "pictures_sha1": "b5b2d75693e0b0489abc0ab0dbcf8539df545293",
-   "settle_seconds": 0.781,
+   "settle_seconds": 1.041,
    "settled": true,
    "sha1": "ba4b8b65572808e9a6398d236cf4c4dba8158260",
    "sticky": 14,
@@ -1344,7 +1344,7 @@
  },
  "tcela-14": {
   "capture": {
-   "dma_seconds": 0.01,
+   "dma_seconds": 0.009,
    "error": false,
    "exception": null,
    "height": 480,
@@ -1442,7 +1442,7 @@
    "error": false,
    "exception": null,
    "height": 480,
-   "pictures_sha1": "da39a3ee5e6b4b0d3255bfef95601890afd80709",
+   "pictures_sha1": "1545b6e69edec266b05c27f306b1d8bc6875369a",
    "settle_seconds": 0.521,
    "settled": true,
    "sha1": "0b2d5482c842109985f130bd38b52934ea43be86",
@@ -1454,11 +1454,23 @@
   "scores": [
    {
     "buffer": 0,
-    "written": false
+    "mad": 0.0,
+    "mad_u": 0.0,
+    "mad_v": 0.0,
+    "peak": 0,
+    "psnr": null,
+    "ref": "frame_00_out_",
+    "written": true
    },
    {
     "buffer": 1,
-    "written": false
+    "mad": 0.0,
+    "mad_u": 0.0,
+    "mad_v": 0.0,
+    "peak": 0,
+    "psnr": null,
+    "ref": "frame_00_out_",
+    "written": true
    },
    {
     "buffer": 2,
@@ -1469,7 +1481,7 @@
     "written": false
    }
   ],
-  "verdict": "nothing-written"
+  "verdict": "bit-exact"
  },
  "tcela-17": {
   "capture": {
@@ -1732,7 +1744,7 @@
  },
  "tek-5-long": {
   "capture": {
-   "dma_seconds": 0.01,
+   "dma_seconds": 0.009,
    "error": false,
    "exception": null,
    "height": 480,
@@ -1791,7 +1803,7 @@
  },
  "tek-5.2": {
   "capture": {
-   "dma_seconds": 0.005,
+   "dma_seconds": 0.006,
    "error": false,
    "exception": null,
    "height": 480,
@@ -2020,7 +2032,7 @@
    "exception": null,
    "height": 480,
    "pictures_sha1": "bfd8c87b113339167ca2a02a7ebae931d0533e6d",
-   "settle_seconds": 0.52,
+   "settle_seconds": 0.521,
    "settled": true,
    "sha1": "9f8dcdf83c648b1f78b313127a32eceefca9911c",
    "sticky": 14,
