@@ -6,7 +6,7 @@
    "exception": null,
    "height": 32,
    "pictures_sha1": "2f2fb9a4294fd6296cf82adcc2a76e996c1c17a1",
-   "settle_seconds": 0.521,
+   "settle_seconds": 0.52,
    "settled": true,
    "sha1": "c05aaa65378c0d103d4b4eebfdf8dcde46b903d5",
    "sticky": 14,
@@ -64,46 +64,46 @@
   "scores": [
    {
     "buffer": 0,
-    "mad": 13.9088,
-    "mad_u": 7.8509,
-    "mad_v": 6.1477,
-    "peak": 179,
-    "psnr": 21.53,
+    "mad": 0.0112,
+    "mad_u": 0.0058,
+    "mad_v": 0.0059,
+    "peak": 2,
+    "psnr": 67.64,
     "ref": "frame_06_out_",
     "written": true
    },
    {
     "buffer": 1,
-    "mad": 13.0004,
-    "mad_u": 7.5922,
-    "mad_v": 5.9883,
-    "peak": 179,
-    "psnr": 22.07,
+    "mad": 0.0145,
+    "mad_u": 0.0076,
+    "mad_v": 0.0071,
+    "peak": 2,
+    "psnr": 66.49,
     "ref": "frame_07_out_",
     "written": true
    },
    {
     "buffer": 2,
-    "mad": 13.046,
-    "mad_u": 7.592,
-    "mad_v": 5.8115,
-    "peak": 179,
-    "psnr": 22.1,
+    "mad": 0.3593,
+    "mad_u": 0.3472,
+    "mad_v": 0.0524,
+    "peak": 3,
+    "psnr": 52.55,
     "ref": "frame_04_out_",
     "written": true
    },
    {
     "buffer": 3,
-    "mad": 13.1641,
-    "mad_u": 7.5723,
-    "mad_v": 5.8649,
-    "peak": 175,
-    "psnr": 21.99,
+    "mad": 0.3598,
+    "mad_u": 0.3448,
+    "mad_v": 0.0549,
+    "peak": 3,
+    "psnr": 52.55,
     "ref": "frame_05_out_",
     "written": true
    }
   ],
-  "verdict": "drift"
+  "verdict": "close"
  },
  "gi4": {
   "capture": {
@@ -123,46 +123,46 @@
   "scores": [
    {
     "buffer": 0,
-    "mad": 17.9122,
-    "mad_u": 8.6205,
-    "mad_v": 6.2782,
-    "peak": 189,
-    "psnr": 19.51,
+    "mad": 0.0048,
+    "mad_u": 0.0024,
+    "mad_v": 0.0027,
+    "peak": 1,
+    "psnr": 71.33,
     "ref": "frame_00_out_",
     "written": true
    },
    {
     "buffer": 1,
-    "mad": 15.6899,
-    "mad_u": 8.3673,
-    "mad_v": 6.2838,
-    "peak": 189,
-    "psnr": 20.6,
+    "mad": 0.0076,
+    "mad_u": 0.0045,
+    "mad_v": 0.0044,
+    "peak": 2,
+    "psnr": 69.3,
     "ref": "frame_03_out_",
     "written": true
    },
    {
     "buffer": 2,
-    "mad": 14.4122,
-    "mad_u": 7.6992,
-    "mad_v": 5.5295,
-    "peak": 189,
-    "psnr": 21.35,
+    "mad": 0.3575,
+    "mad_u": 0.3486,
+    "mad_v": 0.0424,
+    "peak": 2,
+    "psnr": 52.59,
     "ref": "frame_01_out_",
     "written": true
    },
    {
     "buffer": 3,
-    "mad": 14.6211,
-    "mad_u": 7.9173,
-    "mad_v": 5.7804,
-    "peak": 197,
-    "psnr": 21.08,
+    "mad": 0.3308,
+    "mad_u": 0.3575,
+    "mad_v": 0.0437,
+    "peak": 2,
+    "psnr": 52.92,
     "ref": "frame_02_out_",
     "written": true
    }
   ],
-  "verdict": "drift"
+  "verdict": "close"
  },
  "gi6": {
   "capture": {
@@ -182,46 +182,46 @@
   "scores": [
    {
     "buffer": 0,
-    "mad": 17.6633,
-    "mad_u": 8.5853,
-    "mad_v": 6.3152,
-    "peak": 189,
-    "psnr": 19.59,
+    "mad": 0.0047,
+    "mad_u": 0.0024,
+    "mad_v": 0.0027,
+    "peak": 1,
+    "psnr": 71.44,
     "ref": "frame_00_out_",
     "written": true
    },
    {
     "buffer": 1,
-    "mad": 15.2567,
-    "mad_u": 8.2284,
-    "mad_v": 6.3011,
-    "peak": 179,
-    "psnr": 20.78,
+    "mad": 0.0079,
+    "mad_u": 0.0044,
+    "mad_v": 0.0045,
+    "peak": 2,
+    "psnr": 69.17,
     "ref": "frame_03_out_",
     "written": true
    },
    {
     "buffer": 2,
-    "mad": 12.3709,
-    "mad_u": 7.6282,
-    "mad_v": 5.531,
-    "peak": 160,
-    "psnr": 22.64,
+    "mad": 0.3635,
+    "mad_u": 0.3521,
+    "mad_v": 0.0448,
+    "peak": 2,
+    "psnr": 52.52,
     "ref": "frame_01_out_",
     "written": true
    },
    {
     "buffer": 3,
-    "mad": 12.8846,
-    "mad_u": 7.9289,
-    "mad_v": 5.8804,
-    "peak": 197,
-    "psnr": 22.12,
+    "mad": 0.3391,
+    "mad_u": 0.3531,
+    "mad_v": 0.0463,
+    "peak": 2,
+    "psnr": 52.82,
     "ref": "frame_02_out_",
     "written": true
    }
   ],
-  "verdict": "drift"
+  "verdict": "close"
  },
  "gi7": {
   "capture": {
@@ -241,46 +241,46 @@
   "scores": [
    {
     "buffer": 0,
-    "mad": 17.6639,
-    "mad_u": 8.5862,
-    "mad_v": 6.3162,
-    "peak": 189,
-    "psnr": 19.59,
+    "mad": 0.0047,
+    "mad_u": 0.0025,
+    "mad_v": 0.0027,
+    "peak": 1,
+    "psnr": 71.45,
     "ref": "frame_00_out_",
     "written": true
    },
    {
     "buffer": 1,
-    "mad": 15.2579,
-    "mad_u": 8.2251,
-    "mad_v": 6.2925,
-    "peak": 179,
-    "psnr": 20.78,
+    "mad": 0.0079,
+    "mad_u": 0.0044,
+    "mad_v": 0.0044,
+    "peak": 2,
+    "psnr": 69.13,
     "ref": "frame_03_out_",
     "written": true
    },
    {
     "buffer": 2,
-    "mad": 12.3769,
-    "mad_u": 7.631,
-    "mad_v": 5.5284,
-    "peak": 160,
-    "psnr": 22.63,
+    "mad": 0.3633,
+    "mad_u": 0.35,
+    "mad_v": 0.0447,
+    "peak": 2,
+    "psnr": 52.52,
     "ref": "frame_01_out_",
     "written": true
    },
    {
     "buffer": 3,
-    "mad": 12.8824,
-    "mad_u": 7.9267,
-    "mad_v": 5.8698,
-    "peak": 197,
-    "psnr": 22.12,
+    "mad": 0.3393,
+    "mad_u": 0.3517,
+    "mad_v": 0.0463,
+    "peak": 2,
+    "psnr": 52.81,
     "ref": "frame_02_out_",
     "written": true
    }
   ],
-  "verdict": "drift"
+  "verdict": "close"
  },
  "gi9": {
   "capture": {
@@ -520,7 +520,7 @@
  },
  "ibm-bw": {
   "capture": {
-   "dma_seconds": 0.005,
+   "dma_seconds": 0.006,
    "error": false,
    "exception": null,
    "height": 480,
@@ -583,31 +583,31 @@
   "scores": [
    {
     "buffer": 0,
-    "mad": 18.3932,
-    "mad_u": 6.8291,
-    "mad_v": 6.5319,
-    "peak": 188,
-    "psnr": 18.58,
+    "mad": 0.0033,
+    "mad_u": 0.0021,
+    "mad_v": 0.0019,
+    "peak": 1,
+    "psnr": 72.96,
     "ref": "frame_00_out_",
     "written": true
    },
    {
     "buffer": 1,
-    "mad": 18.0884,
-    "mad_u": 7.3742,
-    "mad_v": 7.1076,
-    "peak": 184,
-    "psnr": 18.95,
+    "mad": 0.0077,
+    "mad_u": 0.0064,
+    "mad_v": 0.0057,
+    "peak": 2,
+    "psnr": 69.25,
     "ref": "frame_02_out_",
     "written": true
    },
    {
     "buffer": 2,
-    "mad": 17.0123,
-    "mad_u": 6.5868,
-    "mad_v": 6.3823,
-    "peak": 187,
-    "psnr": 19.3,
+    "mad": 0.1656,
+    "mad_u": 0.2062,
+    "mad_v": 0.1193,
+    "peak": 2,
+    "psnr": 55.92,
     "ref": "frame_01_out_",
     "written": true
    },
@@ -616,7 +616,7 @@
     "written": false
    }
   ],
-  "verdict": "drift"
+  "verdict": "close"
  },
  "mcp10ccett": {
   "capture": {
@@ -684,7 +684,7 @@
    "exception": null,
    "height": 240,
    "pictures_sha1": "da39a3ee5e6b4b0d3255bfef95601890afd80709",
-   "settle_seconds": 0.521,
+   "settle_seconds": 0.52,
    "settled": true,
    "sha1": "cda4d0228c175148d343e664813faf7675ae9538",
    "sticky": 14,
@@ -719,7 +719,7 @@
    "exception": null,
    "height": 240,
    "pictures_sha1": "da39a3ee5e6b4b0d3255bfef95601890afd80709",
-   "settle_seconds": 0.521,
+   "settle_seconds": 0.52,
    "settled": true,
    "sha1": "cda4d0228c175148d343e664813faf7675ae9538",
    "sticky": 14,
@@ -775,36 +775,36 @@
    },
    {
     "buffer": 1,
-    "mad": 8.2627,
-    "mad_u": 2.1994,
-    "mad_v": 2.497,
-    "peak": 234,
-    "psnr": 24.63,
+    "mad": 0.008,
+    "mad_u": 0.0042,
+    "mad_v": 0.0043,
+    "peak": 2,
+    "psnr": 69.11,
     "ref": "frame_03_out_",
     "written": true
    },
    {
     "buffer": 2,
-    "mad": 6.5371,
-    "mad_u": 1.6755,
-    "mad_v": 1.8112,
-    "peak": 226,
-    "psnr": 26.6,
+    "mad": 0.2013,
+    "mad_u": 0.2443,
+    "mad_v": 0.1409,
+    "peak": 2,
+    "psnr": 55.08,
     "ref": "frame_01_out_",
     "written": true
    },
    {
     "buffer": 3,
-    "mad": 8.8277,
-    "mad_u": 3.3594,
-    "mad_v": 3.3877,
-    "peak": 220,
-    "psnr": 24.5,
+    "mad": 0.1749,
+    "mad_u": 0.2,
+    "mad_v": 0.1151,
+    "peak": 2,
+    "psnr": 55.67,
     "ref": "frame_02_out_",
     "written": true
    }
   ],
-  "verdict": "drift"
+  "verdict": "close"
  },
  "mei-2-60f": {
   "capture": {
@@ -824,46 +824,46 @@
   "scores": [
    {
     "buffer": 0,
-    "mad": 10.9584,
-    "mad_u": 3.0541,
-    "mad_v": 3.6095,
-    "peak": 229,
-    "psnr": 22.42,
+    "mad": 0.0115,
+    "mad_u": 0.0063,
+    "mad_v": 0.0059,
+    "peak": 2,
+    "psnr": 67.52,
     "ref": "frame_06_out_",
     "written": true
    },
    {
     "buffer": 1,
-    "mad": 12.5434,
-    "mad_u": 3.7562,
-    "mad_v": 4.546,
-    "peak": 226,
-    "psnr": 21.3,
+    "mad": 0.0147,
+    "mad_u": 0.0079,
+    "mad_v": 0.0077,
+    "peak": 2,
+    "psnr": 66.45,
     "ref": "frame_07_out_",
     "written": true
    },
    {
     "buffer": 2,
-    "mad": 10.0928,
-    "mad_u": 2.9612,
-    "mad_v": 3.2596,
-    "peak": 220,
-    "psnr": 23.18,
+    "mad": 0.2083,
+    "mad_u": 0.2511,
+    "mad_v": 0.1426,
+    "peak": 2,
+    "psnr": 54.92,
     "ref": "frame_04_out_",
     "written": true
    },
    {
     "buffer": 3,
-    "mad": 10.5178,
-    "mad_u": 3.1312,
-    "mad_v": 3.5189,
-    "peak": 215,
-    "psnr": 22.87,
+    "mad": 0.1812,
+    "mad_u": 0.2217,
+    "mad_v": 0.1246,
+    "peak": 2,
+    "psnr": 55.52,
     "ref": "frame_05_out_",
     "written": true
    }
   ],
-  "verdict": "drift"
+  "verdict": "close"
  },
  "nokia6": {
   "capture": {
@@ -872,7 +872,7 @@
    "exception": null,
    "height": 576,
    "pictures_sha1": "4a4cc8f34b8ec57c3a78f9f49a53f13451dd1ba1",
-   "settle_seconds": 0.781,
+   "settle_seconds": 0.521,
    "settled": true,
    "sha1": "ac4cc77c8b365e28319cd76b3da29576280e19cb",
    "sticky": 14,
@@ -883,21 +883,21 @@
   "scores": [
    {
     "buffer": 0,
-    "mad": 8.183,
-    "mad_u": 2.969,
-    "mad_v": 2.6674,
-    "peak": 179,
-    "psnr": 24.88,
+    "mad": 0.5958,
+    "mad_u": 0.5931,
+    "mad_v": 0.4313,
+    "peak": 3,
+    "psnr": 49.49,
     "ref": "frame_02_out_",
     "written": true
    },
    {
     "buffer": 1,
-    "mad": 9.8351,
-    "mad_u": 3.6097,
-    "mad_v": 3.2602,
-    "peak": 202,
-    "psnr": 23.39,
+    "mad": 0.8914,
+    "mad_u": 0.896,
+    "mad_v": 0.6393,
+    "peak": 4,
+    "psnr": 46.52,
     "ref": "frame_03_out_",
     "written": true
    },
@@ -910,7 +910,7 @@
     "written": false
    }
   ],
-  "verdict": "drift"
+  "verdict": "close"
  },
  "nokia6-60": {
   "capture": {
@@ -919,7 +919,7 @@
    "exception": null,
    "height": 576,
    "pictures_sha1": "d03cbf2e01a7717a2e83a131547dec4ba821eda6",
-   "settle_seconds": 1.041,
+   "settle_seconds": 0.781,
    "settled": true,
    "sha1": "b331a7abb7b99d62cdee4aa745b9f77cc7c135ed",
    "sticky": 14,
@@ -930,21 +930,21 @@
   "scores": [
    {
     "buffer": 0,
-    "mad": 13.644,
-    "mad_u": 5.6645,
-    "mad_v": 5.2961,
-    "peak": 210,
-    "psnr": 20.9,
+    "mad": 1.7889,
+    "mad_u": 1.8301,
+    "mad_v": 1.2989,
+    "peak": 6,
+    "psnr": 41.01,
     "ref": "frame_06_out_",
     "written": true
    },
    {
     "buffer": 1,
-    "mad": 14.6353,
-    "mad_u": 6.3006,
-    "mad_v": 5.9628,
-    "peak": 211,
-    "psnr": 20.43,
+    "mad": 2.0884,
+    "mad_u": 2.1505,
+    "mad_v": 1.5263,
+    "peak": 6,
+    "psnr": 39.73,
     "ref": "frame_07_out_",
     "written": true
    },
@@ -966,7 +966,7 @@
    "exception": null,
    "height": 576,
    "pictures_sha1": "554d9977b037fcd3c8e0696a12fdb31f9763914d",
-   "settle_seconds": 0.781,
+   "settle_seconds": 0.521,
    "settled": true,
    "sha1": "53f26b20ec449bbfe70f556c4c17ec02ee7234d9",
    "sticky": 14,
@@ -977,22 +977,22 @@
   "scores": [
    {
     "buffer": 0,
-    "mad": 23.3858,
-    "mad_u": 6.5039,
-    "mad_v": 6.1055,
-    "peak": 255,
-    "psnr": 16.15,
-    "ref": "frame_00_out_",
+    "mad": 0.5976,
+    "mad_u": 0.7556,
+    "mad_v": 0.3932,
+    "peak": 3,
+    "psnr": 49.73,
+    "ref": "frame_02_out_",
     "written": true
    },
    {
     "buffer": 1,
-    "mad": 25.6117,
-    "mad_u": 7.7175,
-    "mad_v": 7.1518,
-    "peak": 251,
-    "psnr": 15.69,
-    "ref": "frame_00_out_",
+    "mad": 0.896,
+    "mad_u": 1.1486,
+    "mad_v": 0.6086,
+    "peak": 4,
+    "psnr": 47.07,
+    "ref": "frame_03_out_",
     "written": true
    },
    {
@@ -1004,7 +1004,7 @@
     "written": false
    }
   ],
-  "verdict": "drift"
+  "verdict": "close"
  },
  "ntr-skipped": {
   "capture": {
@@ -1024,21 +1024,21 @@
   "scores": [
    {
     "buffer": 0,
-    "mad": 14.8293,
-    "mad_u": 6.3748,
-    "mad_v": 6.1541,
-    "peak": 177,
-    "psnr": 20.56,
+    "mad": 0.6477,
+    "mad_u": 0.7222,
+    "mad_v": 0.5203,
+    "peak": 5,
+    "psnr": 47.69,
     "ref": "frame_06_out_",
     "written": true
    },
    {
     "buffer": 1,
-    "mad": 14.6227,
-    "mad_u": 6.3097,
-    "mad_v": 6.1006,
-    "peak": 182,
-    "psnr": 20.68,
+    "mad": 0.7097,
+    "mad_u": 0.8217,
+    "mad_v": 0.574,
+    "peak": 5,
+    "psnr": 46.91,
     "ref": "frame_07_out_",
     "written": true
    },
@@ -1051,7 +1051,7 @@
     "written": false
    }
   ],
-  "verdict": "drift"
+  "verdict": "close"
  },
  "sony-ct1": {
   "capture": {
@@ -1242,46 +1242,46 @@
   "scores": [
    {
     "buffer": 0,
-    "mad": 16.6838,
-    "mad_u": 2.9762,
-    "mad_v": 4.9819,
-    "peak": 206,
-    "psnr": 19.97,
+    "mad": 0.0125,
+    "mad_u": 0.0049,
+    "mad_v": 0.0071,
+    "peak": 2,
+    "psnr": 67.15,
     "ref": "frame_06_out_",
     "written": true
    },
    {
     "buffer": 1,
-    "mad": 15.8516,
-    "mad_u": 2.8052,
-    "mad_v": 4.6994,
-    "peak": 207,
-    "psnr": 20.42,
+    "mad": 0.0158,
+    "mad_u": 0.0061,
+    "mad_v": 0.0096,
+    "peak": 2,
+    "psnr": 66.13,
     "ref": "frame_07_out_",
     "written": true
    },
    {
     "buffer": 2,
-    "mad": 16.3354,
-    "mad_u": 2.8105,
-    "mad_v": 4.6626,
-    "peak": 212,
-    "psnr": 20.15,
+    "mad": 0.3071,
+    "mad_u": 0.2776,
+    "mad_v": 0.0904,
+    "peak": 2,
+    "psnr": 53.24,
     "ref": "frame_04_out_",
     "written": true
    },
    {
     "buffer": 3,
-    "mad": 16.3635,
-    "mad_u": 2.8656,
-    "mad_v": 4.7453,
-    "peak": 206,
-    "psnr": 20.15,
+    "mad": 0.2244,
+    "mad_u": 0.1794,
+    "mad_v": 0.0676,
+    "peak": 2,
+    "psnr": 54.59,
     "ref": "frame_05_out_",
     "written": true
    }
   ],
-  "verdict": "drift"
+  "verdict": "close"
  },
  "tcela-10": {
   "capture": {
@@ -1301,41 +1301,41 @@
   "scores": [
    {
     "buffer": 0,
-    "mad": 20.4635,
-    "mad_u": 7.3566,
-    "mad_v": 4.5899,
-    "peak": 202,
-    "psnr": 17.92,
+    "mad": 0.0047,
+    "mad_u": 0.0036,
+    "mad_v": 0.0037,
+    "peak": 1,
+    "psnr": 71.41,
     "ref": "frame_00_out_",
     "written": true
    },
    {
     "buffer": 1,
-    "mad": 20.4373,
-    "mad_u": 7.8099,
-    "mad_v": 5.0666,
-    "peak": 200,
-    "psnr": 18.29,
+    "mad": 2.3992,
+    "mad_u": 0.8465,
+    "mad_v": 0.5752,
+    "peak": 28,
+    "psnr": 36.76,
     "ref": "frame_03_out_",
     "written": true
    },
    {
     "buffer": 2,
-    "mad": 12.6701,
-    "mad_u": 5.3997,
-    "mad_v": 3.3561,
-    "peak": 137,
-    "psnr": 22.38,
+    "mad": 1.7199,
+    "mad_u": 0.5791,
+    "mad_v": 0.4285,
+    "peak": 22,
+    "psnr": 39.26,
     "ref": "frame_01_out_",
     "written": true
    },
    {
     "buffer": 3,
-    "mad": 12.6962,
-    "mad_u": 5.3869,
-    "mad_v": 3.3557,
-    "peak": 145,
-    "psnr": 22.39,
+    "mad": 1.7214,
+    "mad_u": 0.6,
+    "mad_v": 0.4254,
+    "peak": 22,
+    "psnr": 39.21,
     "ref": "frame_02_out_",
     "written": true
    }
@@ -1344,7 +1344,7 @@
  },
  "tcela-14": {
   "capture": {
-   "dma_seconds": 0.009,
+   "dma_seconds": 0.01,
    "error": false,
    "exception": null,
    "height": 480,
@@ -1489,21 +1489,21 @@
   "scores": [
    {
     "buffer": 0,
-    "mad": 0.1361,
+    "mad": 0.0,
     "mad_u": 0.0,
     "mad_v": 0.0,
-    "peak": 141,
-    "psnr": 37.76,
+    "peak": 0,
+    "psnr": null,
     "ref": "frame_00_out_",
     "written": true
    },
    {
     "buffer": 1,
-    "mad": 61.2422,
+    "mad": 0.0,
     "mad_u": 0.0,
     "mad_v": 0.0,
-    "peak": 141,
-    "psnr": 11.22,
+    "peak": 0,
+    "psnr": null,
     "ref": "frame_01_out_",
     "written": true
    },
@@ -1516,7 +1516,7 @@
     "written": false
    }
   ],
-  "verdict": "drift"
+  "verdict": "bit-exact"
  },
  "tcela-6": {
   "capture": {
@@ -1536,46 +1536,46 @@
   "scores": [
    {
     "buffer": 0,
-    "mad": 18.7693,
-    "mad_u": 6.3816,
-    "mad_v": 4.1357,
-    "peak": 193,
-    "psnr": 18.48,
+    "mad": 0.0046,
+    "mad_u": 0.004,
+    "mad_v": 0.0041,
+    "peak": 1,
+    "psnr": 71.5,
     "ref": "frame_00_out_",
     "written": true
    },
    {
     "buffer": 1,
-    "mad": 18.0477,
-    "mad_u": 6.135,
-    "mad_v": 3.9212,
-    "peak": 191,
-    "psnr": 18.78,
+    "mad": 0.0074,
+    "mad_u": 0.0065,
+    "mad_v": 0.0062,
+    "peak": 2,
+    "psnr": 69.42,
     "ref": "frame_03_out_",
     "written": true
    },
    {
     "buffer": 2,
-    "mad": 17.8785,
-    "mad_u": 6.0591,
-    "mad_v": 3.8686,
-    "peak": 188,
-    "psnr": 18.82,
+    "mad": 0.0983,
+    "mad_u": 0.1141,
+    "mad_v": 0.0783,
+    "peak": 2,
+    "psnr": 58.18,
     "ref": "frame_01_out_",
     "written": true
    },
    {
     "buffer": 3,
-    "mad": 17.6674,
-    "mad_u": 5.9886,
-    "mad_v": 3.7951,
-    "peak": 184,
-    "psnr": 18.93,
+    "mad": 0.1314,
+    "mad_u": 0.1445,
+    "mad_v": 0.0781,
+    "peak": 2,
+    "psnr": 56.93,
     "ref": "frame_02_out_",
     "written": true
    }
   ],
-  "verdict": "drift"
+  "verdict": "close"
  },
  "tcela-7": {
   "capture": {
@@ -1595,46 +1595,46 @@
   "scores": [
    {
     "buffer": 0,
-    "mad": 17.171,
-    "mad_u": 5.6439,
-    "mad_v": 3.5758,
-    "peak": 191,
-    "psnr": 19.21,
+    "mad": 0.0109,
+    "mad_u": 0.0086,
+    "mad_v": 0.0079,
+    "peak": 2,
+    "psnr": 67.74,
     "ref": "frame_06_out_",
     "written": true
    },
    {
     "buffer": 1,
-    "mad": 16.5484,
-    "mad_u": 5.4949,
-    "mad_v": 3.4739,
-    "peak": 188,
-    "psnr": 19.52,
+    "mad": 0.0138,
+    "mad_u": 0.0105,
+    "mad_v": 0.0091,
+    "peak": 2,
+    "psnr": 66.71,
     "ref": "frame_07_out_",
     "written": true
    },
    {
     "buffer": 2,
-    "mad": 17.2981,
-    "mad_u": 5.7899,
-    "mad_v": 3.6669,
-    "peak": 185,
-    "psnr": 19.09,
+    "mad": 0.0762,
+    "mad_u": 0.0821,
+    "mad_v": 0.0789,
+    "peak": 2,
+    "psnr": 59.29,
     "ref": "frame_04_out_",
     "written": true
    },
    {
     "buffer": 3,
-    "mad": 16.5583,
-    "mad_u": 5.5491,
-    "mad_v": 3.5216,
-    "peak": 179,
-    "psnr": 19.5,
+    "mad": 0.1832,
+    "mad_u": 0.2026,
+    "mad_v": 0.1117,
+    "peak": 2,
+    "psnr": 55.48,
     "ref": "frame_05_out_",
     "written": true
    }
   ],
-  "verdict": "drift"
+  "verdict": "close"
  },
  "tcela-8": {
   "capture": {
@@ -1654,21 +1654,21 @@
   "scores": [
    {
     "buffer": 0,
-    "mad": 16.9895,
-    "mad_u": 6.8053,
-    "mad_v": 4.2923,
-    "peak": 174,
-    "psnr": 19.58,
+    "mad": 0.634,
+    "mad_u": 0.7423,
+    "mad_v": 0.4949,
+    "peak": 3,
+    "psnr": 48.46,
     "ref": "frame_02_out_",
     "written": true
    },
    {
     "buffer": 1,
-    "mad": 15.9906,
-    "mad_u": 6.7889,
-    "mad_v": 4.3745,
-    "peak": 163,
-    "psnr": 20.13,
+    "mad": 0.9698,
+    "mad_u": 1.1374,
+    "mad_v": 0.7501,
+    "peak": 4,
+    "psnr": 45.28,
     "ref": "frame_03_out_",
     "written": true
    },
@@ -1681,7 +1681,7 @@
     "written": false
    }
   ],
-  "verdict": "drift"
+  "verdict": "close"
  },
  "tcela-9": {
   "capture": {
@@ -1701,21 +1701,21 @@
   "scores": [
    {
     "buffer": 0,
-    "mad": 16.9645,
-    "mad_u": 6.8126,
-    "mad_v": 4.3034,
-    "peak": 174,
-    "psnr": 19.6,
+    "mad": 0.6345,
+    "mad_u": 0.7438,
+    "mad_v": 0.4975,
+    "peak": 3,
+    "psnr": 48.46,
     "ref": "frame_02_out_",
     "written": true
    },
    {
     "buffer": 1,
-    "mad": 15.9619,
-    "mad_u": 6.8096,
-    "mad_v": 4.3785,
-    "peak": 163,
-    "psnr": 20.15,
+    "mad": 0.9704,
+    "mad_u": 1.1426,
+    "mad_v": 0.76,
+    "peak": 4,
+    "psnr": 45.28,
     "ref": "frame_03_out_",
     "written": true
    },
@@ -1728,11 +1728,11 @@
     "written": false
    }
   ],
-  "verdict": "drift"
+  "verdict": "close"
  },
  "tek-5-long": {
   "capture": {
-   "dma_seconds": 0.009,
+   "dma_seconds": 0.01,
    "error": false,
    "exception": null,
    "height": 480,
@@ -1855,7 +1855,7 @@
    "exception": null,
    "height": 480,
    "pictures_sha1": "4edc7f8e90a357f8ad1ac1d53b095d39d0dfe2d9",
-   "settle_seconds": 0.521,
+   "settle_seconds": 0.781,
    "settled": true,
    "sha1": "874d157899520741cc387152306d8fecc8dc4892",
    "sticky": 14,
@@ -1925,21 +1925,21 @@
   "scores": [
    {
     "buffer": 0,
-    "mad": 0.4329,
+    "mad": 0.0018,
     "mad_u": 0.0,
     "mad_v": 0.0,
-    "peak": 49,
-    "psnr": 37.13,
+    "peak": 3,
+    "psnr": 75.43,
     "ref": "frame_06_out_",
     "written": true
    },
    {
     "buffer": 1,
-    "mad": 0.3877,
+    "mad": 0.0022,
     "mad_u": 0.0,
     "mad_v": 0.0,
-    "peak": 44,
-    "psnr": 38.08,
+    "peak": 4,
+    "psnr": 74.52,
     "ref": "frame_07_out_",
     "written": true
    },
@@ -1982,36 +1982,36 @@
    },
    {
     "buffer": 1,
-    "mad": 5.9557,
-    "mad_u": 2.2014,
-    "mad_v": 1.0479,
-    "peak": 155,
-    "psnr": 26.25,
+    "mad": 0.0055,
+    "mad_u": 0.0012,
+    "mad_v": 0.0008,
+    "peak": 2,
+    "psnr": 70.69,
     "ref": "frame_03_out_",
     "written": true
    },
    {
     "buffer": 2,
-    "mad": 4.3789,
-    "mad_u": 1.6081,
-    "mad_v": 0.6669,
-    "peak": 139,
-    "psnr": 29.17,
+    "mad": 0.4154,
+    "mad_u": 0.3312,
+    "mad_v": 0.0053,
+    "peak": 2,
+    "psnr": 51.94,
     "ref": "frame_01_out_",
     "written": true
    },
    {
     "buffer": 3,
-    "mad": 5.2065,
-    "mad_u": 1.9331,
-    "mad_v": 0.846,
-    "peak": 126,
-    "psnr": 28.05,
+    "mad": 0.4093,
+    "mad_u": 0.2845,
+    "mad_v": 0.005,
+    "peak": 2,
+    "psnr": 52.0,
     "ref": "frame_02_out_",
     "written": true
    }
   ],
-  "verdict": "drift"
+  "verdict": "close"
  },
  "toshiba-dpall": {
   "capture": {
@@ -2020,7 +2020,7 @@
    "exception": null,
    "height": 480,
    "pictures_sha1": "bfd8c87b113339167ca2a02a7ebae931d0533e6d",
-   "settle_seconds": 0.521,
+   "settle_seconds": 0.52,
    "settled": true,
    "sha1": "9f8dcdf83c648b1f78b313127a32eceefca9911c",
    "sticky": 14,
@@ -2031,21 +2031,21 @@
   "scores": [
    {
     "buffer": 0,
-    "mad": 8.2607,
-    "mad_u": 2.9743,
-    "mad_v": 2.92,
-    "peak": 220,
-    "psnr": 23.1,
+    "mad": 0.4253,
+    "mad_u": 0.3828,
+    "mad_v": 0.1975,
+    "peak": 3,
+    "psnr": 51.1,
     "ref": "frame_02_out_",
     "written": true
    },
    {
     "buffer": 1,
-    "mad": 8.9039,
-    "mad_u": 2.8189,
-    "mad_v": 2.9189,
-    "peak": 205,
-    "psnr": 23.16,
+    "mad": 0.675,
+    "mad_u": 0.6489,
+    "mad_v": 0.3282,
+    "peak": 3,
+    "psnr": 48.0,
     "ref": "frame_03_out_",
     "written": true
    },
@@ -2058,6 +2058,6 @@
     "written": false
    }
   ],
-  "verdict": "drift"
+  "verdict": "close"
  }
 }
