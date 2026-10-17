@@ -283,9 +283,21 @@ def print_macroblock_map(plane, ref, mb_width, mb_height, tolerance=2):
         print("          " + "".join("#" if v > 64 else ("+" if v else ".") for v in row))
 
 
+# What a never-written frame buffer reads as, after the same ^0x80 as pixels:
+#   0    framestore_request.v clears all memory to the raw byte 0x80 at reset
+#   110  webserver/capture_framestore.py poisons the framestore with 0xEE
+#        before every hardware decode
+# Any other uniform value is a real picture: tcela-15 decodes to mid-grey (128)
+# everywhere, and treating every uniform buffer as blank scored it as
+# "nothing-written". A decoded Y of 0 everywhere would be outside the legal
+# video range (16-235), so 0 is not ambiguous in practice.
+BLANK_VALUES = (0x80 ^ 0x80, 0xEE ^ 0x80)
+
+
 def is_blank(plane):
-    """A frame buffer nothing has been written to is one uniform value."""
-    return int(plane.max()) == int(plane.min())
+    """A frame buffer nothing has been written to: one uniform value, and the
+    one the core's reset clear or the capture's poison leaves behind."""
+    return int(plane.max()) == int(plane.min()) and int(plane.min()) in BLANK_VALUES
 
 
 # ---------------------------------------------------------------------------
