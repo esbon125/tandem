@@ -200,7 +200,7 @@ fabricación de una placa propia, cuyos requisitos sí se señalan en el
 capítulo~\ref{cap:producto}.
 
 \paragraph{Limitaciones conocidas}
-La versión actual decodifica de forma incorrecta los flujos que cargan
-matrices de cuantización propias en la cabecera de secuencia: 11 de los 39
-flujos de conformidad usados.
-\pendiente{Actualizar si se corrige antes de la entrega.}
+El núcleo decodifica solo MPEG-2: los dos flujos MPEG-1 de la batería de
+conformidad no producen imágenes, como ya documentaba el diseño original. De
+los 39 flujos usados, cinco muestran todavía una deriva en imágenes predichas
+y uno (\cmd{tcela-15}) no produce imágenes (capítulo~\ref{cap:resultados}).

@@ -58,6 +58,11 @@ actualización.
   \item \textbf{La instrumentación también puede mentir.} Registros de
     depuración optimizados por la síntesis sostuvieron una teoría falsa
     durante dos síntesis. La lectura directa por JTAG la desmintió.
+  \item \textbf{La referencia también puede estar mal.} Once flujos de
+    conformidad parecían decodificarse mal por un error del núcleo. La
+    documentación del diseño original decía lo contrario, y mirar las
+    imágenes en lugar del MAD mostró que la imagen rota era la de la
+    referencia.
   \item \textbf{Medir antes de optimizar.} Los contadores mostraron que la
     memoria no era el límite cuando parecía serlo, y dos experimentos
     negativos ahorraron una optimización inútil.
@@ -73,9 +78,8 @@ actualización.
 \section{Trabajo futuro}
 
 \begin{itemize}
-  \item \textbf{Conformidad}: corregir la carga de matrices de cuantización,
-    ya localizada en el núcleo, e investigar los tres flujos que no producen
-    imágenes.
+  \item \textbf{Conformidad}: investigar la deriva que queda en cinco flujos
+    y el flujo \cmd{tcela-15}, que no produce imágenes.
   \item \textbf{Tiempo real en definición estándar}: optimizar la etapa de
     reconstrucción por compensación de movimiento del núcleo.
   \item \textbf{Producto}: firmar las actualizaciones, publicar el Manual de

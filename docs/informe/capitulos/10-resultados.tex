@@ -61,30 +61,57 @@ el detalle está en el anexo~\ref{anx:regresion}.
     \toprule
     \textbf{Veredicto} & \textbf{Flujos} & \textbf{Observación} \\
     \midrule
-    Bit-exacto      & 1  & \cmd{mcp10ccett} \\
-    Cercano         & 12 & MAD $\leq 1$ en el peor buffer \\
-    Deriva          & 23 & 11 cargan matrices de cuantización propias
-                            (limitación conocida); 12 derivan en imágenes
-                            predichas \\
-    Sin escritura   & 3  & el núcleo no escribe imágenes para esos flujos \\
+    Bit-exacto      & 2  & \cmd{mcp10ccett}, \cmd{tcela-17} \\
+    Cercano         & 29 & MAD $\leq 1$ en el peor buffer \\
+    Deriva          & 5  & diferencias en imágenes predichas \\
+    Sin escritura   & 3  & dos son MPEG-1, que el núcleo no decodifica;
+                            el tercero es \cmd{tcela-15} \\
     \bottomrule
   \end{tabularx}
   \caption{Veredictos de conformidad (39 flujos, 8 imágenes cada uno).}
   \label{tab:conformidad}
 \end{table}
 
-La lectura de esta tabla requiere cuidado. Los once flujos que cargan una
-matriz de cuantización de intra propia fallan desde la primera imagen, y la
-mayoría carga explícitamente la matriz por defecto, que debería ser
-equivalente a no cargar ninguna: el error está en el camino de carga de
-matrices del núcleo, y está localizado para su corrección
-(capítulo~\ref{cap:conclusiones}). Los doce restantes con deriva muestran
-diferencias en las imágenes predichas que la simulación reproduce con los
-mismos valores, por lo que pertenecen al diseño original; varios de ellos
-también cargan matrices, en este caso para bloques no intra. Visualmente, la
-deriva no se nota: en el peor caso con contenido real (MAD 5,96), la imagen
-reconstruida se ve limpia.
-\pendiente{Investigar los tres flujos sin escritura.}
+De los cinco flujos con deriva, dos (\cmd{sony-ct1} y \cmd{hhi-burst-long})
+tienen dos buffers bit-exactos o casi, y los otros dos con errores grandes y
+localizados, lo que apunta más al emparejamiento entre buffers y cuadros de
+referencia en un flujo cortado que a un error de decodificación. Los otros
+tres (\cmd{nokia6-60}, \cmd{tcela-10}, \cmd{tcela-14}) muestran una deriva
+chica en imágenes predichas (MAD 1,6--2,4), que la simulación reproduce y
+que por lo tanto pertenece al diseño original. Los dos flujos MPEG-1
+(\cmd{mei-16-long}, \cmd{mei-16v2}) no tienen \emph{sequence extension}: el
+núcleo es solo MPEG-2, y el propio diseño original los marca como no
+soportados.
+\pendiente{Investigar \cmd{tcela-15} (sin escritura).}
+
+\subsection{Un error en la referencia}
+\label{sec:conformidad-referencia}
+
+La primera versión de esta batería daba un resultado muy distinto: un solo
+flujo bit-exacto, 12 cercanos y 23 con deriva, de los cuales once fallaban
+desde la primera imagen con MAD de 12 a 18. Todos ellos cargan una matriz de
+cuantización propia en la cabecera de secuencia, y casi todos cargan
+literalmente la matriz por defecto, lo que debería ser equivalente a no
+cargar ninguna. La conclusión natural fue un error en el camino de carga de
+matrices del núcleo, y así figuró como limitación conocida.
+
+Dos observaciones la desmintieron. La documentación del diseño original
+declara aprobados todos esos flujos. Y una simulación del núcleo con un
+monitor sobre la memoria de la matriz mostró que las 64 escrituras llegaban
+a la dirección correcta con el valor correcto. Al mirar las imágenes en
+lugar de los números, la del hardware era nítida y la de la referencia una
+imagen en bloques. El error estaba en la copia de \cmd{mpeg2decode} que
+acompaña al núcleo: en la cabecera de secuencia, la lectura de las matrices
+había quedado dentro de un \cmd{if} que solo se ejecuta con las trazas
+activadas. Sin trazas, que es como la usa la comparación, la referencia no
+cargaba la matriz ni consumía sus 512~bits.
+
+Corregido ese \cmd{if}, las capturas del hardware, idénticas byte a byte a
+las anteriores, pasaron a puntuar como se ve en la
+tabla~\ref{tab:conformidad}: \cmd{gi4} bajó de MAD 17,9 a 0,005 en su
+imagen intra. La corrección también resolvió la mayor parte de la deriva en
+imágenes predichas, porque varios de esos flujos cargan matrices para
+bloques no intra.
 
 \section{Determinismo y robustez}
 
@@ -199,7 +226,7 @@ red externa real, el clip llegó a 2,06 veces el tiempo real.
   \item Decodifica holgadamente en tiempo real en CIF, y a 0,5--0,77 veces el
     tiempo real en definición estándar.
   \item El periférico completo consume unos 68~mW estimados.
-  \item Queda una limitación conocida y localizada, la carga de matrices de
-    cuantización, y una deriva en imágenes predichas heredada del diseño
-    original.
+  \item 31 de los 37 flujos MPEG-2 de conformidad decodifican bit-exactos o
+    dentro de MAD~1; quedan una deriva chica en imágenes predichas, heredada
+    del diseño original, y un flujo sin imágenes.
 \end{itemize}

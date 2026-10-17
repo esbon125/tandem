@@ -15,11 +15,14 @@ Lista viva: se actualiza cada vez que se cierra o aparece algo. Las marcas
 
 - [x] Verificación de temporización con relojes reales (hw 8a6d847: script,
       sincronizador de reset, set_clock_groups) — cap. 5 "Temporización"
-- [ ] Calificar en la placa el bitstream 0.1.0+8a6d847 (cambió el RTL: sincronizador
-      de reset) y fijarlo en release/manifest.json — antes de la release final
+- [x] Calificar en la placa el bitstream 0.1.0+8a6d847 y fijarlo en release/manifest.json
+      (firmware_development 4e7a67f; qualify 0.1.0-rc3 OK, 19,3–19,5 fps)
 - [ ] Firma de actualizaciones con GPG (el autor genera la clave) — cap. 7, distribución
-- [ ] Bug de carga de matrices de cuantización — cap. 2 "Limitaciones conocidas" y cap. 10
-- [ ] Los 3 flujos "sin escritura" (mei-16-long, mei-16v2, tcela-15) — cap. 10
+- [x] "Bug" de matrices de cuantización: estaba en la referencia (mpeg2dec), no en el núcleo
+      (hw d91aecd, bitácora 49) — caps. 2, 10, 11 y anexo C actualizados
+- [x] mei-16-long y mei-16v2 "sin escritura": son MPEG-1, fuera de alcance — cap. 10
+- [ ] tcela-15 "sin escritura" (MPEG-2, upstream lo da por aprobado) — cap. 10
+- [ ] (opcional) deriva restante en 5 flujos: sony-ct1, hhi-burst-long, nokia6-60, tcela-10, tcela-14
 - [x] Manual de Referencia (Doxygen; reemplaza a la nota de aplicación) — firmware_development 6c7a6e3, sale en cada release — caps. 1, 7 y 11
 - [ ] Release final: actualizar la versión citada — cap. 7; la tabla de
       entregables dice "próxima versión" para licencias y avisos de terceros
