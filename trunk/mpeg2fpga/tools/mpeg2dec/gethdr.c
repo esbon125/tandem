@@ -154,12 +154,16 @@ static void sequence_header()
 
   if((ld->load_intra_quantizer_matrix = Get_Bits(1)))
   { 
+      /* read the matrix whether or not tracing: inside if (Trace_Flag) the
+       * 64 values were never loaded nor their 512 bits consumed */
       if (Trace_Flag)
+        printf("loading intra_quantizer_matrix\n");
+      for (i=0; i<64; i++)
         {
-          printf("loading intra_quantizer_matrix\n");
-          for (i=0; i<64; i++)
+          ld->intra_quantizer_matrix[scan[ZIG_ZAG][i]] = Get_Bits(8);
+          if (Trace_Flag)
             printf("  intra_quantizer_matrix[%d]=%d (was %d)\n", scan[ZIG_ZAG][i],
-            ld->intra_quantizer_matrix[scan[ZIG_ZAG][i]] = Get_Bits(8), i
+            ld->intra_quantizer_matrix[scan[ZIG_ZAG][i]], i
             );
         }
   }
@@ -172,11 +176,13 @@ static void sequence_header()
   if((ld->load_non_intra_quantizer_matrix = Get_Bits(1)))
   {
     if (Trace_Flag)
+      printf("loading non_intra_quantizer_matrix\n");
+    for (i=0; i<64; i++)
       {
-        printf("loading non_intra_quantizer_matrix\n");
-        for (i=0; i<64; i++)
+        ld->non_intra_quantizer_matrix[scan[ZIG_ZAG][i]] = Get_Bits(8);
+        if (Trace_Flag)
           printf("  non_intra_quantizer_matrix[%d]=%d (was %d)\n", scan[ZIG_ZAG][i],
-          ld->non_intra_quantizer_matrix[scan[ZIG_ZAG][i]] = Get_Bits(8), i
+          ld->non_intra_quantizer_matrix[scan[ZIG_ZAG][i]], i
           );
       }
   }
