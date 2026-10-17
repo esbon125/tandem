@@ -61,11 +61,10 @@ el detalle está en el anexo~\ref{anx:regresion}.
     \toprule
     \textbf{Veredicto} & \textbf{Flujos} & \textbf{Observación} \\
     \midrule
-    Bit-exacto      & 2  & \cmd{mcp10ccett}, \cmd{tcela-17} \\
+    Bit-exacto      & 3  & \cmd{mcp10ccett}, \cmd{tcela-15}, \cmd{tcela-17} \\
     Cercano         & 29 & MAD $\leq 1$ en el peor buffer \\
     Deriva          & 5  & diferencias en imágenes predichas \\
-    Sin escritura   & 3  & dos son MPEG-1, que el núcleo no decodifica;
-                            el tercero es \cmd{tcela-15} \\
+    Sin escritura   & 2  & MPEG-1, que el núcleo no decodifica \\
     \bottomrule
   \end{tabularx}
   \caption{Veredictos de conformidad (39 flujos, 8 imágenes cada uno).}
@@ -82,7 +81,16 @@ que por lo tanto pertenece al diseño original. Los dos flujos MPEG-1
 (\cmd{mei-16-long}, \cmd{mei-16v2}) no tienen \emph{sequence extension}: el
 núcleo es solo MPEG-2, y el propio diseño original los marca como no
 soportados.
-\pendiente{Investigar \cmd{tcela-15} (sin escritura).}
+
+\cmd{tcela-15} figuraba también como \emph{sin escritura}. Es un flujo de
+prueba de relleno: cada imagen trae unos pocos cientos de bytes de datos y
+después unos 60~KB de ceros. Su contenido es gris medio uniforme, que la
+memoria de cuadros guarda como ceros, y la comparación consideraba
+\enquote{nunca escrito} a todo buffer uniforme. Ahora un buffer se considera
+vacío solo si tiene el valor con que el núcleo limpia la memoria al
+arrancar o el que la captura escribe antes de cada prueba. Con ese
+criterio, \cmd{tcela-15} es bit-exacto. Por el servicio de red también
+entrega sus 8 imágenes completas.
 
 \subsection{Un error en la referencia}
 \label{sec:conformidad-referencia}
@@ -226,7 +234,7 @@ red externa real, el clip llegó a 2,06 veces el tiempo real.
   \item Decodifica holgadamente en tiempo real en CIF, y a 0,5--0,77 veces el
     tiempo real en definición estándar.
   \item El periférico completo consume unos 68~mW estimados.
-  \item 31 de los 37 flujos MPEG-2 de conformidad decodifican bit-exactos o
-    dentro de MAD~1; quedan una deriva chica en imágenes predichas, heredada
-    del diseño original, y un flujo sin imágenes.
+  \item 32 de los 37 flujos MPEG-2 de conformidad decodifican bit-exactos o
+    dentro de MAD~1; en los otros cinco queda una deriva en imágenes
+    predichas.
 \end{itemize}

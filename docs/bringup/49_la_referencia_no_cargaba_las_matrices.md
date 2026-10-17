@@ -63,3 +63,22 @@ Quedan:
 Cuando la documentación de un núcleo de terceros dice que un flujo pasa y nuestra medición dice
 que no, sospechar primero de la referencia y de la comparación, y mirar las dos imágenes antes de
 leer el RTL.
+
+## Adenda (mismo día): tcela-15 tampoco estaba roto
+
+**Commits:** hardware_development `1f80151` (framecmp), `f8cb047` (baseline)
+
+tcela-15 (stuffing) daba "sin escritura". Estructura: cada imagen son ~280 bytes de slices
+(30 de 180 bytes en la I) seguidos de 57–62 KB de ceros hasta el próximo start code. Su
+referencia es **gris 128 uniforme** en todos los planos y cuadros.
+
+- La simulación recorre los 1350 macrobloques y vuelca el framestore; `framecmp` igual decía
+  "never written".
+- Por el daemon, el hardware entrega 8 cuadros completos, todos Y = U = V = 128.
+- Causa: `framecmp.is_blank()` llamaba vacío a todo buffer uniforme. El gris 128 se guarda como
+  ceros (offset −128), uniforme. Los buffers de verdad vacíos tienen el byte crudo `0x80` con que
+  `framestore_request.v` limpia la memoria al arrancar (0 tras el `^0x80`) o el veneno `0xEE`
+  de `capture_framestore.py` (110). Ahora solo esos dos valores cuentan como vacío.
+
+Resultado: tcela-15 bit-exacto; los otros 38 sin cambios. Conformidad final: **3 bit-exactos,
+29 cercanos, 5 con deriva, 2 sin escritura (los dos MPEG-1)**.
