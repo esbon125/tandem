@@ -351,6 +351,19 @@ def resolve_geometry(args, dump_path):
 # subcommands
 # ---------------------------------------------------------------------------
 
+FRAME_PICTURE = 3
+
+
+def picture_structure(data, picture_at):
+    """picture_structure of the picture whose header starts at picture_at: from
+    the picture coding extension right after it, or a frame if there is none
+    (MPEG-1 style)."""
+    nxt = data.find(b"\x00\x00\x01", picture_at + 4)
+    if nxt >= 0 and data[nxt + 3] == 0xB5 and data[nxt + 4] >> 4 == 8:
+        return data[nxt + 6] & 3
+    return FRAME_PICTURE
+
+
 def cut_stream(stream, pictures, out):
     """Cut an elementary stream after a whole number of pictures.
 
@@ -373,18 +386,29 @@ def cut_stream(stream, pictures, out):
     if len(offsets) < pictures:
         raise SystemExit("%s has only %d pictures, cannot cut after %d"
                          % (stream, len(offsets), pictures))
+    # A field picture is half a frame. Cutting after the first field of a pair
+    # leaves the same torn frame as cutting mid-picture (hhi-burst-long and
+    # sony-ct1 both ended on a lone top field), so keep the second field too.
+    first_field = False
+    for i in range(pictures):
+        if picture_structure(data, offsets[i]) == FRAME_PICTURE:
+            first_field = False
+        else:
+            first_field = not first_field
+    if first_field and pictures < len(offsets):
+        pictures += 1
     # cutting after every picture there is means keeping the whole file
     end = offsets[pictures] if pictures < len(offsets) else len(data)
     with open(out, "wb") as fp:
         fp.write(data[:end])
         fp.write(b"\x00\x00\x01\xb7")   # sequence_end_code, so the last picture flushes
-    return end, len(offsets)
+    return end, len(offsets), pictures
 
 
 def cmd_cut(args):
-    end, total = cut_stream(args.stream, args.pictures, args.out)
+    end, total, kept = cut_stream(args.stream, args.pictures, args.out)
     print("%s: %d pictures; wrote first %d as %s (%d bytes + sequence end code)"
-          % (args.stream, total, args.pictures, args.out, end))
+          % (args.stream, total, kept, args.out, end))
     return 0
 
 
