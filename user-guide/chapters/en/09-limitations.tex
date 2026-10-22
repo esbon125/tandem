@@ -7,29 +7,20 @@ The limit is in the core's motion compensation stage, not in memory or the
 clock (measured in the project). It suits recorded clips, not live sources
 that cannot accept flow control.
 
-\section{Loaded quantiser matrices}
+\section{Conformance}
 
-Streams that load a non-symmetric intra quantiser matrix in the sequence
-header decode with visible errors from the first picture on. This affects 11
-of the 39 conformance streams in the test bench, several of which load the
-\emph{default} matrix. Symmetric matrices, and the usual case where the stream
-loads none, decode correctly. It is a difference of the original core, under
-investigation.
-
-\section{Drift in predicted pictures}
-
-In P and B pictures with a lot of motion the difference from the reference
-decoder grows slightly along the GOP (mean absolute error up to $\sim$1 on
-typical streams), with no appreciable visible effect. It too belongs to the
-original core.
+The 37 MPEG-2 conformance streams in the test bench decode identically to the
+reference decoder or within the difference the standard allows between two
+conforming IDCTs (mean absolute error $\leq 0.04$). Two bugs of the original
+core, which caused differences in predicted pictures and with reloaded
+quantiser matrices, are fixed as of bitstream \cmd{0.1.0+918dde0}.
 
 \section{Others}
 
 \begin{itemize}
   \item No video output: the board has no video connector; the output is the
     network.
-  \item MPEG-1 is not supported; one \emph{stuffing} conformance stream
-    (\cmd{tcela-15}) produces no pictures.
+  \item MPEG-1 is not supported.
   \item With TLS, delivery is limited to about 15 frames per second at
     704×480.
   \item Resolution changes within one clip: supported by the protocol, not
