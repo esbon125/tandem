@@ -14,7 +14,9 @@
 # 352x288 con letterbox (la película es 2.39:1; 160 líneas de imagen con
 # píxeles 12:11), 24 fps nativos para no duplicar cuadros, GOP corto, y sin
 # matrices de cuantización cargadas: ffmpeg no las escribe salvo que se le
-# pidan, y el núcleo aplica mal las matrices cargadas (plan, ítem 1b).
+# pidan. El chequeo quedó de cuando se creía que el núcleo las aplicaba mal
+# (era la referencia, bitácora 49); se mantiene para que el clip siga siendo
+# el publicado.
 set -eu
 src=$1; out=$2; start=${3:-18}
 ffmpeg -hide_banner -loglevel error -ss "$start" -t 20 -i "$src" -an \

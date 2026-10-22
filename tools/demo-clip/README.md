@@ -76,17 +76,20 @@ actualizarlas con lo que den `bench_decode.py` y `build_site.sh`.
 
 | | |
 |---|---|
-| `make_clip.sh` | fuente → `tos_cif.m2v`; falla si el sequence header carga matrices de cuantización (el núcleo las aplica mal) |
+| `make_clip.sh` | fuente → `tos_cif.m2v`; falla si el sequence header carga matrices de cuantización (así es el clip publicado) |
 | `capture_clip.py` | decodifica por el daemon con el cliente (`api/python`), guarda I420 y mide fps de punta a punta |
 | `compare_clip.py` | MAD, error pico y PSNR por cuadro contra la salida de `mpeg2decode -o0` |
 | `make_media.sh` | videos H.264 para el navegador: `fpga.mp4` y `compare.mp4` (FPGA, referencia, diferencia x32) |
 | `site/index.html` | la página (demo en vivo + resultado grabado) |
 
-## Medido (bitstream 0.1.0+8004bc9, 2026-10-13)
+## Medido (bitstream 0.1.0+918dde0, 2026-10-22)
 
-- decodificador: 53.6 fps (±0.9, 3 corridas); el stream es de 24 fps
-- punta a punta por red: 49.8–51.5 fps en 5 corridas, todas idénticas byte a byte
-- contra `mpeg2decode`: MAD medio 0.073, máximo 0.162, pico 3, PSNR-Y ≥ 55.8 dB
+- decodificador: 53.7 fps (±0.2, 3 corridas); el stream es de 24 fps
+- punta a punta por red: 49.7–50.9 fps en 3 corridas, todas idénticas byte a byte
+- contra `mpeg2decode`: MAD medio 0.0096, máximo 0.018, pico 3, PSNR-Y ≥ 64.8 dB
+
+Con 0.1.0+8004bc9 (2026-10-13) el MAD medio era 0.073: el núcleo original
+redondeaba mal el promedio de predicciones de las imágenes B (bitácora 50).
 
 ## Licencia del contenido
 
