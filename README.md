@@ -2,74 +2,46 @@
 
 Port de **mpeg2fpga** — un decoder MPEG-2 (ISO/IEC 13818-2) en Verilog de código abierto,
 originalmente orientado a Xilinx, por Koen De Vleeschauwer — a un **Microchip PolarFire SoC**,
-controlado desde Linux por un módulo de kernel propio a través de AXI4.
+controlado desde Linux y empaquetado como producto: driver de kernel, servicio de red con protocolo
+versionado, biblioteca cliente en Python y releases firmadas que se califican en el hardware real
+antes de publicarse.
 
-El objetivo es un decodificador de nivel industrial: correr el core en la lógica de fábrica de la
-FPGA, lejos de las primitivas específicas de Xilinx del diseño original, y manejarlo por completo
-desde el software que corre en el MSS (los cores RISC-V del SoC).
-
-**Estado: decodifica video real en hardware, verificado bit a bit contra un decoder de
-referencia.** Ver [Estado actual](#estado-actual) más abajo.
-
-## Demo
-
-Un frame reconstruido por el decoder, subiendo un stream `.mpg` desde el navegador y leyéndolo de
-vuelta de la memoria de la placa:
+**Demo pública:** [esbon125.github.io/tandem](https://esbon125.github.io/tandem/) — se sube un video
+desde el navegador y lo decodifica la FPGA.
 
 ![Frame decodificado en hardware](assets/demo-frame-tulipanes.png)
 
-Y tres frames de una misma corrida (0, 30 y 59 de una secuencia de 60), mostrando que es video real
-con movimiento, no una imagen fija:
+## Estado
 
-![Tres frames consecutivos mostrando movimiento](assets/demo-video-strip.png)
-
-## Estado actual
-
-- **La cadena completa de reconstrucción es exacta en silicio.** Comparado contra el decoder de
-  referencia (`tools/mpeg2dec`) con [`tools/framecmp`](trunk/mpeg2fpga/tools/framecmp/README): los
-  frames intra salen con un error medio de 0.004 sobre 255 y error pico 1 — exactamente el margen
-  que permite IEEE 1180-1990 entre dos IDCT conformes — y en un stream de contenido casi estático
-  los cuatro buffers de frame salen **bit a bit idénticos** a la referencia.
-- **El port no le agrega ninguna diferencia al diseño original.** Corriendo el mismo stream por
-  simulación (Icarus Verilog) y por hardware real, el frame store resultante es **byte por byte
-  idéntico** en los dos caminos.
-- **Queda un margen de error chico en la predicción entre frames** en streams con mucho movimiento
-  (invisible a simple vista incluso en el peor caso medido) — y está también en la simulación
-  original, sin nada de PolarFire de por medio, así que no es un bug del port. Se deja como está: la
-  idea es no tocar el core de terceros salvo que en la práctica se note.
-- **El decoder corre de forma continua**: empujar un stream después de otro sin resetear el core
-  (solo `flush_vbuf`), y pausar/reanudar en caliente (`repeat_frame`), tal como lo previó el diseño
-  original — ver la sección 1.11 de `doc/mpeg2fpga.txt`.
-- **El módulo de kernel** (`driver/mpeg2fpga`) es dueño de todo el mapa de registros — incluidas las
-  extensiones del bridge AXI (DMA, contadores de depuración, control del core) que antes vivían
-  como constantes sueltas copiadas entre scripts de Python — con tests unitarios vía **KUnit** y una
-  interfaz `sysfs`.
-- **Primera release publicada: [`v0.0.1`](https://github.com/esbon125/tandem/releases/tag/v0.0.1).**
-
-Lo que sigue abierto: salida de video real por el conector (el camino de display corre pero nunca
-se verificó contra una pantalla), y llevar la tasa de decodificación actual (~7 fps a 704×480,
-limitada por la latencia de memoria de un controlador AXI4 sin pipelinear) más cerca de tiempo real.
+- **Conformidad.** Los 37 flujos MPEG-2 de conformidad difieren del decoder de referencia
+  (`tools/mpeg2dec`) sólo en lo que admite la norma: 3 bit a bit idénticos y 34 dentro del margen de
+  la IDCT (peor error medio 0,038 sobre 255). Hicieron falta dos correcciones de tres líneas al RTL
+  original: el redondeo del promedio de predicciones en `motcomp_recon.v` y el orden de las matrices
+  de cuantización en `iquant.v` (bitácora `docs/bringup/50`). La IDCT cumple IEEE 1180-1990.
+- **El port no agrega diferencias.** El mismo flujo por simulación (Icarus Verilog) y por la placa
+  deja una memoria de cuadros idéntica byte a byte.
+- **Velocidad.** 20–23 imágenes/s en definición estándar (704×480) y 53,7 en CIF, más del doble del
+  tiempo real; de punta a punta, por red y a través de la biblioteca, ~19–20 imágenes/s. El límite
+  restante es la reconstrucción del núcleo original. Consumo estimado del decoder: 68 mW.
+- **Producto.** Cada release trae el bitstream, el paquete de la placa, el wheel de Python, la guía
+  de usuario en castellano e inglés, el manual de referencia, el protocolo v1 y `SHA256SUMS`,
+  firmados con la clave Ed25519 del proyecto. Ver [Releases](https://github.com/esbon125/tandem/releases).
 
 ## Arquitectura
 
 ```mermaid
 flowchart TD
-    MSS["MSS (PolarFire SoC)\nLinux + Ethernet"] -- "FIC0 (AXI Master)" --> ICN[AXI Interconnect]
-    ICN --> CTRL["AXI4-Lite Slave\nRegistros + DMA"]
-    ICN --> DECM["AXI Master (Decoder)\nRead Engine / Write Engine"]
-    CTRL -. "control/estado" .-> DEC[MPEG-2 Decoder core]
-    DECM --- DEC
-    DECM <--> DDR[(DDR)]
-
-    subgraph Linux [" "]
-      KDRV["driver/mpeg2fpga\n(sysfs, IRQ, KUnit)"]
-      WEB["webserver/\n(demo: subir stream, ver video)"]
-      WEB --> KDRV
+    CLI["PC cliente\nbiblioteca mpeg2fpga (Python)\ndemo/demo_server.py"] -- "protocolo v1\nHTTP(S) + token" --> D
+    subgraph Placa ["PolarFire SoC Discovery Kit"]
+      subgraph Linux ["Linux (MSS, RISC-V)"]
+        D["mpeg2fpgad\n(servicio)"] --> KDRV["driver/mpeg2fpga\n(/dev/mpeg2fpga, KUnit)"]
+      end
+      KDRV -- "APB: registros, DMA, IRQ por imagen" --> DEC[Núcleo MPEG-2]
+      DEC <-- "AXI4" --> DDR[(DDR)]
     end
-    KDRV -. "registros" .-> CTRL
 ```
 
-El core es un pipeline de streaming de ancho fijo (`doc/mpeg2fpga.txt` §2.2.1 tiene el diagrama
+El núcleo es un pipeline de streaming de ancho fijo (`doc/mpeg2fpga.txt` §2.2.1 tiene el diagrama
 completo):
 
 ```mermaid
@@ -79,76 +51,71 @@ flowchart LR
     VLD --> RLD --> IQUANT --> IDCT
     IDCT --> RECON["motcomp_recon"]
     RECON --> FS[(Frame store\nDDR)]
-    FS --> DISP["resample / yuv2rgb"]
-    DISP --> OUT[Salida de video]
 ```
 
 ## Estructura del repositorio
 
 Tres ramas de trabajo de larga vida, una por tipo de contenido, más `master` como punto de
-integración de las releases (ver [Releases](#releases) abajo):
+integración de las releases:
 
 ```
 trunk/mpeg2fpga/     rama hardware_development — núcleo Verilog del decoder
-  rtl/mpeg2/         RTL del decoder (IP de terceros bajo licencia MPEG-2, ver rtl/LICENSE-MPEG2)
-  bench/iverilog/    testbench funcional (Icarus Verilog)
-  bench/ieee1180/    test de precisión de IDCT contra IEEE 1180-1990
-  tools/framecmp/    comparación de un frame decodificado contra el decoder de referencia
-  tools/mpeg2dec/    decoder de referencia en C, para comparar
-  mpeg2fpga/         proyecto Libero SoC (generado por la herramienta, no es RTL escrito a mano)
+  rtl/mpeg2/         RTL del decoder (IP de terceros, ver rtl/LICENSE-MPEG2)
+  bench/             testbench funcional (Icarus Verilog) y test IEEE 1180
+  soc_build/         síntesis, place & route y programación con Libero, sin interfaz gráfica
+  tools/regress/     regresión en la placa: conformidad, determinismo, robustez, velocidad
+  tools/framecmp/    comparación de frames contra el decoder de referencia
+  tools/mpeg2dec/    decoder de referencia en C
 
-driver/              rama firmware_development — módulo de kernel (KUnit, sysfs)
-webserver/           rama firmware_development — demo: subir un stream, verlo decodificado
-renode/              rama firmware_development — modelo del periférico para TDD del driver sin hardware
+driver/              rama firmware_development — módulo de kernel (KUnit)
+daemon/              rama firmware_development — mpeg2fpgad, el servicio de red
+api/                 rama firmware_development — protocolo v1 y biblioteca Python
+demo/                rama firmware_development — servidor de la demo pública
+user-guide/          rama firmware_development — guía de usuario (castellano e inglés)
+release/             rama firmware_development — calificación, firma y empaquetado
 
-docs/                rama docs — documentación técnica
-  bringup/           bitácora de bring-up de la placa, numerada, un documento por hallazgo
-  polarfire/         manuales y esquemáticos de referencia del hardware
+docs/                rama docs — Informe Final, bitácoras de bring-up, referencias
 ```
 
-## Probarlo
+## Usarlo
 
-### Simulación
+Con una placa instalada (guía de usuario, capítulo de instalación):
 
-El único camino de test automatizado hoy es la simulación funcional con Icarus Verilog:
+```python
+from mpeg2fpga import Device
+
+dev = Device("192.168.18.5", token=open("token").read().strip())
+for frame in dev.decode("clip.m2v"):    # orden de presentación, planos I420
+    print(frame.display_index, frame.picture_type, frame.width, frame.height)
+```
+
+Simulación, sin placa:
 
 ```sh
-cd trunk/mpeg2fpga/bench/iverilog
-make clean test
+cd trunk/mpeg2fpga/bench/iverilog && make clean test
+cd trunk/mpeg2fpga/bench/ieee1180 && make quick
 ```
-
-Llena el directorio de `tv_out_*.ppm` (frames decodificados) para inspección visual. El chequeo de
-precisión de IDCT (`bench/ieee1180`) corre en 15 segundos:
-
-```sh
-cd trunk/mpeg2fpga/bench/ieee1180
-make quick
-```
-
-### En hardware
-
-Con la placa programada, el overlay de device tree aplicado y el módulo de kernel cargado
-(`driver/mpeg2fpga/tools/install-on-board.sh`), el demo web queda en el puerto 8080:
-
-```sh
-ssh root@<placa> 'systemctl status mpeg2fpga-webserver'
-```
-
-Se sube un `.mpg`/`.bits` desde el navegador y se ve el resultado — es lo que muestran las capturas
-de arriba.
 
 ## Releases
 
-`docs`, `hardware_development` y `firmware_development` nunca se cierran ni se borran; cada release
-fusiona el estado actual de las tres a `master` (workflow manual en
-[`.github/workflows/release.yml`](.github/workflows/release.yml)) y taggea tanto el commit de
-fusión (`vX.Y.Z`) como el HEAD que tenía cada rama en ese momento
-(`vX.Y.Z-docs`, `vX.Y.Z-hardware_development`, `vX.Y.Z-firmware_development`).
+Cada release corre `release/qualify.sh` en la máquina conectada a la placa (regresión completa y
+prueba de punta a punta contra una línea de base grabada); sólo si pasa, fusiona en `master`
+exactamente los commits calificados de las tres ramas, los taggea (`vX.Y.Z` y `vX.Y.Z-<rama>`) y
+publica los artefactos firmados. Detalle en `release/README.md`.
 
-## Licencias / IP de terceros
+Para verificar una release, con la clave pública de `release/keys/`:
 
-- El core MPEG-2 (`trunk/mpeg2fpga/rtl`) es IP de terceros bajo `rtl/LICENSE-MPEG2` — se prefieren
-  diffs mínimos y acotados por sobre reescrituras.
-- Cualquier IP de Microchip/Actel generada por Libero (DirectCore/SgCore — COREFIFO, PF_CCC, etc.,
-  bajo `trunk/mpeg2fpga/mpeg2fpga/component/`) es propietaria y confidencial; no se trackea en git
-  (ver `.gitignore` en ese directorio) y no debe redistribuirse sin autorización de Microchip.
+```sh
+openssl pkeyutl -verify -pubin -inkey mpeg2fpga-release.pub.pem \
+    -rawin -in SHA256SUMS -sigfile SHA256SUMS.sig
+sha256sum -c SHA256SUMS
+```
+
+## Licencias
+
+El software es MIT (`LICENSE`), el driver GPL-2.0 y el RTL propio CERN-OHL-S-2.0; el detalle por
+componente está en `LICENSES.md` y lo que acompaña a cada release, en `THIRD_PARTY_NOTICES.md`.
+
+- El núcleo MPEG-2 (`trunk/mpeg2fpga/rtl`) es IP de terceros bajo `rtl/LICENSE-MPEG2`.
+- La IP de Microchip generada por Libero (`trunk/mpeg2fpga/mpeg2fpga/component/`) es propietaria;
+  no se trackea en git y no debe redistribuirse sin autorización de Microchip.
