@@ -867,7 +867,8 @@ module combine_predictions (rst, clk, clk_en,
   reg signed    [9:0]fwd_prediction_pixel_5;
   reg signed    [9:0]bwd_prediction_pixel_5;
   reg signed    [9:0]fwd_bwd_prediction_pixel_5;
-  wire signed   [9:0]fwd_bwd_prediction_pixel_round_5 = {9'b0, ~fwd_bwd_prediction_pixel_5[9]};
+  /* (fwd + bwd + 1) >> 1 as par. 7.6.7 asks; rounding away from zero instead biased dual prime P pictures downwards */
+  wire signed   [9:0]fwd_bwd_prediction_pixel_round_5 = 10'sd1;
 
   always @(posedge clk)
     if (~rst) {valid_5, write_recon_5, write_address_5, motion_forward_5 ,motion_backward_5, fwd_prediction_pixel_5, bwd_prediction_pixel_5} <= 1'b0;
