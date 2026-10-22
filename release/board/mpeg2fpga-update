@@ -1,0 +1,46 @@
+#!/bin/sh
+# Update the board software from a signed board package:
+#
+#   mpeg2fpga-update mpeg2fpga-board-X.Y.Z.tar.gz [package.sig]
+#
+# The signature (default: the package name + .sig) is checked against the
+# release key installed on the board, never against one inside the package.
+# A package that was not signed with the project's key is refused before
+# anything is unpacked. The daemon keeps its --tls/--debug setting.
+set -eu
+KEY=/etc/mpeg2fpga/release-key.pub.pem
+PKG=${1:?usage: mpeg2fpga-update mpeg2fpga-board-X.Y.Z.tar.gz [package.sig]}
+SIG=${2:-$PKG.sig}
+
+[ "$(id -u)" = 0 ] || { echo "run as root" >&2; exit 1; }
+[ -r "$KEY" ] || { echo "no release key at $KEY: install a package by hand first (see its INSTALL)" >&2; exit 1; }
+[ -r "$SIG" ] || { echo "no signature $SIG: refusing an unsigned package" >&2; exit 1; }
+if ! openssl pkeyutl -verify -pubin -inkey "$KEY" -rawin -in "$PKG" -sigfile "$SIG" >/dev/null 2>&1; then
+    echo "BAD SIGNATURE: $PKG was not signed with the mpeg2fpga release key; nothing installed" >&2
+    exit 1
+fi
+echo "signature good: $PKG"
+
+T=$(mktemp -d)
+trap 'rm -rf "$T"' EXIT
+tar -C "$T" -xzf "$PKG"
+set -- "$T"/mpeg2fpga-board-*
+[ -d "$1" ] || { echo "$PKG holds no mpeg2fpga-board-* directory" >&2; exit 1; }
+D=$1
+
+DAEMON_ARGS=""
+if [ -r /etc/mpeg2fpgad/mpeg2fpgad.env ]; then
+    grep -q -- --tls /etc/mpeg2fpgad/mpeg2fpgad.env && DAEMON_ARGS="$DAEMON_ARGS --tls"
+    grep -q -- --enable-debug /etc/mpeg2fpgad/mpeg2fpgad.env && DAEMON_ARGS="$DAEMON_ARGS --debug"
+fi
+sh "$D/update/install-on-board.sh"
+# the overlay unit is a oneshot that is already active: installing it does
+# not run it again, so unload the old module and restart it explicitly
+systemctl stop mpeg2fpgad 2>/dev/null || true
+rmmod mpeg2fpga 2>/dev/null || true
+sh "$D/driver/install-on-board.sh"
+systemctl restart mpeg2fpga-overlay
+[ -e /dev/mpeg2fpga ] || { echo "driver did not come up" >&2; exit 1; }
+# shellcheck disable=SC2086
+sh "$D/daemon/install-on-board.sh" $DAEMON_ARGS
+echo "installed $(basename "$D")"

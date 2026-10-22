@@ -19,7 +19,8 @@
 #                   median fps >= the floor
 #   6. artifacts    then, and only then: Python library (tested wheel), user
 #                   guide PDF, board bundle, the bitstream's .job, notes,
-#                   SHA256SUMS -> release/dist/<version>/
+#                   SHA256SUMS -> release/dist/<version>/, the board bundle and
+#                   SHA256SUMS signed with the release key (release/sign.py)
 #
 # The bitstream is not rebuilt (synthesis is ~40 min of Libero and needs its
 # licence): the manifest pins a prebuilt one, exported once with EXPORT_FPE
@@ -37,6 +38,11 @@
 #   FPS_FLOOR      end-to-end floor [manifest]
 #   PYTHON         >= 3.9, for the client library and e2e [python3.11]
 #   REGRESS_PYTHON with numpy, for tools/regress [python3]
+#   MPEG2FPGA_SIGNING_KEY   the release private key
+#                  [~/.config/mpeg2fpga/release-key.pem]
+#   MPEG2FPGA_SIGNING_PASS  its passphrase; asked once at the start when unset
+#                  and there is a terminal. Checked in the preflight, so a
+#                  wrong one fails in seconds, not after the regression.
 
 set -euo pipefail
 
@@ -86,6 +92,16 @@ echo "$BIT_SHA  $BIT_JOB" | sha256sum -c --quiet - || { echo "bitstream file che
 kernel="$(on_board uname -r)"
 [ "$kernel" = "$KERNEL" ] || { echo "board kernel $kernel, module built for $KERNEL" >&2; exit 1; }
 echo "kernel $kernel"
+if [ -z "${MPEG2FPGA_SIGNING_PASS:-}" ] && [ -t 0 ]; then
+    read -r -s -p "release key passphrase: " MPEG2FPGA_SIGNING_PASS && echo
+fi
+[ -n "${MPEG2FPGA_SIGNING_PASS:-}" ] || { echo "MPEG2FPGA_SIGNING_PASS unset: releases are signed (release/sign.py)" >&2; exit 1; }
+export MPEG2FPGA_SIGNING_PASS
+"$PYTHON" -m venv "$WORK/venv-sign"
+"$WORK/venv-sign/bin/pip" install --quiet --disable-pip-version-check cryptography
+sign() { "$WORK/venv-sign/bin/python" "$HERE/sign.py" "$@"; }
+echo probe > "$WORK/probe" && sign sign "$WORK/probe" >/dev/null && sign verify "$WORK/probe" >/dev/null
+echo "release key unlocked, matches release/keys/mpeg2fpga-release.pub.pem"
 [ -d "$TOOLS/regress" ] || { echo "no tools/regress under HW_TREE=$HW_TREE" >&2; exit 1; }
 if [ ! -d "$TOOLS/streams/tek" ] && [ -n "${STREAMS_DIR:-}" ]; then
     rm -rf "$TOOLS/streams" && ln -s "$STREAMS_DIR" "$TOOLS/streams"
@@ -163,7 +179,9 @@ cp "$FW/api/PROTOCOL-v1.md" "$DIST/"
 cp "$FW/LICENSE" "$FW/LICENSES.md" "$FW/THIRD_PARTY_NOTICES.md" "$DIST/"
 
 B="$WORK/mpeg2fpga-board-$VERSION"
-mkdir -p "$B/driver" "$B/daemon"
+mkdir -p "$B/driver" "$B/daemon" "$B/update"
+cp "$HERE/board/mpeg2fpga-update" "$HERE/board/install-on-board.sh" "$HERE/keys/mpeg2fpga-release.pub.pem" "$B/update/"
+mv "$B/update/mpeg2fpga-release.pub.pem" "$B/update/release-key.pub.pem"
 cp -r "$FW/driver/mpeg2fpga/tools/." "$B/driver/"
 cp "$FW/driver/mpeg2fpga/mpeg2fpga.ko" "$B/driver/"
 cp -r "$FW/daemon/mpeg2fpgad" "$FW/daemon/systemd" "$FW/daemon/install-on-board.sh" "$B/daemon/"
@@ -173,7 +191,17 @@ find "$B" -name __pycache__ -prune -exec rm -rf {} +
 cat > "$B/INSTALL" <<EOF
 mpeg2fpga $VERSION -- board software (driver + mpeg2fpgad)
 Needs: bitstream $BIT_BUILD programmed, kernel $KERNEL.
-On the board, as root, from this directory:
+
+Updating a board that already has mpeg2fpga-update: copy this package and its
+.sig to the board, then as root
+    mpeg2fpga-update mpeg2fpga-board-$VERSION.tar.gz
+It checks the signature against the release key already on the board and
+installs nothing if it does not match.
+
+First installation, on a board without it: check the package on a trusted
+machine first (release-notes.md, "Checking the files"), then on the board, as
+root, from this directory:
+    sh update/install-on-board.sh            # release key + mpeg2fpga-update
     sh driver/install-on-board.sh
     sh daemon/install-on-board.sh            # --tls for HTTPS
 Then: cat /etc/mpeg2fpgad/token
@@ -214,10 +242,27 @@ to the recorded baseline and the median at or above {floor} fps.
 - `PROTOCOL-v1.md` -- network protocol
 - `LICENSE`, `LICENSES.md`, `THIRD_PARTY_NOTICES.md` -- licences of each file and
   where its source is
-- `SHA256SUMS` -- check with `sha256sum -c SHA256SUMS`
+- `SHA256SUMS`, `SHA256SUMS.sig` -- checksums of every file, signed
+- `mpeg2fpga-board-{version}.tar.gz.sig` -- what `mpeg2fpga-update` checks on the board
+
+## Checking the files
+
+`mpeg2fpga-release.pub.pem` is the project's Ed25519 public key; take it from
+the source repository (`release/keys/`), not from the same place as the
+files. With OpenSSL 3:
+
+    openssl pkeyutl -verify -pubin -inkey mpeg2fpga-release.pub.pem \\
+        -rawin -in SHA256SUMS -sigfile SHA256SUMS.sig
+    sha256sum -c SHA256SUMS
+
+The first proves the checksums come from the project, the second that every
+file matches them.
 """
 open(os.path.join(dist, "release-notes.md"), "w").write(notes)
 EOF
-(cd "$DIST" && sha256sum -- *.whl *.tar.gz *.pdf *.job *.md LICENSE e2e.json > SHA256SUMS)
+sign sign "$DIST/mpeg2fpga-board-$VERSION.tar.gz" >/dev/null
+(cd "$DIST" && sha256sum -- *.whl *.tar.gz *.sig *.pdf *.job *.md LICENSE e2e.json > SHA256SUMS)
+sign sign "$DIST/SHA256SUMS" >/dev/null
+sign verify "$DIST/SHA256SUMS" "$DIST/mpeg2fpga-board-$VERSION.tar.gz"
 step "release $VERSION qualified"
 ls -l "$DIST"
