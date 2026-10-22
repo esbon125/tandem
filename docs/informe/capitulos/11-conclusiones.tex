@@ -40,9 +40,10 @@ La optimización llevó la tasa de 7,2 a 22--23 imágenes por segundo en
 definición estándar, y se localizó con precisión el límite restante: la
 etapa de reconstrucción del núcleo original. Superarlo exige modificar la
 lógica central de un diseño de terceros, y se decidió no hacerlo dentro de
-este proyecto. En el objetivo de producto quedan tareas concretas antes de
-una versión 1.0, la principal de ellas firmar los paquetes de
-actualización.
+este proyecto. El objetivo de producto se cumplió con la versión 1.0.0,
+calificada en el hardware y con sus paquetes firmados; lo que queda del
+lado del producto depende de una placa propia (actualizar el bitstream en
+campo) más que del software.
 
 \section{Lecciones aprendidas}
 
@@ -85,8 +86,8 @@ actualización.
 \begin{itemize}
   \item \textbf{Tiempo real en definición estándar}: optimizar la etapa de
     reconstrucción por compensación de movimiento del núcleo.
-  \item \textbf{Producto}: firmar las actualizaciones, publicar el Manual de
-    Referencia y llegar a una versión 1.0.
+  \item \textbf{Producto}: un procedimiento para rotar o revocar la clave de
+    firma, y una política de soporte de versiones anteriores.
   \item \textbf{Placa propia}: con memoria flash para actualizar el bitstream
     en campo, salida de video para aprovechar la cadena de visualización ya
     presente en el núcleo y monitores de consumo para medir la potencia.

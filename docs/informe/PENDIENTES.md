@@ -17,7 +17,8 @@ Lista viva: se actualiza cada vez que se cierra o aparece algo. Las marcas
       sincronizador de reset, set_clock_groups) — cap. 5 "Temporización"
 - [x] Calificar en la placa el bitstream 0.1.0+8a6d847 y fijarlo en release/manifest.json
       (firmware_development 4e7a67f; qualify 0.1.0-rc3 OK, 19,3–19,5 fps)
-- [ ] Firma de actualizaciones con GPG (el autor genera la clave) — cap. 7, distribución
+- [x] Firma de actualizaciones: Ed25519 con OpenSSL (la placa no tiene GPG), `mpeg2fpga-update`
+      verifica contra la clave instalada; probado en la placa (fw cea799a, clave 49b4fed) — caps. 7 y 11
 - [x] "Bug" de matrices de cuantización: estaba en la referencia (mpeg2dec), no en el núcleo
       (hw d91aecd, bitácora 49) — caps. 2, 10, 11 y anexo C actualizados
 - [x] mei-16-long y mei-16v2 "sin escritura": son MPEG-1, fuera de alcance — cap. 10
@@ -29,8 +30,8 @@ Lista viva: se actualiza cada vez que se cierra o aparece algo. Las marcas
       qualify 0.1.0-rc4 OK (fw 3c3d8da). Los 37 MPEG-2 quedan bit-exactos o cercanos (MAD ≤ 0,04)
       — caps. 0, 2, 5, 10, 11 y anexo C
 - [x] Manual de Referencia (Doxygen; reemplaza a la nota de aplicación) — firmware_development 6c7a6e3, sale en cada release — caps. 1, 7 y 11
-- [ ] Release final: actualizar la versión citada — cap. 7; la tabla de
-      entregables dice "próxima versión" para licencias y avisos de terceros
+- [x] Release final: v1.0.0 citada en el cap. 7, tabla de entregables al día
+- [ ] Correr la release v1.0.0 (Actions → Release) y confirmar que se publicó
 - [x] Archivo de licencia en la raíz (`LICENSE` MIT, `LICENSES.md`,
       `THIRD_PARTY_NOTICES.md`; firmware_development 3a57e51) — cap. 7
 

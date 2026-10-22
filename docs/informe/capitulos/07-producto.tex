@@ -296,16 +296,35 @@ sigue estos pasos:
 Si cualquier paso falla, no se publica nada y el informe de la falla queda
 disponible para su análisis. La primera versión publicada por este proceso,
 la \cmd{v0.1.0-rc2} del 9 de octubre de 2026, se calificó con el bitstream
-\cmd{0.1.0+8004bc9}.
-\pendiente{Actualizar con la versión final que acompañe la entrega.}
+\cmd{0.1.0+8004bc9}. La que acompaña esta entrega, la \cmd{v1.0.0}, se
+calificó con el bitstream \cmd{0.1.0+918dde0}, que incluye las dos
+correcciones de la sección~\ref{sec:conformidad-upstream}. El bitstream
+conserva su propia numeración: cambia solo cuando cambia el diseño de la
+FPGA, no con cada versión del producto.
 
 Cada parte se actualiza por su propio camino: el bitstream por JTAG, el
 software de la placa por red con el instalador del paquete, y la biblioteca
 cliente con \cmd{pip}. Cada versión publica un archivo \cmd{SHA256SUMS} que
 permite verificar la integridad de lo descargado.
-\pendiente{La integridad no garantiza la autenticidad: falta firmar los
-paquetes de actualización (por ejemplo con una clave del proyecto) para que
-la placa rechace un paquete que no provenga del fabricante.}
+
+La integridad no garantiza la autenticidad: quien reemplace un archivo
+puede reemplazar también su suma. Por eso cada versión firma
+\cmd{SHA256SUMS}, y con él todos los archivos, y el paquete de la placa,
+con una clave Ed25519 del proyecto. La clave privada no está en el
+repositorio: vive cifrada en la máquina que califica las versiones, y el
+proceso de calificación la desbloquea al empezar, de modo que una
+contraseña equivocada falla en segundos y no después de la regresión. Se
+eligió Ed25519 con firmas crudas, y no GPG, porque la imagen de Linux de la
+placa no trae GPG pero sí OpenSSL~3, que las verifica.
+
+La placa no confía en la clave que venga dentro de un paquete. La primera
+instalación, hecha a partir de un paquete verificado en una máquina de
+confianza, deja la clave pública en la placa junto con el comando
+\cmd{mpeg2fpga-update}. Desde entonces, ese comando verifica cada paquete
+contra la clave instalada y, si la firma falta o no corresponde, no instala
+nada. Se probó en la placa: un paquete firmado se instaló conservando el
+token y la configuración del servicio, y uno alterado en un byte y otro sin
+firma fueron rechazados.
 
 \section{Entregables}
 \label{sec:entregables}
@@ -322,8 +341,9 @@ la placa rechace un paquete que no provenga del fabricante.}
     Guía de usuario, en castellano e inglés & usuario & publicado \\
     Notas de versión e informe de regresión & integrador & publicado \\
     Sumas de verificación (\cmd{SHA256SUMS}) & todos & publicado \\
-    Licencias y avisos de terceros & todos & próxima versión \\
-    Manual de referencia (\emph{Reference Manual}) & desarrollador & próxima versión \\
+    Firmas de \cmd{SHA256SUMS} y del paquete de la placa & todos & publicado \\
+    Licencias y avisos de terceros & todos & publicado \\
+    Manual de referencia (\emph{Reference Manual}) & desarrollador & publicado \\
     Código fuente completo & todos & público \\
     Demostración pública en línea & todos & publicada \\
     Este Informe Final & cátedra & presente documento \\
