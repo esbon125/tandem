@@ -4,13 +4,13 @@
  "width": 352,
  "height": 288,
  "complete": true,
- "first_frame_s": 0.137,
- "total_s": 9.681,
- "fps_steady": 50.19,
+ "first_frame_s": 0.148,
+ "total_s": 9.559,
+ "fps_steady": 50.9,
  "versions": {
   "daemon": "0.1.0",
   "driver": "0.1.0",
-  "bitstream": "0.1.0+8004bc9",
+  "bitstream": "0.1.0+918dde0",
   "core": "0x000c"
  }
 }

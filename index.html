@@ -139,10 +139,10 @@ canvas#madchart { width: 100%; height: 70px; display: block; margin-top: 10px; }
   </figure>
 
   <div class="stats">
-    <div class="stat"><b>53.6 fps</b><span>decodificación en el FPGA (3 corridas, ±0.9)</span></div>
+    <div class="stat"><b>53.7 fps</b><span>decodificación en el FPGA (3 corridas, ±0.2)</span></div>
     <div class="stat"><b>50 fps</b><span>de punta a punta por red, cliente Python → dispositivo → cliente</span></div>
     <div class="stat"><b>24 fps</b><span>frame rate del stream: tiempo real con 2.1× de margen</span></div>
-    <div class="stat"><b>0.07</b><span>MAD medio frente al decodificador de referencia (pico 3/255)</span></div>
+    <div class="stat"><b>0.01</b><span>MAD medio frente al decodificador de referencia (pico 3/255)</span></div>
   </div>
 
   <h2>Comparación con el decodificador de referencia</h2>
@@ -156,16 +156,16 @@ canvas#madchart { width: 100%; height: 70px; display: block; margin-top: 10px; }
   <div class="scroll">
   <table>
     <tr><th>Métrica (480 cuadros, Y+Cb+Cr)</th><th>Valor</th></tr>
-    <tr><td>MAD medio / máximo por cuadro</td><td>0.073 / 0.162</td></tr>
+    <tr><td>MAD medio / máximo por cuadro</td><td>0.010 / 0.018</td></tr>
     <tr><td>Error pico</td><td>3 niveles de 255</td></tr>
-    <tr><td>PSNR de luma, mínimo / mediana</td><td>55.8 dB / 58.6 dB</td></tr>
+    <tr><td>PSNR de luma, mínimo / mediana</td><td>64.8 dB / 67.4 dB</td></tr>
     <tr><td>Repetibilidad (3 corridas de punta a punta)</td><td>idénticas byte a byte</td></tr>
   </table>
   </div>
-  <p class="lede" style="margin-top:12px">La pequeña diferencia restante es del núcleo
-  <em>mpeg2fpga</em> original, no del port: en las secuencias de conformidad verificadas, el mismo
-  diseño simulado en Icarus Verilog da cuadros idénticos byte a byte a los del hardware. La IDCT
-  cumple IEEE 1180-1990.</p>
+  <p class="lede" style="margin-top:12px">La diferencia restante es la que la norma admite entre
+  dos IDCT conformes (la del FPGA cumple IEEE 1180-1990). Se corrigieron dos errores del núcleo
+  <em>mpeg2fpga</em> original, presentes también en su simulación; con el núcleo sin corregir, este
+  clip daba un MAD medio de 0.073.</p>
 
   <h2>Cómo se midió</h2>
   <div class="scroll">
@@ -175,7 +175,7 @@ canvas#madchart { width: 100%; height: 70px; display: block; margin-top: 10px; }
       2.0 MB — <a href="media/tos_cif.m2v">descargar .m2v</a></td></tr>
     <tr><td>Decodificación</td><td>desde el inicio del DMA hasta la última escritura en el framestore</td></tr>
     <tr><td>Punta a punta</td><td>cliente Python en una PC por Ethernet (protocolo v1, sin TLS), del primer al último cuadro recibido</td></tr>
-    <tr><td>Bitstream / software</td><td><code>0.1.0+8004bc9</code>, daemon y driver 0.1.0</td></tr>
+    <tr><td>Bitstream / software</td><td><code>0.1.0+918dde0</code>, daemon y driver 0.1.0</td></tr>
     <tr><td>Datos</td><td><a href="media/framecmp.json">framecmp.json</a> ·
       <a href="media/e2e_run.json">e2e_run.json</a> · <a href="media/SHA256SUMS">SHA256SUMS</a></td></tr>
   </table>
