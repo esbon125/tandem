@@ -62,25 +62,27 @@ el detalle está en el anexo~\ref{anx:regresion}.
     \textbf{Veredicto} & \textbf{Flujos} & \textbf{Observación} \\
     \midrule
     Bit-exacto      & 3  & \cmd{mcp10ccett}, \cmd{tcela-15}, \cmd{tcela-17} \\
-    Cercano         & 29 & MAD $\leq 1$ en el peor buffer \\
-    Deriva          & 5  & diferencias en imágenes predichas \\
+    Cercano         & 34 & MAD $\leq 0{,}04$ y pico $\leq 4$ en el peor buffer \\
+    Deriva          & 0  & \\
     Sin escritura   & 2  & MPEG-1, que el núcleo no decodifica \\
     \bottomrule
   \end{tabularx}
-  \caption{Veredictos de conformidad (39 flujos, 8 imágenes cada uno).}
+  \caption{Veredictos de conformidad (39 flujos, hasta 8 imágenes cada uno).}
   \label{tab:conformidad}
 \end{table}
 
-De los cinco flujos con deriva, dos (\cmd{sony-ct1} y \cmd{hhi-burst-long})
-tienen dos buffers bit-exactos o casi, y los otros dos con errores grandes y
-localizados, lo que apunta más al emparejamiento entre buffers y cuadros de
-referencia en un flujo cortado que a un error de decodificación. Los otros
-tres (\cmd{nokia6-60}, \cmd{tcela-10}, \cmd{tcela-14}) muestran una deriva
-chica en imágenes predichas (MAD 1,6--2,4), que la simulación reproduce y
-que por lo tanto pertenece al diseño original. Los dos flujos MPEG-1
-(\cmd{mei-16-long}, \cmd{mei-16v2}) no tienen \emph{sequence extension}: el
-núcleo es solo MPEG-2, y el propio diseño original los marca como no
-soportados.
+Los 37 flujos MPEG-2 decodifican bit-exactos o cercanos, y en los cercanos
+la diferencia es la que admite el estándar entre dos IDCT conformes: el
+peor buffer de toda la batería tiene MAD 0,038 (\cmd{att-mismatch}, un
+flujo de $32 \times 32$ hecho justamente para estresar la IDCT), y en 30 de
+los 34 el peor buffer está por debajo de 0,02. Ningún flujo deriva. Para
+llegar ahí hubo que corregir la referencia
+(sección~\ref{sec:conformidad-referencia}), la forma de cortar los flujos y
+dos errores del diseño original (sección~\ref{sec:conformidad-upstream}).
+
+Los dos flujos MPEG-1 (\cmd{mei-16-long}, \cmd{mei-16v2}) no tienen
+\emph{sequence extension}: el núcleo es solo MPEG-2, y el propio diseño
+original los marca como no soportados.
 
 \cmd{tcela-15} figuraba también como \emph{sin escritura}. Es un flujo de
 prueba de relleno: cada imagen trae unos pocos cientos de bytes de datos y
@@ -115,11 +117,54 @@ activadas. Sin trazas, que es como la usa la comparación, la referencia no
 cargaba la matriz ni consumía sus 512~bits.
 
 Corregido ese \cmd{if}, las capturas del hardware, idénticas byte a byte a
-las anteriores, pasaron a puntuar como se ve en la
-tabla~\ref{tab:conformidad}: \cmd{gi4} bajó de MAD 17,9 a 0,005 en su
-imagen intra. La corrección también resolvió la mayor parte de la deriva en
+las anteriores, pasaron a 2 bit-exactos, 29 cercanos y 5 con deriva:
+\cmd{gi4} bajó de MAD 17,9 a 0,005 en su imagen intra. La corrección también resolvió la mayor parte de la deriva en
 imágenes predichas, porque varios de esos flujos cargan matrices para
 bloques no intra.
+
+\subsection{Dos errores en el diseño original}
+\label{sec:conformidad-upstream}
+
+Corregida la referencia quedaban cinco flujos con deriva. En dos de ellos
+(\cmd{sony-ct1}, \cmd{hhi-burst-long}) el corte de 8 imágenes terminaba en
+el primer campo de un cuadro; ahora el corte nunca separa los dos campos.
+Los otros tres (\cmd{nokia6-60}, \cmd{tcela-10}, \cmd{tcela-14}) eran
+errores del núcleo: la simulación del RTL original da el mismo volcado, bit
+a bit, que la placa, así que no los introdujo el port, aunque la
+documentación original da esos flujos por aprobados.
+
+Simular hasta las imágenes afectadas lleva horas por volcado. El método que
+funcionó fue otro: modificar una copia de la referencia para que se
+comporte como se sospecha que se comporta el hardware, y ver si los
+volcados de la placa coinciden con ella al nivel de ruido de la IDCT. Para
+desempatar entre el hardware y la referencia se usó además un tercer
+decodificador independiente (ffmpeg).
+
+\begin{itemize}
+  \item \textbf{Redondeo del promedio de predicciones.} Al promediar la
+    predicción hacia adelante y hacia atrás, el núcleo redondeaba según el
+    signo del píxel (que guarda con un desplazamiento de $-128$), en lugar
+    de $(a+b+1)/2$ como pide la norma. Los píxeles oscuros perdían un nivel.
+    En imágenes B el efecto no se acumula (MAD $\approx 0{,}26$), pero la
+    predicción \emph{dual prime} usa ese promedio en imágenes P, que son
+    referencia de las siguientes: en \cmd{nokia6-60} y \cmd{tcela-14} el
+    sesgo crecía imagen a imagen hasta MAD~2. Con la referencia emulando
+    ese redondeo, el hardware coincidía en MAD 0,02.
+  \item \textbf{Orden de las matrices recargadas.} Las matrices de
+    cuantización se transmiten siempre en orden zigzag, pero el núcleo las
+    ubicaba con el orden de recorrido de la imagen anterior. Una segunda
+    cabecera de secuencia que llega después de una imagen con recorrido
+    alternativo, como en \cmd{tcela-10}, dejaba los pesos permutados. La
+    firma estaba en el dominio de la DCT: la ganancia entre hardware y
+    referencia era exactamente 1 en muchos coeficientes y, en los demás, un
+    cociente de dos valores de la matriz (22/19, 16/19, 19/16). El
+    comentario del código original ya decía que debía usarse el orden zigzag.
+\end{itemize}
+
+Los dos arreglos suman tres líneas de RTL. Con ellos, \cmd{nokia6-60} bajó
+de MAD 1,79 a 0,026, \cmd{tcela-14} de 1,62 a 0,025 y \cmd{tcela-10} de
+2,40 a 0,009, y las imágenes B del resto de la batería, de 0,26 a menos de
+0,02.
 
 \section{Determinismo y robustez}
 
@@ -141,33 +186,35 @@ no contienen ningún código de inicio que el analizador pueda rechazar. El
     \toprule
     \textbf{Flujo} & \textbf{Resolución} & \textbf{img/s} & \textbf{desvío} & \textbf{$\times$ tiempo real} \\
     \midrule
-    tek60          & $704 \times 480$ & 22,9 & 0,6 & 0,76 \\
-    tek-5-long     & $704 \times 480$ & 23,0 & 0,8 & 0,77 \\
-    mei-2-60f      & $704 \times 480$ & 20,9 & 0,5 & 0,70 \\
-    tcela-7        & $720 \times 480$ & 20,1 & 0,6 & 0,67 \\
-    nokia6-60      & $720 \times 576$ & 12,1 & 0,6 & 0,48 \\
-    hhi-burst-long & $720 \times 576$ & 13,5 & 0,7 & 0,54 \\
+    tek60          & $704 \times 480$ & 23,6 & 0,5 & 0,79 \\
+    tek-5-long     & $704 \times 480$ & 22,7 & 0,7 & 0,76 \\
+    mei-2-60f      & $704 \times 480$ & 21,2 & 1,0 & 0,71 \\
+    tcela-7        & $720 \times 480$ & 19,9 & 0,9 & 0,66 \\
+    nokia6-60      & $720 \times 576$ & 11,9 & 0,2 & 0,48 \\
+    hhi-burst-long & $720 \times 576$ & 13,1 & 0,5 & 0,52 \\
     \midrule
-    \emph{Tears of Steel} & $352 \times 288$ & 53,6 & 0,9 & 2,23 \\
+    \emph{Tears of Steel} & $352 \times 288$ & 53,7 & 0,2 & 2,24 \\
     \bottomrule
   \end{tabular}
-  \caption{Tasa de decodificación en la placa (5 corridas por flujo).}
+  \caption{Tasa de decodificación en la placa con el bitstream
+    \cmd{0.1.0+918dde0} (5 corridas por flujo; 3 para el clip).}
   \label{tab:rendimiento}
 \end{table}
 
 La tabla~\ref{tab:rendimiento} muestra la tasa de decodificación. En
-definición estándar el decodificador alcanza 20 a 23 imágenes por segundo en
-$704/720 \times 480$ y 12 a 13,5 en $720 \times 576$, es decir, entre la
-mitad y tres cuartos del tiempo real. El límite está en la etapa de
+definición estándar el decodificador alcanza 20 a 23,5 imágenes por segundo en
+$704/720 \times 480$ y 12 a 13 en $720 \times 576$, es decir, entre la
+mitad y cuatro quintos del tiempo real. El límite está en la etapa de
 reconstrucción del núcleo original (sección~\ref{sec:optimizacion}). En el
-formato CIF del clip de demostración, $352 \times 288$, decodifica a 53,6
+formato CIF del clip de demostración, $352 \times 288$, decodifica a 53,7
 imágenes por segundo, 2,2 veces el tiempo real.
 
 De punta a punta, con el cliente en otra computadora de la red local que
 recibe cada imagen a través del servicio y la biblioteca, el clip llega a
-49,8--51,5 imágenes por segundo, idéntico byte a byte en las cinco corridas.
-Contra la referencia, el clip completo da un MAD de 0,073 con error pico de
-3 sobre 255.
+unas 50--51 imágenes por segundo, idéntico byte a byte entre corridas.
+Contra la referencia, el clip completo da un MAD medio de 0,010 (máximo
+0,018 en un cuadro) con error pico de 3 sobre 255; antes de corregir los
+errores de la sección~\ref{sec:conformidad-upstream} daba 0,073.
 
 \section{Consumo de potencia}
 
@@ -234,7 +281,7 @@ red externa real, el clip llegó a 2,06 veces el tiempo real.
   \item Decodifica holgadamente en tiempo real en CIF, y a 0,5--0,77 veces el
     tiempo real en definición estándar.
   \item El periférico completo consume unos 68~mW estimados.
-  \item 32 de los 37 flujos MPEG-2 de conformidad decodifican bit-exactos o
-    dentro de MAD~1; en los otros cinco queda una deriva en imágenes
-    predichas.
+  \item Los 37 flujos MPEG-2 de conformidad decodifican bit-exactos o con
+    la diferencia que la norma admite entre dos IDCT (MAD $\leq 0{,}04$);
+    ninguno deriva, después de corregir dos errores del diseño original.
 \end{itemize}

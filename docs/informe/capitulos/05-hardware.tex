@@ -132,7 +132,9 @@ Siguiendo la política de diferencias mínimas
 se limitaron a lo que el port exigía: la selección de memorias y FIFOs
 portables, el CCC, la separación de los dominios de \emph{reset}, un
 atributo de síntesis en la FIFO de un reloj (sección~\ref{sec:prob-fifo}) y
-una derivación de la señal de fin de imagen para generar la interrupción. La
+una derivación de la señal de fin de imagen para generar la interrupción. Al
+final se agregaron dos correcciones de conformidad, de una y dos líneas, a
+errores que el diseño original ya tenía (sección~\ref{sec:conformidad-upstream}). La
 mayor parte de las líneas agregadas al núcleo son instrumentación de solo
 lectura: contadores y registros de depuración que no modifican su
 comportamiento y que fueron decisivos para encontrar los problemas de la
@@ -325,7 +327,7 @@ alcanzada supera holgadamente el tiempo real (capítulo~\ref{cap:resultados}).
 La tabla~\ref{tab:recursos} muestra la ocupación del dispositivo MPFS095T
 con el diseño completo, incluidos el núcleo, los bloques de integración y la
 lógica del diseño de referencia de la placa, en el bitstream
-\cmd{0.1.0+8a6d847}.
+\cmd{0.1.0+918dde0}.
 
 \begin{table}[ht]
   \centering\small
@@ -333,8 +335,8 @@ lógica del diseño de referencia de la placa, en el bitstream
     \toprule
     \textbf{Recurso} & \textbf{Usado} & \textbf{Disponible} & \textbf{\%} \\
     \midrule
-    LUT de 4 entradas & 35\,468 & 93\,516 & 37,9 \\
-    Flip-flops        & 31\,347 & 93\,516 & 33,5 \\
+    LUT de 4 entradas & 35\,427 & 93\,516 & 37,9 \\
+    Flip-flops        & 31\,346 & 93\,516 & 33,5 \\
     Micro-RAM (uSRAM) & 325     & 876     & 37,1 \\
     RAM grande (LSRAM)& 30      & 308     & 9,7 \\
     Bloques Math      & 20      & 292     & 6,8 \\
@@ -384,7 +386,7 @@ cumplía, pero encontró dos problemas en los cruces entre el bus APB
     entre sí, y los caminos internos de cada grupo se siguen analizando.
 \end{itemize}
 
-Con ambos cambios, el bitstream \cmd{0.1.0+8a6d847} cumple las restricciones
+Con ambos cambios, el bitstream \cmd{0.1.0+918dde0} cumple las restricciones
 de temporización en las tres condiciones de operación que analiza la
 herramienta (tensión mínima y temperatura máxima, la más lenta, entre
 ellas), sin violaciones de \emph{setup} ni de \emph{hold}
@@ -396,11 +398,11 @@ ellas), sin violaciones de \emph{setup} ni de \emph{hold}
     \toprule
     \textbf{Reloj} & \textbf{Uso} & \textbf{Frecuencia} & \textbf{Setup (ns)} & \textbf{Hold (ns)} \\
     \midrule
-    \cmd{mem\_clk} & memoria del decodificador & 162~MHz & 0,950 & 0,071 \\
-    \cmd{clk}      & decodificación            & 108~MHz & 0,810 & 0,023 \\
-    \cmd{dot\_clk} & visualización             & 27~MHz  & 4,475 & 0,001 \\
-    FIC\,0         & AXI, diseño de referencia & 162~MHz & 1,659 & 0,048 \\
-    FIC\,3         & bus APB                   & 51~MHz  & 3,022 & 0,067 \\
+    \cmd{mem\_clk} & memoria del decodificador & 162~MHz & 1,216 & 0,018 \\
+    \cmd{clk}      & decodificación            & 108~MHz & 0,950 & 0,020 \\
+    \cmd{dot\_clk} & visualización             & 27~MHz  & 4,480 & 0,012 \\
+    FIC\,0         & AXI, diseño de referencia & 162~MHz & 1,841 & 0,026 \\
+    FIC\,3         & bus APB                   & 51~MHz  & 3,057 & 0,028 \\
     \bottomrule
   \end{tabular}
   \caption{Peor margen por reloj, en el peor caso de las tres condiciones de

@@ -29,7 +29,9 @@ La tabla~\ref{tab:cumplimiento} evalúa cada objetivo específico resultante
 
 \paragraph{Objetivo general}
 Se cumplió. El decodificador funciona en el SoC FPGA, se controla desde
-Linux, decodifica de forma idéntica al diseño original y se distribuye como
+Linux, decodifica los 37 flujos MPEG-2 de conformidad dentro de la
+tolerancia de la norma (con dos errores del diseño original corregidos) y se
+distribuye como
 un producto versionado, documentado y calificado en el hardware, con todo su
 código bajo licencias libres.
 
@@ -62,7 +64,10 @@ actualización.
     conformidad parecían decodificarse mal por un error del núcleo. La
     documentación del diseño original decía lo contrario, y mirar las
     imágenes en lugar del MAD mostró que la imagen rota era la de la
-    referencia.
+    referencia. A la inversa, esa misma documentación daba por aprobados
+    tres flujos que el diseño original decodificaba mal: ni la referencia
+    ni la documentación de un tercero reemplazan la medición, y cuando se
+    contradicen, un tercer decodificador independiente desempata.
   \item \textbf{Medir antes de optimizar.} Los contadores mostraron que la
     memoria no era el límite cuando parecía serlo, y dos experimentos
     negativos ahorraron una optimización inútil.
@@ -78,7 +83,6 @@ actualización.
 \section{Trabajo futuro}
 
 \begin{itemize}
-  \item \textbf{Conformidad}: investigar la deriva que queda en cinco flujos.
   \item \textbf{Tiempo real en definición estándar}: optimizar la etapa de
     reconstrucción por compensación de movimiento del núcleo.
   \item \textbf{Producto}: firmar las actualizaciones, publicar el Manual de

@@ -19,10 +19,11 @@ en Python. Cada versión del producto se publica solo después de calificarla en
 el hardware real.
 
 La memoria de cuadros del hardware resultó idéntica byte a byte a la de la
-simulación del diseño original. La IDCT cumple el estándar IEEE~1180, y las
-imágenes intra difieren de un decodificador de referencia solo en lo que la
-norma admite. El sistema decodifica entre 20 y 23 imágenes por segundo en
-definición estándar y 53,6 en formato CIF, más del doble del tiempo real,
+simulación del diseño original. La IDCT cumple el estándar IEEE~1180, y los
+37 flujos MPEG-2 de conformidad difieren de un decodificador de referencia
+solo en lo que la norma admite, después de corregir dos errores del diseño
+original. El sistema decodifica entre 20 y 23 imágenes por segundo en
+definición estándar y 53,7 en formato CIF, más del doble del tiempo real,
 con un consumo estimado de 68~mW para el decodificador. Una demostración
 pública permite decodificar en la FPGA, desde cualquier navegador, un video
 subido por el visitante.
@@ -47,8 +48,10 @@ unit-tested Linux kernel driver, a network service with a versioned protocol
 and a Python client library complete the system, and every release is
 qualified on the real hardware before publication. The hardware frame store
 is byte-identical to the original design's simulation; the IDCT meets IEEE
-1180; the decoder runs at 20--23 frames per second in standard definition
-and 53.6 in CIF, over twice real time, with an estimated 68~mW for the
+1180; after fixing two bugs of the original design, all 37 MPEG-2
+conformance streams match a reference decoder within what the standard
+allows; the decoder runs at 20--23 frames per second in standard definition
+and 53.7 in CIF, over twice real time, with an estimated 68~mW for the
 decoder.
 
 \paragraph{Keywords}

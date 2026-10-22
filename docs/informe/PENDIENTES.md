@@ -23,7 +23,11 @@ Lista viva: se actualiza cada vez que se cierra o aparece algo. Las marcas
 - [x] mei-16-long y mei-16v2 "sin escritura": son MPEG-1, fuera de alcance — cap. 10
 - [x] tcela-15 "sin escritura": decodifica bien (gris uniforme); era el criterio de
       buffer vacío de framecmp (hw 1f80151) — bit-exacto, cap. 10 y anexo C
-- [ ] (opcional) deriva restante en 5 flujos: sony-ct1, hhi-burst-long, nokia6-60, tcela-10, tcela-14
+- [x] Deriva restante en 5 flujos: sony-ct1 y hhi-burst-long eran el corte (hw 57dfd86);
+      nokia6-60, tcela-14 y tcela-10 eran dos bugs del RTL original (redondeo en motcomp_recon,
+      orden de matrices en iquant; hw 86ad0d8, bitácora 50). Bitstream 0.1.0+918dde0,
+      qualify 0.1.0-rc4 OK (fw 3c3d8da). Los 37 MPEG-2 quedan bit-exactos o cercanos (MAD ≤ 0,04)
+      — caps. 0, 2, 5, 10, 11 y anexo C
 - [x] Manual de Referencia (Doxygen; reemplaza a la nota de aplicación) — firmware_development 6c7a6e3, sale en cada release — caps. 1, 7 y 11
 - [ ] Release final: actualizar la versión citada — cap. 7; la tabla de
       entregables dice "próxima versión" para licencias y avisos de terceros
