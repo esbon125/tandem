@@ -29,7 +29,7 @@ Once Linux is up, the driver reports which bitstream is loaded:
 
 \begin{lstlisting}[language=shell]
 ssh root@board cat /sys/bus/platform/drivers/mpeg2fpga/*/build
-0.1.0+8004bc9
+0.1.0+918dde0
 \end{lstlisting}
 
 That is the release version and the commit it was synthesized from; it ends
@@ -37,14 +37,23 @@ in \cmd{-dirty} if it was synthesized with uncommitted changes.
 
 \section{Board software}
 
-First the driver and its device tree overlay, then the service:
+The board software comes in the release's
+\cmd{mpeg2fpga-board-<version>.tar.gz} package. Before installing it for the
+first time, check the release on the PC (section~\ref{sec:verify}): this
+installation is what leaves on the board the key it will check every later
+update against.
+
+First the key and the updater, then the driver and its device tree overlay,
+and last the service:
 
 \begin{lstlisting}[language=shell]
-scp -r driver/mpeg2fpga/tools root@board:/tmp/m2f-driver
-ssh root@board sh /tmp/m2f-driver/install-on-board.sh
-
-scp -r daemon api/PROTOCOL-v1.md root@board:/tmp/m2f-daemon/
-ssh root@board sh /tmp/m2f-daemon/daemon/install-on-board.sh
+scp mpeg2fpga-board-<version>.tar.gz root@board:/tmp/
+ssh root@board
+cd /tmp && tar xzf mpeg2fpga-board-<version>.tar.gz
+cd mpeg2fpga-board-<version>
+sh update/install-on-board.sh
+sh driver/install-on-board.sh
+sh daemon/install-on-board.sh
 \end{lstlisting}
 
 The service installer:

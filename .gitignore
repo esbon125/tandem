@@ -1,11 +1,16 @@
 *
 # firmware_development additions first: master changes the end of this file
+!LICENSE
+!LICENSES.md
+!THIRD_PARTY_NOTICES.md
 !api
 !api/**
 !daemon
 !daemon/**
 !demo
 !demo/**
+!doxygen
+!doxygen/**
 !user-guide
 !user-guide/**
 !release
@@ -18,6 +23,8 @@
 !driver/**
 !renode
 !renode/**
+!tools
+!tools/**
 !webserver
 !webserver/**
 !.github

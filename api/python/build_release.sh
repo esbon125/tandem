@@ -47,7 +47,7 @@ echo "== tests (source tree)"
 (cd "$HERE" && "$PYTHON" -m unittest discover -s tests)
 
 # -- 2. package a stamped copy ---------------------------------------------
-cp -r "$HERE/src" "$HERE/pyproject.toml" "$HERE/README.md" "$WORK/"
+cp -r "$HERE/src" "$HERE/pyproject.toml" "$HERE/README.md" "$HERE/LICENSE" "$WORK/"
 printf '__version__ = "%s"\n' "$VERSION" > "$WORK/src/mpeg2fpga/_version.py"
 "$PYTHON" -m venv "$WORK/venv-build"
 "$WORK/venv-build/bin/python" -m pip install --quiet --disable-pip-version-check build

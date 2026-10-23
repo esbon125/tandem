@@ -8,7 +8,7 @@ A release has parts that are updated in different ways:
 \textbf{Part} & \textbf{Where it lives} & \textbf{How it is updated} \\
 \midrule
 FPGA bitstream & the FPGA's configuration flash & JTAG (FlashPro), with physical access \\
-Driver and service & microSD card & over the network, with the installers \\
+Driver and service & microSD card & over the network, with \cmd{mpeg2fpga-update} (signed package) \\
 Client library & the user's PC & \cmd{pip install} of the new wheel \\
 \bottomrule
 \end{tabularx}
@@ -31,10 +31,35 @@ memory.
     any version: the protocol only grows by addition.
 \end{itemize}
 
-\section{File integrity}
+\section{Updating the board software}
 
-Every release publishes a \cmd{SHA256SUMS} file. Before installing:
+With the package and its signature copied to the board, as root:
 
 \begin{lstlisting}[language=shell]
+scp mpeg2fpga-board-<version>.tar.gz* root@board:/tmp/
+ssh root@board /usr/local/sbin/mpeg2fpga-update /tmp/mpeg2fpga-board-<version>.tar.gz
+\end{lstlisting}
+
+\cmd{mpeg2fpga-update} checks the package signature against the project key
+the first installation left on the board
+(\cmd{/etc/mpeg2fpga/release-key.pub.pem}), never against one inside the
+package. If the signature is missing or does not match, it installs nothing.
+If it matches, it reloads the driver and reinstalls the service, keeping its
+options (\cmd{-{}-tls}, \cmd{-{}-debug}), token and certificate.
+
+\section{Checking a release}
+\label{sec:verify}
+
+Every release publishes \cmd{SHA256SUMS}, with the checksum of each file, and
+\cmd{SHA256SUMS.sig}, its Ed25519 signature with the project key. Take the
+public key, \cmd{mpeg2fpga-release.pub.pem}, from the source repository
+(\cmd{release/keys/}), not from the same place as the files. With OpenSSL~3:
+
+\begin{lstlisting}[language=shell]
+openssl pkeyutl -verify -pubin -inkey mpeg2fpga-release.pub.pem \
+    -rawin -in SHA256SUMS -sigfile SHA256SUMS.sig
 sha256sum -c SHA256SUMS
 \end{lstlisting}
+
+The first command proves the checksums come from the project; the second,
+that every file matches them.

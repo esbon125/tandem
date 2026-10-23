@@ -8,7 +8,7 @@ Un release tiene partes que se actualizan por caminos distintos:
 \textbf{Parte} & \textbf{Dónde vive} & \textbf{Cómo se actualiza} \\
 \midrule
 Bitstream de la FPGA & flash de configuración de la FPGA & JTAG (FlashPro), con acceso físico \\
-Driver y servicio & tarjeta microSD & por red, con los instaladores \\
+Driver y servicio & tarjeta microSD & por red, con \cmd{mpeg2fpga-update} (paquete firmado) \\
 Librería cliente & PC del usuario & \cmd{pip install} del nuevo wheel \\
 \bottomrule
 \end{tabularx}
@@ -31,10 +31,35 @@ esa memoria.
     un dispositivo de cualquier versión: el protocolo sólo crece por adición.
 \end{itemize}
 
-\section{Integridad de los archivos}
+\section{Actualizar el software de la placa}
 
-Cada release publica un archivo \cmd{SHA256SUMS}. Antes de instalar:
+Con el paquete y su firma copiados a la placa, como root:
 
 \begin{lstlisting}[language=shell]
+scp mpeg2fpga-board-<versión>.tar.gz* root@placa:/tmp/
+ssh root@placa /usr/local/sbin/mpeg2fpga-update /tmp/mpeg2fpga-board-<versión>.tar.gz
+\end{lstlisting}
+
+\cmd{mpeg2fpga-update} verifica la firma del paquete contra la clave del
+proyecto que quedó en la placa en la primera instalación
+(\cmd{/etc/mpeg2fpga/release-key.pub.pem}), nunca contra una que venga en el
+paquete. Si la firma falta o no corresponde, no instala nada. Si corresponde,
+recarga el driver y reinstala el servicio, conservando sus opciones
+(\cmd{-{}-tls}, \cmd{-{}-debug}), el token y el certificado.
+
+\section{Verificar un release}
+\label{sec:verificar}
+
+Cada release publica \cmd{SHA256SUMS}, con la suma de cada archivo, y
+\cmd{SHA256SUMS.sig}, su firma Ed25519 con la clave del proyecto. La clave
+pública, \cmd{mpeg2fpga-release.pub.pem}, se toma del repositorio de fuentes
+(\cmd{release/keys/}), no del mismo lugar que los archivos. Con OpenSSL~3:
+
+\begin{lstlisting}[language=shell]
+openssl pkeyutl -verify -pubin -inkey mpeg2fpga-release.pub.pem \
+    -rawin -in SHA256SUMS -sigfile SHA256SUMS.sig
 sha256sum -c SHA256SUMS
 \end{lstlisting}
+
+La primera orden prueba que las sumas son del proyecto; la segunda, que cada
+archivo coincide con ellas.

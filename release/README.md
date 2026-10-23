@@ -16,7 +16,8 @@ que se publica como pre-release)
 5. **punta a punta** — `e2e_check.py` por el daemon y la librería: cada frame
    idéntico al baseline grabado (`e2e_baseline.json`), mediana de fps ≥ piso
 6. **artefactos** — recién ahí: librería Python (wheel probado), user guide,
-   bundle de la placa, el `.job` del bitstream, notas, `SHA256SUMS`
+   bundle de la placa, el `.job` del bitstream, notas, `SHA256SUMS`; el bundle
+   de la placa y `SHA256SUMS` salen firmados (`.sig`, ver «La firma»)
 
 y sólo si todo pasó, el job `release` mergea en `master` **exactamente los
 commits que se calificaron** de docs, hardware_development y
@@ -44,7 +45,8 @@ runner, con las etiquetas `self-hosted, linux, mpeg2fpga-board`.
 | `MPEG2FPGA_BOARD` | `root@192.168.18.5` |
 | `MPEG2FPGA_STREAMS_DIR` | `/home/esbon/Proyectos/tandem/trunk/mpeg2fpga/tools/streams` |
 
-y el secret `RELEASE_PAT` (token personal con scope `repo`), para que el merge,
+el secret `MPEG2FPGA_SIGNING_PASS` (la passphrase de la clave de firma, ver
+«La firma») y el secret `RELEASE_PAT` (token personal con scope `repo`), para que el merge,
 los tags y la release queden a nombre de una persona y no del bot.
 
 **En esa máquina:** clave ssh sin passphrase hacia la placa; el árbol del
@@ -74,3 +76,29 @@ vez y se fija.
 bitstream `0.1.0+8004bc9` la mediana medida de punta a punta varía entre ~18.7
 y ~20.3 fps según la corrida, así que un piso de 20 fallaría sin que nada haya
 cambiado: está en 18.
+
+## La firma
+
+Cada release firma con Ed25519 `SHA256SUMS` (y con eso todos los archivos) y
+el bundle de la placa. La placa solo tiene OpenSSL 3, sin gpg: la firma es la
+de 64 bytes cruda que verifica `openssl pkeyutl -verify -rawin`, y es lo que
+hace `mpeg2fpga-update` (`board/`) antes de instalar nada.
+
+- Clave pública: `keys/mpeg2fpga-release.pub.pem`, en el repositorio.
+- Clave privada: `~/.config/mpeg2fpga/release-key.pem` en la máquina que
+  califica (o `MPEG2FPGA_SIGNING_KEY`), cifrada con passphrase. Nunca en el
+  repositorio. Guardar una copia fuera de línea: sin ella, las placas solo se
+  actualizan reinstalando a mano la clave nueva.
+- Passphrase: `MPEG2FPGA_SIGNING_PASS`; a mano, `qualify.sh` la pide al
+  empezar. El preflight la prueba, así que una equivocada falla en segundos.
+
+`sign.py` necesita `cryptography` (el OpenSSL 1.1.1 de la máquina de build no
+firma Ed25519 por línea de comandos); `qualify.sh` lo instala en un venv.
+Generar la clave, una sola vez:
+
+    python3.11 -m venv /tmp/v && /tmp/v/bin/pip install cryptography
+    /tmp/v/bin/python release/sign.py genkey     # pide la passphrase dos veces
+    git add release/keys/mpeg2fpga-release.pub.pem
+
+Verificar a mano: `sign.py verify SHA256SUMS`, o con OpenSSL 3 lo que dicen
+las notas de cada release.

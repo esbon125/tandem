@@ -29,7 +29,7 @@ Una vez arrancado Linux, el driver informa qué bitstream está cargado:
 
 \begin{lstlisting}[language=shell]
 ssh root@placa cat /sys/bus/platform/drivers/mpeg2fpga/*/build
-0.1.0+8004bc9
+0.1.0+918dde0
 \end{lstlisting}
 
 Es la versión del release y el commit del que se sintetizó; termina en
@@ -37,14 +37,23 @@ Es la versión del release y el commit del que se sintetizó; termina en
 
 \section{Software de la placa}
 
-Primero el driver y su overlay de device tree, después el servicio:
+El software de la placa viene en el paquete
+\cmd{mpeg2fpga-board-<versión>.tar.gz} del release. Antes de instalarlo por
+primera vez, verificar el release en la PC (sección~\ref{sec:verificar}):
+esta instalación es la que deja en la placa la clave con la que va a
+verificar todas las actualizaciones siguientes.
+
+Primero la clave y el actualizador, después el driver con su overlay de
+device tree, y por último el servicio:
 
 \begin{lstlisting}[language=shell]
-scp -r driver/mpeg2fpga/tools root@placa:/tmp/m2f-driver
-ssh root@placa sh /tmp/m2f-driver/install-on-board.sh
-
-scp -r daemon api/PROTOCOL-v1.md root@placa:/tmp/m2f-daemon/
-ssh root@placa sh /tmp/m2f-daemon/daemon/install-on-board.sh
+scp mpeg2fpga-board-<versión>.tar.gz root@placa:/tmp/
+ssh root@placa
+cd /tmp && tar xzf mpeg2fpga-board-<versión>.tar.gz
+cd mpeg2fpga-board-<versión>
+sh update/install-on-board.sh
+sh driver/install-on-board.sh
+sh daemon/install-on-board.sh
 \end{lstlisting}
 
 El instalador del servicio:

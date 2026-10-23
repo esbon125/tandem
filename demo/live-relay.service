@@ -1,0 +1,25 @@
+# systemd --user unit for demo/live_relay.py, the public live demo's backend.
+#
+#   cp live-relay.service ~/.config/systemd/user/ && systemctl --user daemon-reload
+#   systemctl --user enable --now live-relay
+#   sudo loginctl enable-linger $USER    # keep it up without a login session
+#
+# Expects in ~/.local/share/mpeg2fpga-relay/: token (the device's), presets/*.m2v
+# (tools/demo-clip/make_clip.sh, starts 18 and 458), and a venv with Pillow +
+# numpy at ~/.local/share/mpeg2fpga-relay-venv. Published by
+# `tailscale funnel --bg 8000`, which persists on its own.
+[Unit]
+Description=mpeg2fpga live demo relay
+After=network-online.target
+
+[Service]
+WorkingDirectory=%h/Proyectos/tandem-fw/demo
+ExecStart=%h/.local/share/mpeg2fpga-relay-venv/bin/python live_relay.py \
+    --device 192.168.18.5 --token-file %h/.local/share/mpeg2fpga-relay/token \
+    --preset "bridge=%h/.local/share/mpeg2fpga-relay/presets/tos_bridge.m2v=Tears of Steel: el puente" \
+    --preset "battle=%h/.local/share/mpeg2fpga-relay/presets/tos_battle.m2v=Tears of Steel: la batalla"
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target

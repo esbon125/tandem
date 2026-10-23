@@ -1,0 +1,596 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" href="data:,">
+<title>mpeg2fpga en PolarFire SoC</title>
+<meta name="description" content="Decodificador MPEG-2 (ISO/IEC 13818-2) en FPGA PolarFire SoC: demo en vivo y resultado verificado a 352x288.">
+<style>
+:root {
+  --bg: #fbfaf8; --fg: #1d1d1b; --muted: #6b6a66; --line: #e2e0db;
+  --card: #ffffff; --accent: #1f6f5c; --warn: #b3261e; --wait: #9a6700;
+}
+@media (prefers-color-scheme: dark) {
+  :root { --bg: #151514; --fg: #ecebe8; --muted: #a09e98; --line: #2e2d2b;
+          --card: #1d1d1b; --accent: #5fbfa5; --warn: #f2867c; --wait: #e3b341; }
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+body { margin: 0; background: var(--bg); color: var(--fg);
+  font: 16px/1.55 system-ui, -apple-system, "Segoe UI", sans-serif; }
+main { max-width: 920px; margin: 0 auto; padding: 40px 16px 64px; }
+h1 { font-size: 1.9rem; line-height: 1.2; margin: 0 0 8px; }
+h2 { font-size: 1.15rem; margin: 40px 0 10px; }
+p { margin: 0 0 12px; }
+.lede { color: var(--muted); max-width: 62ch; }
+video { width: 100%; height: auto; display: block; background: #000; border-radius: 6px; }
+.hero { max-width: 640px; }
+figure { margin: 0; }
+figcaption { color: var(--muted); font-size: .88rem; margin-top: 6px; }
+.stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 12px; margin: 20px 0 8px; }
+.stat { background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 14px 16px; }
+.stat b { display: block; font-size: 1.6rem; font-variant-numeric: tabular-nums; color: var(--accent); }
+.stat span { color: var(--muted); font-size: .88rem; }
+table { border-collapse: collapse; width: 100%; font-size: .92rem; font-variant-numeric: tabular-nums; }
+th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--line); }
+th { color: var(--muted); font-weight: 600; }
+.scroll { overflow-x: auto; }
+code { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: .88em; }
+a { color: var(--accent); }
+footer { margin-top: 48px; padding-top: 16px; border-top: 1px solid var(--line);
+  color: var(--muted); font-size: .85rem; }
+
+/* live demo */
+.live { background: var(--card); border: 1px solid var(--line); border-radius: 10px;
+  padding: 18px 16px 16px; margin-top: 24px; }
+.live h2 { margin: 0 0 4px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.pill { font-size: .78rem; font-weight: 600; padding: 2px 10px; border-radius: 99px;
+  border: 1px solid currentColor; color: var(--muted); }
+.pill.up { color: var(--accent); } .pill.down { color: var(--warn); } .pill.busy { color: var(--wait); }
+.controls { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 14px 0 10px; }
+button, .file { font: inherit; font-size: .92rem; padding: 7px 14px; border-radius: 6px;
+  border: 1px solid var(--line); background: var(--bg); color: var(--fg); cursor: pointer; }
+button.primary { background: var(--accent); border-color: var(--accent); color: var(--bg); }
+button:disabled, .file.disabled { opacity: .45; cursor: default; }
+.file input { display: none; }
+#presets { display: contents; }
+.opt { color: var(--muted); font-size: .88rem; display: flex; gap: 6px; align-items: center; }
+.opt select { font: inherit; padding: 4px 6px; border-radius: 6px; border: 1px solid var(--line);
+  background: var(--bg); color: var(--fg); }
+.screen { position: relative; max-width: 640px; }
+canvas#screen, video#vscreen { width: 100%; aspect-ratio: 4 / 3; display: block; background: #000;
+  border-radius: 6px; }
+progress { width: 100%; height: 4px; display: block; margin-top: 6px; accent-color: var(--accent); }
+#status { font-size: .92rem; margin: 8px 0 0; min-height: 1.5em; }
+#status.bad { color: var(--warn); }
+.transport { display: flex; gap: 10px; align-items: center; margin-top: 8px; max-width: 640px; }
+.transport input { flex: 1; min-width: 0; accent-color: var(--accent); }
+.counter { color: var(--muted); font-size: .85rem; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.live .stats { margin-top: 14px; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); }
+.live .stat b { font-size: 1.3rem; }
+canvas#madchart { width: 100%; height: 70px; display: block; margin-top: 10px; }
+.small { color: var(--muted); font-size: .84rem; max-width: 70ch; margin-top: 10px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Decodificador MPEG-2 en FPGA PolarFire SoC</h1>
+  <p class="lede">Port de <em>mpeg2fpga</em> (ISO/IEC 13818-2, Main Profile) a un Microchip
+  PolarFire SoC. Probalo en vivo: el clip viaja hasta la placa, la decodifica el FPGA y cada
+  cuadro vuelve a esta página a medida que sale del decodificador.</p>
+
+  <section class="live" id="live">
+    <h2>Demo en vivo <span class="pill" id="pill">conectando…</span></h2>
+    <p class="small" id="liveintro" style="margin-top:0">Elegí un clip o subí un video propio.
+    Cualquier formato sirve: antes de mandarlo a la placa se lleva al régimen en el que se midió
+    el decodificador (MPEG-2 352×288, hasta 30 fps, primeros 20 s).</p>
+
+    <div class="controls">
+      <span id="presets"></span>
+      <label class="file" id="filelabel">Subir video…<input type="file" id="file" accept="video/*,.m2v,.mpg,.mpeg,.ts,.mkv"></label>
+      <label class="opt">transporte
+        <select id="transport">
+          <option value="h264">H.264 (~1 Mbit/s)</option>
+          <option value="jpeg">JPEG (~4 Mbit/s)</option>
+          <option value="raw">sin pérdida (~30 Mbit/s)</option>
+        </select></label>
+    </div>
+
+    <div class="screen">
+      <canvas id="screen" width="352" height="288"></canvas>
+      <video id="vscreen" muted playsinline disableremoteplayback hidden></video>
+      <progress id="progress" value="0" max="1" hidden></progress>
+    </div>
+    <div class="transport" id="transport-bar" hidden>
+      <button id="play">Pausa</button>
+      <input type="range" id="seek" min="0" max="0" value="0" aria-label="posición">
+      <span class="counter" id="counter"></span>
+    </div>
+    <p id="status"></p>
+
+    <div class="stats" id="livestats" hidden>
+      <div class="stat"><b id="s-board">–</b><span>decodificación en la placa, respecto del tiempo real<br><span id="s-board-n"></span></span></div>
+      <div class="stat"><b id="s-net">–</b><span>llegada a tu navegador, respecto del tiempo real<br><span id="s-net-n"></span></span></div>
+      <div class="stat"><b id="s-mad">–</b><span>MAD frente a la referencia, este cuadro / medio</span></div>
+      <div class="stat"><b id="s-peak">–</b><span>error pico (de 255)</span></div>
+    </div>
+    <canvas id="madchart" hidden></canvas>
+
+    <p class="small">Las métricas se calculan sobre la salida cruda del decodificador (I420),
+    cuadro por cuadro, contra el mismo stream decodificado en software (libavcodec). Para el
+    viaje hasta tu navegador los cuadros se recomprimen (H.264 o JPEG), salvo en modo
+    <em>sin pérdida</em>: lo que ves puede tener artefactos de esa compresión, las métricas no. La placa decodifica a su
+    velocidad sin esperar a la red; si tu conexión es más lenta que el video, la página carga un
+    buffer antes de reproducir. Tu video se procesa y se descarta;
+    no se guarda nada. La placa es una sola: si hay alguien usándola, quedás en cola.</p>
+  </section>
+
+  <h2>Resultado verificado</h2>
+  <p class="lede">Si la demo en vivo está apagada, esto es lo que hace: el mismo decodificador,
+  medido y comparado contra el decodificador de referencia.</p>
+
+  <figure class="hero">
+    <video src="media/fpga.mp4" poster="media/poster.jpg" controls muted loop playsinline preload="metadata"></video>
+    <figcaption>Salida del decodificador en FPGA, 352×288 a 24 fps, 480 cuadros (20 s).
+    Para mostrarlo en el navegador se recodificó a H.264 (CRF 14); los cuadros decodificados
+    originales están verificados con las sumas de abajo.</figcaption>
+  </figure>
+
+  <div class="stats">
+    <div class="stat"><b>53.7 fps</b><span>decodificación en el FPGA (3 corridas, ±0.2)</span></div>
+    <div class="stat"><b>50 fps</b><span>de punta a punta por red, cliente Python → dispositivo → cliente</span></div>
+    <div class="stat"><b>24 fps</b><span>frame rate del stream: tiempo real con 2.1× de margen</span></div>
+    <div class="stat"><b>0.01</b><span>MAD medio frente al decodificador de referencia (pico 3/255)</span></div>
+  </div>
+
+  <h2>Comparación con el decodificador de referencia</h2>
+  <figure>
+    <video src="media/compare.mp4" controls muted loop playsinline preload="metadata"></video>
+    <figcaption>Izquierda: FPGA. Centro: <code>mpeg2decode</code> (decodificador de referencia
+    MPEG-2, en software). Derecha: diferencia absoluta amplificada ×32. Recortado a la zona
+    con imagen (sin las bandas negras).</figcaption>
+  </figure>
+
+  <div class="scroll">
+  <table>
+    <tr><th>Métrica (480 cuadros, Y+Cb+Cr)</th><th>Valor</th></tr>
+    <tr><td>MAD medio / máximo por cuadro</td><td>0.010 / 0.018</td></tr>
+    <tr><td>Error pico</td><td>3 niveles de 255</td></tr>
+    <tr><td>PSNR de luma, mínimo / mediana</td><td>64.8 dB / 67.4 dB</td></tr>
+    <tr><td>Repetibilidad (3 corridas de punta a punta)</td><td>idénticas byte a byte</td></tr>
+  </table>
+  </div>
+  <p class="lede" style="margin-top:12px">La diferencia restante es la que la norma admite entre
+  dos IDCT conformes (la del FPGA cumple IEEE 1180-1990). Se corrigieron dos errores del núcleo
+  <em>mpeg2fpga</em> original, presentes también en su simulación; con el núcleo sin corregir, este
+  clip daba un MAD medio de 0.073.</p>
+
+  <h2>Cómo se midió</h2>
+  <div class="scroll">
+  <table>
+    <tr><th></th><th></th></tr>
+    <tr><td>Stream</td><td>MPEG-2 MP@ML, 352×288, 24 fps progresivo, GOP 12 (IBBP), 1.5 Mb/s,
+      2.0 MB — <a href="media/tos_cif.m2v">descargar .m2v</a></td></tr>
+    <tr><td>Decodificación</td><td>desde el inicio del DMA hasta la última escritura en el framestore</td></tr>
+    <tr><td>Punta a punta</td><td>cliente Python en una PC por Ethernet (protocolo v1, sin TLS), del primer al último cuadro recibido</td></tr>
+    <tr><td>Bitstream / software</td><td><code>0.1.0+918dde0</code>, daemon y driver 0.1.0</td></tr>
+    <tr><td>Datos</td><td><a href="media/framecmp.json">framecmp.json</a> ·
+      <a href="media/e2e_run.json">e2e_run.json</a> · <a href="media/SHA256SUMS">SHA256SUMS</a></td></tr>
+  </table>
+  </div>
+
+  <footer>
+    Clips: <em>Tears of Steel</em>, © Blender Foundation | mango.blender.org,
+    licencia <a href="https://creativecommons.org/licenses/by/3.0/">CC BY 3.0</a>.
+    Fragmentos 0:18–0:38 y 7:38–7:58, reescalados a 352×288 y codificados en MPEG-2, sin audio.
+    Núcleo decodificador: <em>mpeg2fpga</em>, Koen De Vleeschauwer.
+  </footer>
+</main>
+
+<script>
+// The relay (demo/live_relay.py) behind a Tailscale Funnel; ?backend=URL to test another.
+const BACKEND = new URLSearchParams(location.search).get("backend")
+  || "https://localhost-0.tail5099f3.ts.net";
+const $ = (id) => document.getElementById(id);
+const screen = $("screen"), ctx = screen.getContext("2d"), video = $("vscreen");
+// H.264 over Media Source when the browser has it (ManagedMediaSource on iOS 17+)
+const MS = window.ManagedMediaSource || window.MediaSource;
+const MP4_TYPE = 'video/mp4; codecs="avc1.42C01E"';
+if (!MS || !MS.isTypeSupported(MP4_TYPE)) {
+  $("transport").querySelector('[value="h264"]').remove();
+}
+
+let frames = [], mads = [], meta = null, busy = false;
+let position = 0, timer = null;
+let received = 0, t0 = 0, tFirst = 0, tLast = 0, peakMax = 0, madSum = 0, madN = 0;
+
+function setStatus(text, bad) { $("status").textContent = text; $("status").className = bad ? "bad" : ""; }
+function setPill(text, cls) { $("pill").textContent = text; $("pill").className = "pill " + cls; }
+function setBusy(b) {
+  busy = b;
+  document.querySelectorAll("#presets button").forEach((x) => x.disabled = b);
+  $("file").disabled = b;
+  $("filelabel").classList.toggle("disabled", b);
+}
+
+// --- health -------------------------------------------------------------------
+
+async function health() {
+  try {
+    const r = await fetch(BACKEND + "/api/health", { cache: "no-store" });
+    const h = await r.json();
+    if (!h.ok) throw new Error("placa no disponible");
+    setPill(h.queued ? `en línea · ${h.queued} en uso` : "en línea", h.queued ? "busy" : "up");
+    return h;
+  } catch (e) {
+    setPill("apagada", "down");
+    return null;
+  }
+}
+
+// an empty black box reads as broken: say what goes there
+function placeholder(text) {
+  ctx.fillStyle = "#000"; ctx.fillRect(0, 0, screen.width, screen.height);
+  ctx.fillStyle = "#9a9893"; ctx.font = "15px system-ui, sans-serif";
+  ctx.textAlign = "center"; ctx.textBaseline = "middle";
+  ctx.fillText(text, screen.width / 2, screen.height / 2);
+}
+placeholder("Conectando con la placa…");
+
+(async () => {
+  const h = await health();
+  if (!h) {
+    $("liveintro").textContent = "La demo en vivo está apagada en este momento (necesita la " +
+      "placa y una PC prendidas). Más abajo está el resultado grabado y verificado.";
+    placeholder("Demo en vivo apagada");
+    $("presets").hidden = true; $("filelabel").hidden = true;
+    $("transport").parentElement.hidden = true;
+    return;
+  }
+  for (const p of h.presets) {
+    const b = document.createElement("button");
+    b.className = "primary"; b.textContent = p.label;
+    b.onclick = () => decode(`preset=${encodeURIComponent(p.id)}`, null, p.label);
+    $("presets").append(b);
+  }
+  $("file").onchange = () => {
+    const f = $("file").files[0];
+    if (!f) return;
+    if (f.size > h.max_upload_mb * 1048576) {
+      setStatus(`El archivo pesa más de ${h.max_upload_mb} MB.`, true); return;
+    }
+    decode("", f, f.name);
+    $("file").value = "";
+  };
+  placeholder("Elegí un clip o subí un video");
+  setStatus(`Placa en línea: bitstream ${h.versions.bitstream}.`);
+  setInterval(() => { if (!busy) health(); }, 15000);
+})();
+
+// --- wire format: [magic][u32 len][payload]; frame header 24 bytes ---------------
+
+class RecordReader {
+  constructor() { this.buf = new Uint8Array(0); }
+  push(b) {
+    const m = new Uint8Array(this.buf.length + b.length);
+    m.set(this.buf); m.set(b, this.buf.length); this.buf = m;
+  }
+  *records() {
+    while (this.buf.length >= 8) {
+      const len = new DataView(this.buf.buffer, this.buf.byteOffset).getUint32(4, true);
+      if (this.buf.length < 8 + len) return;
+      const magic = String.fromCharCode(...this.buf.subarray(0, 4));
+      const payload = this.buf.slice(8, 8 + len);
+      this.buf = this.buf.subarray(8 + len);
+      yield { magic, payload };
+    }
+  }
+}
+
+function header(p) {
+  const v = new DataView(p.buffer, p.byteOffset);
+  return { index: v.getUint32(0, true), type: String.fromCharCode(p[8]),
+           width: v.getUint16(12, true), height: v.getUint16(14, true),
+           mad: v.getFloat32(16, true), peak: p[20] };
+}
+
+function i420ToImage(p, w, h) {                       // BT.601, limited range
+  const cw = w >> 1, Y = p.subarray(24, 24 + w * h);
+  const U = p.subarray(24 + w * h, 24 + w * h + cw * (h >> 1)), V = p.subarray(24 + w * h + cw * (h >> 1));
+  const img = new ImageData(w, h), px = img.data;
+  for (let y = 0; y < h; y++) {
+    const cr = (y >> 1) * cw;
+    for (let x = 0; x < w; x++) {
+      const c = 1.164 * (Y[y * w + x] - 16), u = U[cr + (x >> 1)] - 128, v = V[cr + (x >> 1)] - 128;
+      const o = (y * w + x) * 4;
+      px[o] = c + 1.596 * v; px[o + 1] = c - 0.813 * v - 0.391 * u; px[o + 2] = c + 2.018 * u; px[o + 3] = 255;
+    }
+  }
+  return img;
+}
+
+// --- playback: real time, after a buffer sized to the visitor's connection -------
+//
+// Frames arrive in display order at whatever rate the network allows. If that is
+// below the stream's frame rate, starting right away means stalling every few
+// frames; like any video player, wait up front instead, just long enough that
+// the rest arrives before it is due: with N frames, arrival rate r and frame
+// rate f, playing from p needs (N - p)(1 - r/f) frames already buffered.
+//
+// Two players behind it: a canvas fed frame by frame (JPEG, raw) and a <video>
+// fed fragmented MP4 through Media Source (H.264). avail() and pos() hide which.
+
+let waiting = true, userPaused = false, allReceived = false, mode = "jpeg";
+let ms = null, sb = null, appendQueue = [], streamEnded = false, bytesIn = 0;
+
+function fps() { return (meta && meta.frame_rate) || 25; }
+function avail() {                       // frames playable from the start
+  if (mode !== "h264") return received;
+  const b = video.buffered;
+  return b.length ? Math.round(b.end(b.length - 1) * fps()) : 0;
+}
+function pos() { return mode === "h264" ? Math.floor(video.currentTime * fps() + 1e-6) : position; }
+
+function present(i) {
+  const bm = frames[i];
+  if (!bm) return;
+  ctx.drawImage(bm, 0, 0, screen.width, screen.height);
+}
+
+function arrivalRate() {
+  const s = ((allReceived ? tLast : performance.now()) - tFirst) / 1000;
+  const n = avail();
+  return n > 1 && s > 0 ? (n - 1) / s : 0;
+}
+
+function framesNeeded(p) {
+  if (allReceived) return 0;
+  const r = arrivalRate(), f = fps();
+  if (!r || performance.now() - tFirst < 1000) return Infinity;   // still measuring
+  return Math.max(12, Math.ceil((frames.length - p) * Math.max(0, 1 - r / f) * 1.15));
+}
+
+function bufferStatus() {
+  const r = arrivalRate(), f = fps();
+  const need = framesNeeded(pos()), have = avail() - pos();
+  if (!r || need === Infinity) return "Midiendo tu conexión…";
+  const eta = Math.max(0, (need - have) / r);
+  return r < f
+    ? `Tu conexión trae ${(r / f).toFixed(2)}× tiempo real: cargando ${eta.toFixed(0)} s de ` +
+      `buffer para reproducir sin cortes…`
+    : "Cargando…";
+}
+
+function tick() {
+  if (!meta || userPaused) return;
+  const p = pos();
+  $("seek").value = p;
+  $("counter").textContent = `${Math.min(p + 1, frames.length)} / ${frames.length}`;
+  if (waiting) {
+    if (avail() - p >= framesNeeded(p) || (allReceived && avail() > 0)) {
+      waiting = false; $("transport-bar").hidden = false;
+      if (mode === "h264") video.play().catch(() => {});
+      if (!allReceived) setStatus("Reproduciendo a tiempo real mientras siguen llegando cuadros…");
+    } else { if (!allReceived) setStatus(bufferStatus()); return; }
+  }
+  if (mode === "h264") return;           // the <video> advances itself
+  let next = position + 1;
+  if (next >= frames.length) { if (!allReceived) return; next = 0; }
+  if (!frames[next]) { waiting = true; return; }     // fell behind: rebuffer
+  position = next; present(position);
+}
+
+video.addEventListener("waiting", () => {            // ran dry: rebuffer
+  if (!allReceived && !userPaused) { video.pause(); waiting = true; }
+});
+
+function startClock() {
+  if (timer) clearInterval(timer);
+  timer = setInterval(tick, 1000 / fps());
+}
+$("play").onclick = () => {
+  userPaused = !userPaused; $("play").textContent = userPaused ? "Reproducir" : "Pausa";
+  if (mode === "h264") userPaused ? video.pause() : (!waiting && video.play().catch(() => {}));
+};
+$("seek").oninput = (e) => {
+  userPaused = true; $("play").textContent = "Reproducir";
+  const i = Number(e.target.value);
+  if (mode === "h264") { video.pause(); video.currentTime = (i + 0.5) / fps(); }
+  else { position = i; present(i); }
+  $("counter").textContent = `${i + 1} / ${frames.length}`;
+};
+
+// Media Source plumbing: fragments are appended in order as they arrive.
+function mseOpen() {
+  appendQueue = []; streamEnded = false; sb = null;
+  ms = new MS();
+  video.src = URL.createObjectURL(ms);
+  video.loop = false;
+  ms.addEventListener("sourceopen", () => {
+    sb = ms.addSourceBuffer(MP4_TYPE);
+    sb.addEventListener("updateend", pump);
+    pump();
+  }, { once: true });
+}
+function pump() {
+  if (!sb || sb.updating) return;
+  if (appendQueue.length) {
+    const n = appendQueue.reduce((a, c) => a + c.length, 0), all = new Uint8Array(n);
+    let o = 0; for (const c of appendQueue) { all.set(c, o); o += c.length; }
+    appendQueue = [];
+    sb.appendBuffer(all);
+  } else if (streamEnded && ms.readyState === "open") {
+    ms.endOfStream(); video.loop = true;
+  }
+}
+
+// --- live numbers -----------------------------------------------------------------
+//
+// Two rates, kept apart on purpose: the board's, polled from the relay on its own
+// connection, and the network's, measured here. The first is the decoder; the
+// second is only how fast this page can be fed.
+
+function fmt(x, d) { return x == null ? "–" : x.toFixed(d); }
+
+let board = { count: 0, fps: null, summary: null }, tBoard = 0, pollTimer = null;
+
+async function poll(id) {
+  try {
+    const r = await fetch(`${BACKEND}/api/progress?id=${id}`, { cache: "no-store" });
+    if (!r.ok) return;
+    const p = await r.json();
+    board.count = p.decoded;
+    if (p.summary) { board.summary = p.summary; board.fps = p.summary.fps; }
+    else if (p.decoded > 1) board.fps = p.decoded / ((performance.now() - tBoard) / 1000);
+    if (p.summary || p.error) { clearInterval(pollTimer); pollTimer = null; }
+    updateStats();
+  } catch (e) { /* the frame stream reports failures */ }
+}
+
+function updateStats() {
+  const f = meta ? meta.frame_rate : 0;
+  $("s-board").textContent = board.fps && f ? `${fmt(board.fps / f, 2)}×` : "–";
+  $("s-board-n").textContent = meta ? `${board.count} / ${frames.length} cuadros` +
+    (board.fps ? `, ${fmt(board.fps, 1)} cuadros/s` : "") : "";
+  const r = arrivalRate(), secs = ((allReceived ? tLast : performance.now()) - t0) / 1000;
+  $("s-net").textContent = r && f ? `${fmt(r / f, 2)}×` : "–";
+  $("s-net-n").textContent = meta ? `${allReceived ? frames.length : Math.min(avail(), frames.length)} / ${frames.length} cuadros` +
+    (secs > 0 ? `, ${fmt(bytesIn * 8 / 1e6 / secs, 1)} Mbit/s` : "") : "";
+  const p = Math.min(pos(), mads.length - 1);
+  $("s-mad").textContent = `${fmt(p >= 0 ? mads[p] : null, 2)} / ${fmt(madN ? madSum / madN : null, 3)}`;
+  $("s-peak").textContent = String(peakMax);
+}
+
+function drawChart() {
+  const c = $("madchart"), dpr = window.devicePixelRatio || 1;
+  const w = c.clientWidth, h = c.clientHeight;
+  c.width = w * dpr; c.height = h * dpr;
+  const g = c.getContext("2d"); g.scale(dpr, dpr);
+  const css = getComputedStyle(document.documentElement);
+  const top = Math.max(0.25, ...mads.filter((m) => m != null));
+  g.strokeStyle = css.getPropertyValue("--line"); g.lineWidth = 1;
+  g.beginPath(); g.moveTo(0, h - 0.5); g.lineTo(w, h - 0.5); g.stroke();
+  g.fillStyle = css.getPropertyValue("--muted"); g.font = "11px system-ui";
+  g.fillText(`MAD por cuadro (máx. de la escala ${top.toFixed(2)})`, 2, 11);
+  g.strokeStyle = css.getPropertyValue("--accent"); g.lineWidth = 1.5; g.beginPath();
+  const n = Math.max(frames.length, 1);
+  mads.forEach((m, i) => {
+    if (m == null) return;
+    const x = (i / (n - 1 || 1)) * w, y = h - 2 - (m / top) * (h - 18);
+    i ? g.lineTo(x, y) : g.moveTo(x, y);
+  });
+  g.stroke();
+}
+
+// --- one decode -------------------------------------------------------------------
+
+async function decode(query, file, label) {
+  if (busy) return;
+  setBusy(true);
+  frames = []; mads = []; meta = null; position = 0;
+  waiting = true; userPaused = false; allReceived = false;
+  received = 0; peakMax = 0; madSum = 0; madN = 0; bytesIn = 0; tFirst = 0;
+  board = { count: 0, fps: null, summary: null };
+  if (timer) { clearInterval(timer); timer = null; }
+  if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+  mode = $("transport").value;
+  video.pause(); video.removeAttribute("src"); video.load();
+  video.hidden = mode !== "h264"; screen.hidden = mode === "h264";
+  if (mode === "h264") mseOpen();
+  else ctx.clearRect(0, 0, screen.width, screen.height);
+  $("play").textContent = "Pausa";
+  $("transport-bar").hidden = true; $("livestats").hidden = true; $("madchart").hidden = true;
+  const q = [query, `transport=${mode}`].filter(Boolean).join("&");
+  setStatus(file ? `Subiendo ${label} (${(file.size / 1048576).toFixed(1)} MB)…` : `Pidiendo ${label}…`);
+  let lastDraw = 0;
+  try {
+    t0 = performance.now();
+    const resp = await fetch(BACKEND + "/api/decode?" + q, {
+      method: "POST", body: file || new Uint8Array(0),
+      headers: { "Content-Type": "application/octet-stream" },
+    });
+    if (!resp.ok) {
+      let msg = `El servidor respondió ${resp.status}`;
+      try { msg = (await resp.json()).error || msg; } catch (e) {}
+      setStatus(msg, true); return;
+    }
+    const reader = resp.body.getReader(), rr = new RecordReader();
+    let done = null, failed = false;
+    for (;;) {
+      const { value, done: end } = await reader.read();
+      if (end) break;
+      rr.push(value);
+      for (const r of rr.records()) {
+        if (r.magic === "M2HD") {
+          const e = JSON.parse(new TextDecoder().decode(r.payload));
+          if (e.kind === "queued") setStatus(`La placa está ocupada: estás en la posición ${e.position} de la cola…`);
+          else if (e.kind === "normalizing") setStatus("Convirtiendo el video a MPEG-2 352×288…");
+          else if (e.kind === "start") {
+            meta = e; t0 = performance.now();
+            frames = new Array(e.pictures); mads = new Array(e.pictures).fill(null);
+            $("seek").max = Math.max(0, e.pictures - 1);
+            $("progress").max = e.pictures; $("progress").value = 0; $("progress").hidden = false;
+            $("livestats").hidden = false; $("madchart").hidden = false;
+            const src = e.source ? `${e.source.width}×${e.source.height} ${e.source.codec} a ` +
+              `${e.source.frame_rate} fps → ` : "";
+            setStatus(`${src}MPEG-2 352×288 a ${e.frame_rate} fps, ${e.pictures} cuadros: decodificando en el FPGA…`);
+            tBoard = performance.now();
+            if (e.session) pollTimer = setInterval(() => poll(e.session), 500);
+            startClock();
+          } else if (e.kind === "error") { setStatus(e.error, true); failed = true; }
+          else if (e.kind === "done") done = e;
+          continue;
+        }
+        bytesIn += r.payload.length + 8;
+        if (!tFirst) tFirst = performance.now();
+        tLast = performance.now();
+        if (r.magic === "M2MP") {                 // a piece of fragmented MP4
+          appendQueue.push(r.payload); pump();
+          continue;
+        }
+        const hd = header(r.payload);             // M2MT, M2JP, M2RW: one frame
+        if (hd.mad >= 0) { mads[hd.index] = hd.mad; madSum += hd.mad; madN++; }
+        peakMax = Math.max(peakMax, hd.peak);
+        if (r.magic === "M2JP" || r.magic === "M2RW") {
+          frames[hd.index] = r.magic === "M2JP"
+            ? await createImageBitmap(new Blob([r.payload.subarray(24)], { type: "image/jpeg" }))
+            : await createImageBitmap(i420ToImage(r.payload, hd.width, hd.height));
+          if (!received) present(0);
+          received++;
+        }
+        $("progress").value = avail();
+        const now = performance.now();
+        if (now - lastDraw > 150) { updateStats(); drawChart(); lastDraw = now; }
+      }
+    }
+    $("progress").hidden = true;
+    if (done) {
+      streamEnded = true; pump();
+      allReceived = true;
+      board.summary = done; board.fps = done.fps; board.count = done.frames;
+      drawChart(); updateStats();
+      const f = done.frame_rate, net = arrivalRate() / f, dec = done.fps / f;
+      const issues = [];
+      if (!done.complete) issues.push("decodificación incompleta");
+      if (done.decoder.error) issues.push("el decodificador reportó un error de stream");
+      if (done.decoder.watchdog) issues.push("watchdog");
+      setStatus(`Listo. La placa decodificó los ${done.frames} cuadros a ${dec.toFixed(2)}× tiempo real ` +
+        `(${done.fps.toFixed(1)} cuadros/s); a tu navegador llegaron a ${net.toFixed(2)}× ` +
+        (dec >= 1 && net < 1 ? "(el límite fue la red, no el decodificador)" : "tiempo real") +
+        `. MAD medio ${done.mad_mean.toFixed(3)}, pico ${done.peak_max}.` +
+        (issues.length ? " Atención: " + issues.join(", ") + "." : ""), issues.length > 0);
+    } else if (!failed) {
+      setStatus("La conexión se cortó antes de terminar.", true);
+    }
+  } catch (err) {
+    setStatus("No se pudo conectar con la demo: " + err.message, true);
+  } finally {
+    setBusy(false);
+    health();
+  }
+}
+</script>
+</body>
+</html>
