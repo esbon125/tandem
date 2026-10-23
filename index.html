@@ -192,7 +192,7 @@ canvas#madchart { width: 100%; height: 70px; display: block; margin-top: 10px; }
 <script>
 // The relay (demo/live_relay.py) behind a Tailscale Funnel; ?backend=URL to test another.
 const BACKEND = new URLSearchParams(location.search).get("backend")
-  || "https://localhost-0.tail5099f3.ts.net";
+  || "https://mpeg2fpga.tail5099f3.ts.net";
 const $ = (id) => document.getElementById(id);
 const screen = $("screen"), ctx = screen.getContext("2d"), video = $("vscreen");
 // H.264 over Media Source when the browser has it (ManagedMediaSource on iOS 17+)
