@@ -109,7 +109,11 @@ class Handler(socketserver.StreamRequestHandler):
                     self.send_chunk(record(9, b"", b"from the future"))
                 n += 1
                 if server.cut_after is not None and n >= server.cut_after:
-                    self.send(b"0\r\n\r\n")           # ends the body with no END record
+                    if server.cut_inside_chunk:       # the device dies mid-record
+                        rec = record(1, extra, y + c + c)
+                        self.send(b"%x\r\n" % len(rec) + rec[:len(rec) // 2])
+                    else:
+                        self.send(b"0\r\n\r\n")       # ends the body with no END record
                     return
             end = {"id": "d-000001", "frames_sent": n, "bytes_in": total, "complete": True,
                    "aborted": False, "decoder": {"error": False, "watchdog": False}}
@@ -130,6 +134,7 @@ class FakeDevice(socketserver.ThreadingTCPServer):
         self.busy = False
         self.frame_size = (256, 256)
         self.cut_after = None
+        self.cut_inside_chunk = False
         self.extra_header_bytes = 0
         self.unknown_record = False
         self.seen_paths = []
