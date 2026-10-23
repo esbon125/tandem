@@ -97,7 +97,10 @@ class DecodeResult:
 
     def _frames(self):
         while True:
-            record = read_record(self._read_exact)
+            try:
+                record = read_record(self._read_exact)
+            except ConnectionError as e:         # cut inside a chunk or a record
+                raise DecodeIncomplete("connection lost before the END record: %s" % e) from e
             if record is None:
                 raise DecodeIncomplete("frame stream ended without an END record")
             rtype, extra, payload = record

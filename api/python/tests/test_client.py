@@ -99,6 +99,15 @@ class ClientTest(unittest.TestCase):
             with self.assertRaises(mpeg2fpga.DecodeIncomplete):
                 list(result)
 
+    def test_connection_lost_inside_a_record_is_incomplete(self):
+        with FakeDevice() as fake:
+            fake.cut_after = 2
+            fake.cut_inside_chunk = True
+            result = mpeg2fpga.Device("127.0.0.1", token=TOKEN, port=fake.port).decode(
+                b"x" * 5000, chunk_size=1000)
+            with self.assertRaises(mpeg2fpga.DecodeIncomplete):
+                list(result)
+
     def test_to_numpy(self):
         try:
             import numpy  # noqa: F401
