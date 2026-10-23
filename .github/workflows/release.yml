@@ -98,6 +98,9 @@ jobs:
           STREAMS_DIR: ${{ vars.MPEG2FPGA_STREAMS_DIR }}
           BOARD: ${{ vars.MPEG2FPGA_BOARD }}
           FPS_FLOOR: ${{ inputs.fps_floor }}
+          # the release key itself stays on the runner machine
+          # (~/.config/mpeg2fpga/release-key.pem); only its passphrase is a secret
+          MPEG2FPGA_SIGNING_PASS: ${{ secrets.MPEG2FPGA_SIGNING_PASS }}
         run: |
           [ -n "$BOARD" ] || unset BOARD
           [ -n "$FPS_FLOOR" ] || unset FPS_FLOOR
