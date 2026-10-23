@@ -10,7 +10,7 @@ medido.
 La página tiene arriba una demo en vivo: clips precargados o un video propio,
 decodificados por la placa en el momento. La página es estática (GitHub Pages);
 el backend es `demo/live_relay.py`, en una PC al lado de la placa, publicado
-con Tailscale Funnel en https://localhost-0.tail5099f3.ts.net (la URL está en
+con Tailscale Funnel en https://mpeg2fpga.tail5099f3.ts.net (la URL está en
 `site/index.html`; `?backend=URL` en la página la cambia para probar).
 
 ```
