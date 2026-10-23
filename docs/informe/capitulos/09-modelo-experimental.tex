@@ -1,0 +1,131 @@
+\chapter{Descripción del modelo experimental y simulado}
+\label{cap:modelo}
+
+Este capítulo describe con qué se obtuvieron los resultados del
+capítulo~\ref{cap:resultados}: el modelo simulado, el montaje experimental y
+los métodos de medición. Todas las herramientas son parte del repositorio y
+pueden volver a ejecutarse.
+
+\section{Modelo simulado}
+\label{sec:modelo-simulado}
+
+\paragraph{Simulación del núcleo completo}
+El banco de prueba de Icarus Verilog, heredado del proyecto original y
+adaptado al port, instancia el núcleo con un modelo de comportamiento de la
+memoria externa, le entrega un flujo elemental MPEG-2 desde un archivo y
+vuelca el contenido de la memoria de cuadros. El volcado se hizo idéntico,
+palabra por palabra, al que se obtiene leyendo la DDR en la placa, de modo
+que simulación y hardware se analizan con exactamente las mismas
+herramientas.
+
+\paragraph{Bancos de bloque}
+Cada bloque nuevo tiene su banco propio (sección~\ref{sec:verificacion-rtl}):
+puente APB, puente de memoria contra un esclavo AXI con latencias y
+reordenamiento variables, DMA del flujo y ruta de respuestas de memoria con
+el COREFIFO de Microchip.
+
+\paragraph{Banco IEEE 1180}
+Un banco dedicado alimenta la IDCT del núcleo, el mismo archivo Verilog que
+se sintetiza, con los bloques pseudoaleatorios que define el estándar
+IEEE~1180-1990 para sus seis condiciones de prueba (tres rangos de valores,
+con los dos signos, 10\,000 bloques cada una) y compara la salida contra una
+IDCT de referencia en doble precisión.
+
+\section{Modelo experimental}
+\label{sec:modelo-experimental}
+
+\paragraph{Montaje}
+La plataforma es una PolarFire SoC Discovery Kit (dispositivo MPFS095T,
+encapsulado FCSG325), alojada en una caja estanca para protegerla durante el
+desarrollo. Se conecta a una computadora de escritorio con Linux por:
+
+\begin{itemize}
+  \item USB, que en la placa da acceso a JTAG, para programar la FPGA y leer
+    registros internos con SmartDebug, y a las consolas serie del MSS;
+  \item Ethernet, en la misma red local, para operar la placa por SSH y para
+    el protocolo de red.
+\end{itemize}
+
+La placa arranca Linux desde una tarjeta microSD. La computadora ejecuta
+Libero SoC, las herramientas de verificación y el proceso de liberación.
+
+\paragraph{Flujos de prueba}
+Se usaron 39 flujos de conformidad (37 MPEG-2 y 2 MPEG-1) de distintos fabricantes y
+laboratorios (CCETT, General Instrument, HHI, IBM, Nokia, Sony,
+Tektronix, Toshiba, entre otros), con resoluciones de $32 \times 32$ a
+$720 \times 576$. Para la demostración se usó un fragmento de \emph{Tears of
+Steel} \citep{Blender_2012_tears}, codificado en MPEG-2 a $352 \times 288$ y
+24 imágenes por segundo.
+
+\paragraph{Referencia}
+La referencia de corrección es \cmd{mpeg2decode}, el decodificador de
+software del MPEG Software Simulation Group, incluido en el repositorio.
+
+\section{Comparación de imágenes}
+\label{sec:framecmp}
+
+Saber si una imagen decodificada es correcta resultó más difícil de lo
+esperado. La primera métrica daba un error absoluto medio cercano a 121 sobre
+255 en imágenes que, vistas, eran correctas. La herramienta \cmd{framecmp}
+resolvió las trampas que lo explicaban:
+
+\begin{itemize}
+  \item el núcleo guarda los píxeles como enteros con signo desplazados en
+    $-128$, y se los estaba leyendo sin signo;
+  \item en cada palabra de 64 bits, el píxel de la izquierda ocupa los bits
+    más significativos, al revés que el orden de los bytes en memoria;
+  \item la memoria de cuadros tiene cuatro buffers que rotan, y el orden de
+    decodificación no es el de presentación: no hay una correspondencia fija
+    entre buffer e imagen, así que cada buffer se compara contra todas las
+    imágenes de referencia y se toma la mejor;
+  \item los nombres internos de los planos de crominancia están cruzados
+    respecto del estándar;
+  \item un flujo cortado en cualquier byte deja una imagen parcial, y un
+    volcado tomado durante la reconstrucción muestra una imagen a medio
+    escribir: los flujos se cortan en frontera de imagen y el volcado espera
+    a que la memoria deje de cambiar.
+\end{itemize}
+
+Para cada plano (Y, Cb, Cr) se reportan el error absoluto medio (MAD) y el
+error pico, en niveles de 0 a 255. El método se validó primero en
+simulación, hasta obtener cero donde debía haber cero, y recién después se
+usó con el hardware.
+
+\section{Regresión}
+\label{sec:regresion}
+
+El \emph{harness} \cmd{regress} ejecuta, desde la computadora y en unos 16
+minutos, cuatro pruebas contra la placa:
+
+\begin{description}[style=nextline, leftmargin=1.5em]
+  \item[Conformidad] Cada flujo, cortado a 8 imágenes, se decodifica en la
+    placa y se compara contra la referencia. Cada flujo recibe un veredicto
+    según su peor buffer: \emph{bit-exacto} (MAD 0), \emph{cercano}
+    (MAD $\leq 1$) o \emph{deriva} (MAD $> 1$), o \emph{sin escritura} si
+    el núcleo no escribió ninguna imagen.
+  \item[Determinismo] Un mismo flujo, cinco veces con \emph{reset} del
+    núcleo y cinco cambiando de flujo sin \emph{reset}: todas las
+    decodificaciones deben ser idénticas.
+  \item[Robustez] Tres entradas dañadas (un flujo truncado, 200 bits
+    invertidos en los datos y 256~KiB de bytes aleatorios), cada una seguida
+    de un flujo correcto sin \emph{reset}, que debe decodificarse bit-exacto.
+  \item[Velocidad] La memoria de cuadros se llena con un patrón conocido, se
+    inicia el DMA y se mide el tiempo hasta la última escritura en la
+    memoria de cuadros. Cinco corridas por flujo, después de una de
+    calentamiento.
+\end{description}
+
+Los resultados se comparan contra una línea de base versionada, y la
+comparación es insensible a la rotación de los buffers, que varía entre
+corridas sin que cambie nada.
+
+\section{Estimación de potencia}
+\label{sec:modelo-potencia}
+
+La Discovery Kit no permite medir el consumo por software: no tiene monitores
+de corriente ni reguladores con interfaz digital, y sus puntos de prueba solo
+sirven para medir tensión. Por eso la potencia se estimó con SmartPower, la
+herramienta de Microchip, sobre la netlist ya ubicada y ruteada, en modo sin
+vectores (con tasas de conmutación estimadas) y con las frecuencias reales
+de cada reloj. Un script propio suma el resultado por instancia para obtener
+la potencia de cada módulo del diseño.

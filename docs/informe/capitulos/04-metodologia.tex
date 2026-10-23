@@ -1,0 +1,396 @@
+\chapter{Metodología y flujo de desarrollo}
+\label{cap:metodologia}
+
+Este capítulo describe cómo se trabajó, con independencia de qué se
+construyó. La metodología es parte del resultado: el objetivo pedagógico del
+proyecto es mostrar el flujo completo de desarrollo de un producto de
+propiedad intelectual, y ese flujo es tan transferible a otro proyecto como
+el decodificador mismo.
+
+\section{El flujo de desarrollo}
+\label{sec:flujo}
+
+La figura~\ref{fig:flujo} resume las etapas por las que pasó el proyecto.
+Cada etapa produce algo verificable antes de habilitar la siguiente, y las
+flechas de retorno no son excepciones sino parte normal del flujo: varios
+problemas detectados en el hardware obligaron a volver a la simulación para
+reproducirlos y corregirlos allí.
+
+\begin{figure}[ht]
+  \centering
+  \begin{tikzpicture}[
+      et/.style={blk, minimum width=30mm, minimum height=13mm, font=\sffamily\footnotesize},
+      etp/.style={et, draw=m2teal, fill=m2teal!8},
+      node distance=6mm and 6mm]
+    \node[et] (inv) {Investigación\\norma y núcleo};
+    \node[et, right=of inv] (port) {Port del núcleo\\a PolarFire};
+    \node[et, right=of port] (int) {Integración\\con el MSS};
+    \node[etp, below=16mm of int] (bring) {Puesta en marcha\\en hardware};
+    \node[etp, left=of bring] (fw) {Firmware\\driver y servicio};
+    \node[etp, left=of fw] (ver) {Verificación y\\optimización};
+    \node[et, below=11mm of ver, draw=m2amber, fill=m2amber!12] (rel) {Producto\\liberación};
+    \node[lbl, right=4mm of rel, align=left, text width=62mm] {licencias, calificación
+      en la placa, entregables (capítulo~\ref{cap:producto})};
+    \draw[arr] (inv) -- (port);
+    \draw[arr] (port) -- (int);
+    \draw[arr] (int) -- (bring);
+    \draw[arr] (bring) -- (fw);
+    \draw[arr] (fw) -- (ver);
+    \draw[arr] (ver) -- (rel);
+    \draw[arr, dashed, color=m2red] ([xshift=-4mm]bring.north) -- ([xshift=4mm]port.south)
+      node[lbl, pos=0.5, sloped, above, color=m2red] {reproducir en simulación};
+    \draw[arr, dashed, color=m2red] ([xshift=4mm]ver.north) -- ([xshift=-4mm]port.south)
+      node[lbl, pos=0.5, sloped, above, color=m2red] {regresión};
+    \node[lbl, above=1mm of port.north east, anchor=south east] {simulación};
+    \node[lbl, below=1mm of bring.south east, anchor=north east] {hardware real};
+  \end{tikzpicture}
+  \caption{Flujo de desarrollo del proyecto. En azul, etapas que se resuelven
+    principalmente en simulación; en verde, sobre la placa.}
+  \label{fig:flujo}
+\end{figure}
+
+En la práctica, el trabajo se organizó en fases numeradas, cada una con su
+objetivo verificable y sus bitácoras (sección~\ref{sec:bitacoras}). La
+tabla~\ref{tab:fases} las resume.
+
+\begin{table}[ht]
+  \centering\small
+  \begin{tabularx}{\linewidth}{@{}l X l@{}}
+    \toprule
+    \textbf{Fase} & \textbf{Contenido} & \textbf{Bitácoras} \\
+    \midrule
+    --- & Port del núcleo: FIFOs y memorias portables, reloj único con CCC & --- \\
+    1--3 & Puesta en marcha de la placa: aplicación sin sistema operativo por
+      UART, arranque de Linux desde la tarjeta SD, Ethernet & 01--03 \\
+    4 & Entorno de desarrollo guiado por pruebas para el driver & 04 \\
+    5 & El núcleo como periférico APB del MSS: puente en simulación,
+      integración, cierre de \emph{timing}, depuración en hardware & 05--09 \\
+    6 & Puente entre la interfaz de memoria del núcleo y AXI4 & 10--13 \\
+    7 & Entrada del flujo por DMA y la investigación de \enquote{el núcleo no
+      decodifica}, hasta sus causas raíz & 14--38 \\
+    --- & Línea de base, comparación confiable de cuadros, optimización,
+      regresión & 39--45 \\
+    --- & Producto: potencia, protocolo v1, demostración en vivo & 46--47 \\
+    \bottomrule
+  \end{tabularx}
+  \caption{Fases del desarrollo y bitácoras que las documentan
+    (anexo~\ref{anx:bitacoras}).}
+  \label{tab:fases}
+\end{table}
+
+\section{Verificar en la capa más barata}
+\label{sec:capa-barata}
+
+El principio que guió todo el desarrollo es simple: \textbf{cada
+comportamiento se verifica en la capa más barata capaz de mostrarlo}, y
+recién después se sube a una capa más cara. Una simulación de un módulo
+tarda segundos; una síntesis completa con ubicación y ruteo tarda unos
+cuarenta minutos, y depurar en la placa exige instrumentar señales y volver a
+sintetizar. Encontrar un error una capa más abajo ahorra órdenes de magnitud
+de tiempo.
+
+El principio se aplicó con dos pirámides paralelas
+(figura~\ref{fig:piramides}), una para el hardware y otra para el software.
+
+\begin{figure}[ht]
+  \centering
+  \begin{tikzpicture}[
+      cap/.style={draw=m2blue, fill=m2blue!#1, minimum height=9mm,
+        font=\sffamily\footnotesize, align=center, inner sep=1pt},
+      cap/.default=8]
+    % hardware
+    \node[cap=5,  minimum width=66mm] (h1) at (0,0) {Bancos unitarios en Icarus Verilog\\(puentes, DMA, IDCT contra IEEE 1180)};
+    \node[cap=12, minimum width=54mm, above=0pt of h1] (h2) {Simulación del núcleo completo\\contra el decodificador de referencia};
+    \node[cap=20, minimum width=42mm, above=0pt of h2] (h3) {Síntesis y \emph{timing}};
+    \node[cap=30, minimum width=30mm, above=0pt of h3] (h4) {Placa\\(SmartDebug)};
+    \node[lbl, below=2mm of h1] {Hardware};
+    % software
+    \node[cap=5,  minimum width=66mm] (s1) at (76mm,0) {Lógica pura con KUnit\\(kernel en modo usuario, sin hardware)};
+    \node[cap=12, minimum width=54mm, above=0pt of s1] (s2) {Periférico simulado en Renode\\(registros e interrupciones)};
+    \node[cap=20, minimum width=42mm, above=0pt of s2] (s3) {Carga del módulo\\en el kernel de la placa};
+    \node[cap=30, minimum width=30mm, above=0pt of s3] (s4) {Punta a punta\\por la red};
+    \node[lbl, below=2mm of s1] {Software};
+    \draw[arr] ([xshift=-6mm]h1.south west) -- ([xshift=-6mm]h4.north west -| h1.west)
+      node[lbl, midway, rotate=90, above] {costo por iteración};
+  \end{tikzpicture}
+  \caption{Pirámides de verificación. Cada capa se ejercita antes de subir
+    a la siguiente; la base es rápida y barata, la cima lenta y cara.}
+  \label{fig:piramides}
+\end{figure}
+
+\paragraph{Hardware}
+Todo bloque de RTL nuevo (el puente APB, el puente de memoria AXI, el motor
+de DMA) se diseñó primero contra un banco de prueba propio en Icarus Verilog,
+escrito antes que el módulo y con un modelo del otro extremo del bus. El
+núcleo completo se simula decodificando flujos reales y volcando la memoria
+de cuadros, que se compara contra el decodificador de referencia. Recién
+cuando la simulación pasa se sintetiza.
+
+\paragraph{Software}
+El driver se escribió con desarrollo guiado por pruebas: la lógica que no
+depende del hardware vive separada del código que toca registros, y se
+prueba con KUnit sobre un kernel compilado en modo usuario, en segundos y
+sin placa. Un modelo del periférico en Renode permitió probar registros e
+interrupciones antes de que el hardware existiera. Cuando el driver llegó a
+la placa, lo único que quedaba por validar era la compatibilidad binaria con
+el kernel: ninguna línea de lógica tuvo que depurarse allí.
+
+\section{Los límites de la simulación}
+\label{sec:limites-simulacion}
+
+La lección metodológica más importante del proyecto vino de una fase en la
+que la pirámide no alcanzó. Durante la fase~7 el núcleo, ya integrado,
+simplemente no decodificaba en la placa, mientras la simulación pasaba en
+verde. Ninguno de los errores encontrados en esa investigación era visible
+en la simulación de comportamiento: eran problemas de la traducción a
+hardware (un parámetro interpretado con signo por la herramienta de
+síntesis, dos puertos de una memoria que la síntesis fusionó, un cruce de
+dominios de \emph{reset}) o de la plataforma (dos regiones de memoria que
+resultaron ser la misma, con una caché de por medio).
+
+De ahí salieron dos reglas que el resto del proyecto respetó:
+
+\begin{enumerate}
+  \item \textbf{Un banco de prueba en verde solo demuestra que el código
+    coincide con la propia hipótesis sobre el hardware.} Si la hipótesis es
+    errónea, el banco la confirma igual. Antes de dar un problema por
+    resuelto, la hipótesis se confirma en el hardware real, por ejemplo
+    leyendo los registros internos por JTAG con SmartDebug en lugar de
+    confiar en señales de depuración caseras, que en este proyecto llegaron
+    a dar lecturas falsas.
+  \item \textbf{La igualdad entre simulación y hardware permite asignar
+    responsabilidades.} Una vez que la memoria de cuadros de la placa resultó
+    idéntica byte a byte a la de la simulación, cualquier diferencia
+    restante contra el decodificador de referencia pasó a ser, con certeza,
+    una propiedad del diseño original y no un error del port.
+\end{enumerate}
+
+\section{Medir antes de cambiar}
+\label{sec:medir}
+
+Ningún cambio se dio por bueno sin una medición que lo respaldara, y las
+mediciones se construyeron antes que las optimizaciones:
+
+\begin{itemize}
+  \item \textbf{Comparación de cuadros.} Una herramienta propia
+    (\cmd{framecmp}) compara la memoria de cuadros decodificada contra el
+    decodificador de referencia, con error absoluto medio y error pico por
+    plano. La primera versión de la métrica daba errores enormes por razones
+    de formato y no de decodificación; el método se validó primero en
+    simulación hasta que diera cero donde debía dar cero.
+  \item \textbf{Regresión.} Un \emph{harness} corre 39 flujos de
+    conformidad y compara contra una línea de base registrada, además de
+    pruebas de determinismo, de robustez ante datos dañados y de velocidad.
+    Se corre después de cada bitstream nuevo, y la línea de base solo se
+    regraba después de revisar las diferencias.
+  \item \textbf{Comparaciones A/B en hardware.} Cada optimización del puente
+    de memoria se comparó contra la versión anterior en la placa, exigiendo
+    resultados idénticos bit a bit y midiendo la ganancia.
+  \item \textbf{Resultados negativos.} Los experimentos que no mejoraron
+    nada también se registraron. Subir el reloj del núcleo de 108 a
+    162~MHz no cambió la tasa de decodificación, y eso
+    descartó que el límite fuera la cantidad de ciclos; ese dato llevó a
+    localizar el verdadero cuello de botella (capítulo~\ref{cap:hardware}).
+\end{itemize}
+
+\section{Organización del repositorio}
+\label{sec:repositorio}
+
+Todo el proyecto vive en un único repositorio Git público, con ramas de larga
+duración separadas por tipo de contenido:
+
+\begin{description}[style=nextline, leftmargin=1.5em]
+  \item[\cmd{hardware\_development}] El RTL, el proyecto de Libero, los
+    scripts de síntesis, los bancos de prueba y las herramientas de
+    verificación del hardware.
+  \item[\cmd{firmware\_development}] El driver, el servicio, la biblioteca
+    cliente, la guía de usuario y el proceso de liberación.
+  \item[\cmd{docs}] La documentación académica: anteproyecto, bitácoras y
+    este informe.
+\end{description}
+
+Las tres ramas se trabajan en paralelo con \emph{worktrees} de Git, es decir,
+directorios de trabajo separados sobre el mismo repositorio. La rama
+principal no recibe trabajo directo: el proceso de liberación integra en
+ella exactamente los \emph{commits} de las tres ramas que pasaron la
+calificación (sección~\ref{sec:distribucion}).
+
+Con el núcleo original se siguió una política de \textbf{diferencias
+mínimas}: el código de terceros se modifica solo donde el port lo exige, y
+toda funcionalidad nueva va en módulos propios que lo envuelven. Esto reduce
+el riesgo de introducir errores en un diseño ya verificado por su autor, y
+mantiene clara la separación entre obra original y obra derivada, lo que
+importa para las licencias (sección~\ref{sec:licencias}).
+
+\section{Bitácoras de ingeniería}
+\label{sec:bitacoras}
+
+Cada paso significativo quedó documentado en una bitácora numerada, escrita
+al momento y no reconstruida después. Son 48, numeradas del 1 al 47 (la 46 tiene dos), y todas siguen la misma
+estructura: fecha, rama, contexto, objetivo, hipótesis, qué se hizo, qué se
+observó y qué se concluye, incluidas las hipótesis que resultaron falsas. Las
+investigaciones largas quedan como una secuencia: la fase~7 ocupa veinticinco
+bitácoras, desde el primer síntoma hasta las dos causas raíz y su
+confirmación.
+
+Las bitácoras cumplen la función del cuaderno de laboratorio. Son la fuente
+de la que se escribió este informe, permiten retomar un problema semanas
+después sin reconstruir el razonamiento, y documentan algo que el código
+final no muestra: por qué las cosas son como son y qué alternativas se
+descartaron. El índice completo está en el anexo~\ref{anx:bitacoras}.
+
+\section{Asistencia de inteligencia artificial}
+\label{sec:asistente-ia}
+
+El trabajo recibió ayuda de un asistente de programación basado en
+inteligencia artificial. Su aporte fue especialmente valioso en dos áreas. La
+primera fue la \textbf{instrumentación}: los numerosos scripts de Python con
+los que se observó y midió el sistema, desde la captura de la memoria de
+cuadros en la placa y la comparación contra la referencia hasta el
+\emph{harness} de regresión y las mediciones de rendimiento. La segunda fue la
+\textbf{documentación}: la redacción de las bitácoras de ingeniería, de la
+guía de usuario y de la especificación del protocolo.
+
+Las decisiones de diseño y de alcance, la interpretación de los resultados y
+la responsabilidad sobre el trabajo son del autor. La metodología descripta en
+este capítulo se aplicó igual a lo producido con asistencia: nada se dio por
+correcto sin verificarlo, y en el caso del hardware, sin confirmarlo en la
+placa.
+
+\section{Herramientas utilizadas}
+\label{sec:herramientas}
+
+El proyecto se hizo casi por completo con herramientas libres. La
+figura~\ref{fig:herramientas} las agrupa por área y distingue las
+principales, sin las cuales el proyecto no habría sido posible tal como se
+hizo, de las secundarias, que cumplieron un rol puntual o reemplazable. Las
+herramientas propietarias se muestran aparte: se reducen a las de Microchip
+para implementar y depurar el diseño en la FPGA, que no tienen alternativa
+libre para esta familia, a los servicios de alojamiento y al asistente de
+programación (sección~\ref{sec:asistente-ia}).
+
+\newcommand{\herr}[4]{% x, y, estilo, texto
+  \node[#3] at (#1,#2) {#4};}
+\begin{figure}[ht]
+  \centering
+  \begin{tikzpicture}[
+      x=1mm, y=1mm,
+      hb/.style={rounded corners=2pt, minimum width=21mm, minimum height=6.5mm,
+        font=\sffamily\scriptsize, align=center, inner sep=1pt, line width=0.7pt},
+      prin/.style={hb, fill=m2blue, draw=m2blue, text=white, font=\sffamily\scriptsize\bfseries},
+      sec/.style={hb, fill=white, draw=m2blue, text=m2navy},
+      prop/.style={hb, fill=m2grey!12, draw=m2grey, dashed, text=m2grey},
+      grupo/.style={draw=m2teal!60, rounded corners=4pt, line width=0.6pt},
+      tit/.style={font=\sffamily\small\bfseries, color=m2teal, anchor=south west}]
+    % ---- Diseño y simulación de hardware (origen 0,0)
+    \draw[grupo] (0,0) rectangle (48,-52);
+    \node[tit] at (1,0.5) {Diseño de hardware};
+    \herr{12}{-6}{prin}{Icarus Verilog}
+    \herr{36}{-6}{prin}{mpeg2decode}
+    \herr{12}{-14}{prin}{FFmpeg}
+    \herr{36}{-14}{sec}{GTKWave}
+    \node[prop, minimum width=45mm, minimum height=9mm] at (24,-29) {Libero SoC\\Synplify Pro, SmartDesign};
+    \herr{12}{-47}{prop}{SmartDebug}
+    \herr{12}{-39}{prop}{SmartPower}
+    \herr{36}{-39}{prop}{FlashPro Express}
+    \herr{36}{-47}{prop}{SoftConsole}
+    % ---- Plataforma embebida (58,0)
+    \draw[grupo] (52,0) rectangle (100,-52);
+    \node[tit] at (53,0.5) {Plataforma embebida};
+    \herr{64}{-6}{prin}{Linux}
+    \herr{88}{-6}{prin}{u-dma-buf}
+    \herr{64}{-14}{prin}{GCC (RISC-V)}
+    \herr{88}{-14}{sec}{HSS}
+    \herr{64}{-22}{sec}{OpenSBI}
+    \herr{88}{-22}{sec}{U-Boot}
+    \herr{64}{-30}{sec}{Yocto (imagen)}
+    \herr{88}{-30}{sec}{dtc (\emph{overlays})}
+    \herr{64}{-38}{sec}{systemd}
+    \herr{88}{-38}{sec}{OpenSSL}
+    % ---- Firmware y software (116,0)
+    \draw[grupo] (104,0) rectangle (152,-52);
+    \node[tit] at (105,0.5) {Firmware y software};
+    \herr{116}{-6}{prin}{Python}
+    \herr{140}{-6}{prin}{KUnit + UML}
+    \herr{116}{-14}{sec}{Renode}
+    \herr{140}{-14}{sec}{NumPy}
+    \herr{116}{-22}{sec}{Pillow}
+    \herr{140}{-22}{sec}{setuptools / pip}
+    % ---- Transversales (0,-60)
+    \draw[grupo] (0,-60) rectangle (48,-104);
+    \node[tit] at (1,-59.5) {Transversales};
+    \herr{12}{-66}{prin}{Git}
+    \herr{36}{-66}{prin}{GNU Make}
+    \herr{12}{-74}{prin}{OpenSSH}
+    \herr{36}{-74}{sec}{GNU Screen}
+    \herr{12}{-82}{sec}{Emacs}
+    \herr{36}{-82}{sec}{Bash}
+    \herr{12}{-98}{prop}{GitHub}
+    \herr{36}{-98}{prop}{Claude Code}
+    % ---- Verificación y liberación (58,-60)
+    \draw[grupo] (52,-60) rectangle (100,-104);
+    \node[tit] at (53,-59.5) {Verificación y liberación};
+    \herr{64}{-66}{prin}{framecmp\\regress}
+    \herr{88}{-66}{sec}{Runner de\\GitHub Actions}
+    \herr{64}{-74}{sec}{sha256sum}
+    \node[lbl, text width=44mm, align=left] at (76,-88) {\emph{framecmp} y
+      \emph{regress} son herramientas libres desarrolladas en este proyecto,
+      sobre Python y NumPy.};
+    % ---- Documentación y demostración (116,-60)
+    \draw[grupo] (104,-60) rectangle (152,-104);
+    \node[tit] at (105,-59.5) {Documentación y demo};
+    \herr{116}{-66}{prin}{Tectonic (XeTeX)}
+    \herr{140}{-66}{sec}{TikZ}
+    \herr{116}{-74}{sec}{Puppeteer}
+    \herr{140}{-74}{prop}{Google Chrome}
+    \herr{116}{-82}{sec}{Node.js}
+    \herr{140}{-82}{sec}{Scribus}
+    \herr{116}{-90}{sec}{TaskJuggler}
+    \herr{140}{-90}{sec}{draw.io}
+    \herr{128}{-98}{sec}{Tailscale (cliente)}
+    % ---- leyenda
+    \node[prin, minimum width=16mm] at (22,-113) {libre};
+    \node[lbl, anchor=west] at (31,-113) {principal};
+    \node[sec, minimum width=16mm] at (66,-113) {libre};
+    \node[lbl, anchor=west] at (75,-113) {secundaria};
+    \node[prop, minimum width=16mm] at (108,-113) {propietaria};
+    \node[lbl, anchor=west] at (117,-113) {propietaria o servicio};
+  \end{tikzpicture}
+  \caption{Herramientas usadas en el proyecto, por área. La descripción de
+    cada una está en el anexo~\ref{anx:herramientas}.}
+  \label{fig:herramientas}
+\end{figure}
+
+La tabla~\ref{tab:herramientas-principales} describe las herramientas
+principales; el anexo~\ref{anx:herramientas} lista todas, con su licencia y
+su uso.
+
+\begin{table}[ht]
+  \centering\small
+  \begin{tabularx}{\linewidth}{@{}l l X@{}}
+    \toprule
+    \textbf{Herramienta} & \textbf{Licencia} & \textbf{Uso en el proyecto} \\
+    \midrule
+    Icarus Verilog & GPL-2.0 & Simulación del núcleo completo y de todos los
+      bancos de prueba de RTL. \\
+    mpeg2decode & libre (MSSG) & Decodificador de referencia de software
+      contra el que se compara cada cuadro. \\
+    FFmpeg & LGPL/GPL & Generación y conversión de flujos de prueba;
+      referencia en la demostración. \\
+    Linux & GPL-2.0 & Sistema operativo del MSS. \\
+    u-dma-buf & BSD-2-Clause & Búferes de memoria contiguos para el DMA
+      entre el procesador y el núcleo. \\
+    GCC & GPL-3.0 & Compilación cruzada del driver y del conversor nativo
+      para RISC-V. \\
+    Python & PSF & Servicio de la placa, biblioteca cliente, herramientas de
+      verificación y demostración. \\
+    KUnit + UML & GPL-2.0 & Pruebas unitarias del driver sin hardware. \\
+    Git & GPL-2.0 & Control de versiones, ramas y \emph{worktrees}. \\
+    GNU Make & GPL-3.0 & Construcción de simulaciones, módulos y documentos. \\
+    OpenSSH & BSD & Despliegue y operación remota de la placa. \\
+    Tectonic & MIT & Compilación de este informe y de la guía de usuario. \\
+    \bottomrule
+  \end{tabularx}
+  \caption{Herramientas libres principales.}
+  \label{tab:herramientas-principales}
+\end{table}

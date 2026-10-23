@@ -1,0 +1,275 @@
+\chapter{Marco teórico y antecedentes}
+\label{cap:marco}
+
+Este capítulo reúne lo necesario para seguir el resto del informe: cómo
+comprime video MPEG-2, qué define la norma, cómo se organiza un
+decodificador en hardware, cómo es el núcleo del que se partió y la
+plataforma sobre la que se implementó. Cubre los objetivos de investigación
+del Anteproyecto (sección~\ref{sec:obj-especificos-aprobados}).
+
+\section{Compresión de video y la familia MPEG}
+
+Un video sin comprimir es enorme: en definición estándar europea, $720
+\times 576$ píxeles a 25 imágenes por segundo con submuestreo de color 4:2:0,
+son unos 124~Mbit/s. Un flujo MPEG-2 de calidad de televisión ocupa entre 4 y
+8~Mbit/s, de 15 a 30 veces menos. La compresión aprovecha cuatro tipos de
+redundancia \citep{Watkinson_2013}:
+
+\begin{itemize}
+  \item \textbf{Espacial}: los píxeles vecinos se parecen. Una transformada,
+    la DCT, concentra la energía de cada bloque en pocos coeficientes.
+  \item \textbf{Temporal}: imágenes consecutivas se parecen. Se transmite la
+    diferencia contra una predicción construida desplazando bloques de
+    imágenes ya decodificadas según vectores de movimiento.
+  \item \textbf{Perceptual}: el ojo es poco sensible a los detalles finos y al
+    color. Los coeficientes de alta frecuencia se cuantizan con menos
+    precisión, y la crominancia se submuestrea.
+  \item \textbf{Estadística}: algunos valores son mucho más frecuentes que
+    otros. Se codifican con códigos de longitud variable, más cortos para lo
+    más frecuente.
+\end{itemize}
+
+El grupo MPEG (\emph{Moving Picture Experts Group}) de ISO e IEC estandarizó
+esta combinación en sucesivas generaciones. MPEG-1 (ISO/IEC 11172) apuntó al
+video en CD. MPEG-2 (ISO/IEC 13818), publicado a mediados de la década de
+1990, agregó el video entrelazado y velocidades mayores, y se convirtió en el
+formato de la televisión digital y del DVD. Las generaciones siguientes,
+MPEG-4 Parte 2, H.264/AVC y HEVC, mantuvieron el mismo esquema híbrido
+(transformada más compensación de movimiento) con herramientas más
+eficientes y mucho más complejas.
+
+\section{La norma ISO/IEC 13818}
+\label{sec:norma}
+
+La norma tiene varias partes. Las relevantes para este trabajo son la parte~1
+(sistemas: cómo se multiplexan video y audio en flujos de programa y de
+transporte), la parte~2 (video, \citealp{ISO_13818_2}) y la parte~4
+(pruebas de conformidad, que provee los flujos de prueba usados en el
+capítulo~\ref{cap:resultados}). El decodificador de este proyecto trabaja
+sobre el \emph{flujo elemental} de video de la parte~2; separarlo de un flujo
+de transporte o de programa queda a cargo del cliente.
+
+\subsection{Estructura del flujo}
+
+Un flujo de video MPEG-2 es jerárquico:
+
+\begin{description}[style=nextline, leftmargin=1.5em]
+  \item[Secuencia] Define el tamaño de imagen, la tasa de imágenes y,
+    opcionalmente, matrices de cuantización propias.
+  \item[Grupo de imágenes (GOP)] Un conjunto de imágenes que empieza en una
+    imagen decodificable por sí sola.
+  \item[Imagen] De tres tipos. Las \textbf{I} se codifican sin referencia a
+    otras. Las \textbf{P} se predicen desde la imagen I o P anterior. Las
+    \textbf{B} se predicen desde una anterior y una posterior, por lo que el
+    orden del flujo no coincide con el de presentación: el decodificador
+    debe reordenar.
+  \item[Rebanada (\emph{slice})] Una franja de macrobloques que permite
+    resincronizar ante errores.
+  \item[Macrobloque] $16 \times 16$ píxeles de luminancia: en 4:2:0, cuatro
+    bloques de luminancia y dos de crominancia de $8 \times 8$, que comparten
+    vectores de movimiento.
+  \item[Bloque] $8 \times 8$ coeficientes de la DCT.
+\end{description}
+
+\subsection{Perfiles y niveles}
+
+La norma agrupa herramientas en \emph{perfiles} y límites de tamaño y
+velocidad en \emph{niveles}. El más difundido es el Main Profile en Main
+Level (MP@ML): imágenes de hasta $720 \times 576$, hasta 30 imágenes por
+segundo y hasta 15~Mbit/s, que cubre la televisión de definición estándar y
+el DVD. El High Level extiende los límites a la alta definición.
+
+\subsection{El proceso de decodificación}
+\label{sec:proceso-decodificacion}
+
+Para cada bloque, el decodificador:
+
+\begin{enumerate}
+  \item \textbf{Decodifica los códigos de longitud variable}, que dan pares
+    de \emph{corrida} (cantidad de ceros) y \emph{nivel} (valor del
+    coeficiente siguiente), además de los vectores de movimiento y las
+    cabeceras.
+  \item \textbf{Expande las corridas} y \textbf{reordena} los coeficientes
+    del recorrido en zigzag (o alternado, para video entrelazado) a la
+    matriz de $8 \times 8$.
+  \item \textbf{Cuantiza inversamente}: multiplica cada coeficiente por un
+    factor de escala y por el elemento correspondiente de una matriz de
+    cuantización. Hay matrices por defecto, distintas para bloques intra y
+    no intra, y la secuencia puede reemplazarlas por matrices propias. Este
+    detalle importa: el error de conformidad que quedó abierto en este
+    proyecto está en el camino de carga de esas matrices.
+  \item \textbf{Aplica la IDCT}, que devuelve el bloque al dominio de los
+    píxeles. La norma no fija una implementación exacta, sino una precisión
+    mínima, definida originalmente por el estándar IEEE~1180-1990
+    \citep{IEEE_1180_1990} y hoy por ISO/IEC 23002-1. Dos decodificadores
+    conformes pueden diferir en una unidad en algunos píxeles.
+  \item \textbf{Compensa el movimiento}: en las imágenes P y B, suma al
+    resultado la predicción leída de las imágenes de referencia, desplazada
+    con precisión de medio píxel.
+\end{enumerate}
+
+Las imágenes reconstruidas se guardan en una memoria de cuadros, porque las
+I y P son referencia de las siguientes, y se entregan en orden de
+presentación.
+
+\section{Decodificación de video en hardware}
+\label{sec:arquitecturas-vlsi}
+
+Un procesador moderno decodifica MPEG-2 por software sin dificultad. Las
+implementaciones en hardware se justifican cuando importan el consumo, el
+costo por unidad o el comportamiento determinista: receptores de televisión,
+reproductores, equipos embebidos. Sus arquitecturas comparten algunos rasgos
+\citep{Watkinson_2013}:
+
+\begin{itemize}
+  \item \textbf{Tubería de función fija}: cada etapa del
+    proceso de la sección~\ref{sec:proceso-decodificacion} es un bloque de
+    hardware dedicado, y los bloques trabajan en paralelo sobre datos
+    sucesivos, a razón de un coeficiente o un píxel por ciclo.
+  \item \textbf{FIFOs entre etapas}: absorben las diferencias de ritmo entre
+    etapas cuya carga varía según el contenido.
+  \item \textbf{Memoria externa}: la memoria de cuadros no cabe en el chip.
+    El ancho de banda hacia ella, compartido por la escritura de imágenes,
+    la lectura de referencias para la compensación de movimiento y la lectura
+    para visualización, suele ser el recurso más disputado.
+  \item \textbf{Varios dominios de reloj}: la decodificación, la memoria y
+    la salida de video corren a frecuencias distintas.
+\end{itemize}
+
+\section{El núcleo mpeg2fpga}
+\label{sec:mpeg2fpga}
+
+mpeg2fpga es un decodificador MPEG-2 en Verilog escrito por Koenraad De
+Vleeschauwer entre 2007 y 2009 y publicado en OpenCores en 2017 con licencia
+BSD \citep{De_Vleeschauwer_2017}. Decodifica flujos elementales MP@ML (y,
+con otra configuración del mapa de memoria, de alta definición), con
+submuestreo 4:2:0, y fue desarrollado y probado sobre una placa Xilinx ML505
+con una FPGA Virtex-5. Su documentación \citep{De_Vleeschauwer_2009_guide}
+es detallada y fue la referencia principal de este trabajo.
+
+\begin{figure}[ht]
+  \centering
+  \begin{tikzpicture}[
+      e/.style={blk, minimum width=24mm, minimum height=10mm, font=\sffamily\scriptsize},
+      ed/.style={e, draw=m2grey, fill=m2grey!8},
+      node distance=9mm and 5mm]
+    \node[e] (in) {Entrada del\\flujo};
+    \node[e, right=of in] (vbuf) {Buffer de\\video};
+    \node[e, right=of vbuf] (gb) {Getbits};
+    \node[e, right=of gb] (vld) {VLD};
+    \node[e, below=of vld] (rld) {Corridas, cuant.\\inversa, zigzag};
+    \node[e, left=of rld] (idct) {IDCT};
+    \node[e, left=of idct] (mc) {Compensación\\de movimiento};
+    \node[e, left=of mc] (fs) {Memoria de\\cuadros};
+    \node[ed, below=of fs] (res) {Remuestreo\\de croma};
+    \node[ed, right=of res] (mix) {Mezcla\\y OSD};
+    \node[ed, right=of mix] (rgb) {YUV a RGB};
+    \node[ed, right=of rgb] (out) {Salida de\\video};
+    \node[e, left=8mm of fs, draw=m2teal, fill=m2teal!8] (mem) {Memoria\\externa};
+    \draw[arr] (in) -- (vbuf); \draw[arr] (vbuf) -- (gb); \draw[arr] (gb) -- (vld);
+    \draw[arr] (vld) -- (rld); \draw[arr] (rld) -- (idct); \draw[arr] (idct) -- (mc);
+    \draw[arr] (mc) -- (fs); \draw[arr] (fs) -- (res);
+    \draw[arr] (res) -- (mix); \draw[arr] (mix) -- (rgb); \draw[arr] (rgb) -- (out);
+    \draw[arr] (vld.south west) -- node[lbl, fill=white, inner sep=1pt, pos=0.5] {vectores} (mc.north east);
+    \draw[arr, <->] (mem) -- (fs);
+  \end{tikzpicture}
+  \caption{Tubería del núcleo mpeg2fpga, adaptada de
+    \citet{De_Vleeschauwer_2009_guide}. En gris, la cadena de visualización,
+    que en este proyecto no tiene salida física.}
+  \label{fig:tuberia}
+\end{figure}
+
+\paragraph{Tubería}
+La figura~\ref{fig:tuberia} muestra sus etapas. El flujo entra a un buffer
+de video, que en realidad vive en la memoria externa y actúa como una gran
+FIFO elástica entre la tasa de llegada y la de decodificación. \emph{Getbits}
+ofrece una ventana deslizante sobre el flujo para que el VLD extraiga códigos
+de longitud variable. Los coeficientes pasan por la decodificación de
+corridas, la cuantización inversa y la IDCT; el error de predicción
+resultante se suma a la predicción que arma la compensación de movimiento, y
+la imagen reconstruida se escribe en la memoria de cuadros. En paralelo, la
+cadena de visualización lee las imágenes terminadas y genera la señal de
+video.
+
+\paragraph{Interfaces}
+El núcleo se comunica con el exterior por cuatro interfaces: la entrada del
+flujo (un byte por ciclo con control de flujo), un banco de registros para el
+procesador que lo controla, un puerto de memoria externa y la salida de
+video. Todo el acceso a memoria pasa por un único árbitro que etiqueta cada
+lectura para devolver la respuesta al cliente correcto. El mapa de memoria
+por defecto necesita 4~MB, y la variante de alta definición, 16~MB.
+
+\paragraph{Control}
+El banco de registros expone las propiedades del flujo (tamaño, tasa de
+imágenes, estado), habilita interrupciones y controla los modos de
+reproducción especiales: pausa, repetición de imagen y cambio de flujo sin
+\emph{reset}. Un \emph{watchdog} reinicia el decodificador si deja de
+progresar mientras tiene trabajo pendiente.
+
+\paragraph{Dependencias de Xilinx}
+Las FIFOs y memorias se definen en un archivo de envoltorios que puede usar
+primitivas de Virtex-5 o implementaciones portables, y los tres relojes
+llegaban desde afuera. El controlador de memoria era el de la placa ML505.
+Estas dependencias son las que el port tuvo que resolver
+(sección~\ref{sec:port}).
+
+\section{PolarFire SoC}
+\label{sec:polarfire}
+
+PolarFire SoC es una familia de Microchip que integra en un chip un tejido
+FPGA y un subsistema de microprocesadores RISC-V
+\citep{Microchip_MSS_TRM}. A diferencia de las FPGA basadas en SRAM, su
+configuración se guarda en celdas no volátiles: el chip arranca configurado
+y su consumo estático es bajo.
+
+\paragraph{El subsistema de microprocesadores (MSS)}
+Tiene cinco núcleos RISC-V de 64 bits: un E51 de monitoreo, que ejecuta el
+firmware de arranque, y cuatro U54 de aplicación (RV64GC, con unidad de
+punto flotante y gestión de memoria), capaces de correr Linux. Los acompañan
+un subsistema de memoria L2 compartido, un controlador de memoria DDR,
+controladores de periféricos (Ethernet, USB, tarjeta SD, UART) y un
+controlador de interrupciones. Los controladores de interfaz con el tejido
+(FIC) lo comunican con la lógica de la FPGA en ambos sentidos, por buses
+AXI4 y APB.
+
+Un detalle de la L2 resultó importante durante el desarrollo: es una caché
+\emph{del lado de la memoria}, seleccionada por la ventana de direcciones con
+que se accede a la DDR, no por los atributos de las páginas. Esto hizo que
+dos ventanas que en realidad mostraban la misma memoria parecieran
+independientes en las pruebas (sección~\ref{sec:problemas}).
+
+\paragraph{La placa}
+La PolarFire SoC Discovery Kit \citep{Microchip_Discovery_UG} es una placa de
+bajo costo con el dispositivo MPFS095T (unas 95\,000 celdas lógicas), memoria
+DDR4, Ethernet, ranura microSD y un programador JTAG integrado accesible por
+USB. No tiene salida de video ni monitores de consumo, dos limitaciones que
+condicionaron el alcance (secciones~\ref{sec:redef-video}
+y~\ref{sec:modelo-potencia}).
+
+\section{Antecedentes}
+\label{sec:antecedentes}
+
+La decodificación de MPEG-2 en hardware es un problema maduro, resuelto
+industrialmente en circuitos integrados de receptores y reproductores desde
+la década de 1990. En el ámbito académico y abierto, los antecedentes
+relevantes para este trabajo son:
+
+\begin{itemize}
+  \item \textbf{El propio mpeg2fpga} \citep{De_Vleeschauwer_2017}, que
+    demostró un decodificador completo en una FPGA, con su banco de
+    simulación y sus pruebas de conformidad. Es la base tecnológica del
+    proyecto.
+  \item \textbf{Arquitecturas mixtas procesador--FPGA}, como la de
+    \citet{Billaud_2004}, que aborda la implementación de un decodificador
+    MPEG-2 repartiendo el trabajo entre un procesador y lógica
+    programable: el mismo tipo de partición que este proyecto lleva a un SoC
+    con ambos en un mismo chip.
+  \item \textbf{Decodificadores de software}, como el de referencia del MPEG
+    Software Simulation Group, usado aquí para verificar la corrección.
+\end{itemize}
+
+No se encontró un trabajo publicado que lleve mpeg2fpga a PolarFire SoC ni,
+en general, un decodificador MPEG-2 abierto integrado con Linux en un SoC FPGA
+con procesadores RISC-V, documentado como producto. Ese es el aporte de este
+trabajo: no un algoritmo nuevo, sino el recorrido completo, verificado y
+reproducible, desde un núcleo abierto hasta un producto distribuible.

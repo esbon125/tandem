@@ -1,0 +1,113 @@
+\chapter{Introducción}
+\label{cap:introduccion}
+
+\section{Contexto y problema}
+
+La decodificación de video es una de las tareas que más se benefician de una
+implementación en hardware. Un decodificador de función fija consume una
+fracción de lo que necesita un procesador de propósito general para el mismo
+trabajo, y su comportamiento es determinista. Por eso los receptores de
+televisión digital, los reproductores y muchos equipos embebidos decodifican
+en circuitos dedicados. Las FPGA permiten prototipar esos circuitos, y los SoC
+FPGA, que integran en un mismo chip la lógica programable y un sistema de
+procesadores, permiten además construir alrededor del decodificador el
+sistema completo que lo usa.
+
+Un decodificador en hardware, sin embargo, no es usable por sí solo. No
+tiene lazos de control ni un procesador que lo configure: alguien tiene que
+inicializarlo, entregarle el flujo de video, saber cuándo hay una imagen
+lista, detectar y recuperar errores, y llevar las imágenes a donde se
+necesitan. Ese era el problema planteado en el Anteproyecto
+\citep{Bustamante_2025_anteproyecto}: dotar de un firmware de nivel
+industrial a un decodificador MPEG-2 prototipado en FPGA.
+
+El trabajo partió de mpeg2fpga \citep{De_Vleeschauwer_2017}, un
+decodificador MPEG-2 abierto, escrito en Verilog para FPGA de Xilinx, y de una
+plataforma de otro fabricante: la PolarFire SoC Discovery Kit de Microchip,
+con un subsistema de procesadores RISC-V. Llevar el núcleo a esa plataforma e
+integrarlo con los procesadores resultó ser, en sí mismo, una parte central
+del proyecto.
+
+\section{Enfoque: el desarrollo de un producto}
+
+El Reglamento de Proyecto Final pide que el trabajo abarque \enquote{los
+aspectos técnicos, económico-financieros, legales y de mercado relativos al
+producto final del desarrollo} \citep[punto 1.2]{UTN_FRLR_2023_reglamento}.
+Este trabajo toma esa exigencia como eje. Su idea central es mostrar, de forma
+pedagógica, \textbf{el flujo completo de desarrollo de un producto de
+propiedad intelectual}: no solo cómo se construye y se verifica, sino también
+bajo qué licencias puede distribuirse cada parte, qué patentes lo
+condicionan, cómo se fabrica una unidad, cómo llega una versión nueva a quien
+la usa y qué se le entrega.
+
+Dos decisiones atraviesan todo el trabajo:
+
+\begin{itemize}
+  \item \textbf{Herramientas mayoritariamente libres.} Salvo las herramientas
+    de implementación del fabricante de la FPGA, que no tienen alternativa,
+    todo el proyecto se hizo con software libre y sin pagar licencias
+    (capítulo~\ref{cap:metodologia}). Cualquier estudiante con la misma placa
+    puede reproducirlo.
+  \item \textbf{Todo verificado y documentado.} Los resultados se apoyan en
+    mediciones reproducibles, y cada paso del desarrollo quedó registrado en
+    bitácoras de ingeniería, incluidas las hipótesis que resultaron falsas.
+\end{itemize}
+
+\section{Justificación}
+
+Un decodificador en hardware sin firmware es una pieza de laboratorio; con
+un firmware que lo controle y una interfaz que abstraiga al usuario de su
+estructura interna, se vuelve un componente reutilizable. Este trabajo busca
+ese salto: que alguien sin conocimiento del hardware pueda decodificar video
+en la FPGA con unas pocas líneas de código, por la red, con versiones
+identificables y documentación.
+
+El valor pedagógico es igual de importante. Los proyectos académicos suelen
+terminar en un prototipo que funciona; los productos reales exigen además
+contratos de interfaz estables, procesos de liberación, análisis de licencias
+y documentación para terceros. Recorrer ese camino completo con un caso real,
+y dejarlo documentado, es en sí un resultado transferible.
+
+\section{Aportes}
+
+\begin{itemize}
+  \item El port de mpeg2fpga a PolarFire SoC, integrado con el subsistema de
+    procesadores y verificado bit a bit contra la simulación del diseño
+    original.
+  \item Un driver de Linux, un servicio de red con un protocolo versionado y
+    una biblioteca cliente, que hacen del decodificador un dispositivo usable
+    desde cualquier computadora.
+  \item Un proceso de liberación que califica cada versión en el hardware
+    real antes de publicarla.
+  \item El análisis de licencias y patentes del producto, y la publicación de
+    todo el código bajo licencias libres, con hardware abierto recíproco
+    (CERN-OHL-S).
+  \item Una demostración pública en vivo y una metodología de verificación
+    documentada, con sus herramientas.
+\end{itemize}
+
+\section{Organización del documento}
+
+El capítulo~\ref{cap:objetivos} presenta los objetivos aprobados en el
+Anteproyecto y los cambios de alcance acordados durante la ejecución. El
+capítulo~\ref{cap:marco} reúne el marco teórico: la norma MPEG-2, la
+decodificación en hardware, el núcleo de partida y la plataforma. El
+capítulo~\ref{cap:metodologia} describe la metodología y las herramientas.
+Los capítulos~\ref{cap:hardware} y~\ref{cap:firmware} desarrollan el hardware
+y el software. El capítulo~\ref{cap:producto} trata el producto: licencias,
+patentes, producción, distribución y entregables; el
+capítulo~\ref{cap:economico}, los costos y el mercado. Los
+capítulos~\ref{cap:modelo} y~\ref{cap:resultados} describen el modelo
+experimental y los resultados, y el capítulo~\ref{cap:conclusiones} cierra con
+las conclusiones y el trabajo futuro. Los anexos contienen el mapa de
+registros, el protocolo de red, los resultados detallados, el índice de
+bitácoras y la lista completa de herramientas.
+
+\paragraph{Documentación complementaria}
+El Manual de Usuario que pide el Reglamento es la guía de usuario del
+producto, en castellano e inglés, publicada con cada versión. El código
+fuente completo, las bitácoras y las versiones están en el repositorio
+público del proyecto (\url{https://github.com/esbon125/tandem}), y la
+demostración en \url{https://esbon125.github.io/tandem/}. El manual técnico
+es el Manual de Referencia (\emph{Reference Manual}), generado con Doxygen a
+partir del código y publicado también con cada versión.

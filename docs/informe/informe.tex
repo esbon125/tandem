@@ -1,0 +1,54 @@
+% Informe Final -- Proyecto Final de Ingeniería Electrónica, UTN FRLR.
+% Estructura según el Reglamento de Proyecto Final (sección 3).
+% Compilar con `make` (Tectonic).
+\documentclass[a4paper,11pt,oneside]{report}
+\usepackage{estilo-informe}
+
+\newcommand{\titulotrabajo}{Decodificador de video MPEG-2 en SoC FPGA con Linux}
+\newcommand{\subtitulotrabajo}{Desarrollo integral de un producto de propiedad intelectual}
+\newcommand{\autor}{Esteban Adriel Bustamante}
+\newcommand{\tutor}{Ing.~Ricardo Maldonado}
+% Fecha de entrega: siempre el mes en curso, al compilar.
+\newcommand{\mesactual}{\ifcase\month\or enero\or febrero\or marzo\or abril\or
+  mayo\or junio\or julio\or agosto\or septiembre\or octubre\or noviembre\or
+  diciembre\fi}
+\newcommand{\fechaentrega}{\mesactual{} de \the\year}
+\hypersetup{pdftitle={\titulotrabajo}, pdfauthor={\autor}}
+
+\begin{document}
+\pagenumbering{roman}
+\input{portada/portada.tex}
+\clearpage\input{capitulos/00-agradecimientos}
+\clearpage\input{capitulos/00-resumen}
+\tableofcontents
+\listoffigures
+\listoftables
+\clearpage\input{capitulos/00-siglas}
+
+\cleardoublepage
+\pagenumbering{arabic}
+\clearpage\input{capitulos/01-introduccion}
+\clearpage\input{capitulos/02-objetivos}
+\clearpage\input{capitulos/03-marco-teorico}
+\clearpage\input{capitulos/04-metodologia}
+\clearpage\input{capitulos/05-hardware}
+\clearpage\input{capitulos/06-firmware}
+\clearpage\input{capitulos/07-producto}
+\clearpage\input{capitulos/08-economico}
+\clearpage\input{capitulos/09-modelo-experimental}
+\clearpage\input{capitulos/10-resultados}
+\clearpage\input{capitulos/11-conclusiones}
+
+\bibliographystyle{apacite}
+\bibliography{bibliografia}
+
+\appendix
+\clearpage\input{anexos/a-registros}
+\clearpage\input{anexos/b-protocolo}
+\clearpage\input{anexos/c-regresion}
+\clearpage\input{anexos/d-bitacoras}
+\clearpage\input{anexos/e-potencia}
+\clearpage\input{anexos/f-herramientas}
+
+\input{portada/licencia-ria.tex}
+\end{document}

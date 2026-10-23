@@ -1,0 +1,420 @@
+\chapter{Desarrollo de hardware}
+\label{cap:hardware}
+
+Este capítulo describe cómo el núcleo mpeg2fpga, escrito para FPGA de Xilinx
+y pensado como un bloque aislado, se convirtió en un periférico del
+PolarFire SoC controlado desde Linux. Primero se presenta la arquitectura
+resultante; después, el port del núcleo y los bloques nuevos que lo integran
+con el procesador; por último, los problemas de integración más
+instructivos y la optimización del rendimiento.
+
+\section{Arquitectura del sistema}
+\label{sec:arquitectura}
+
+El PolarFire SoC combina en un mismo chip un tejido FPGA y un subsistema de
+microprocesadores (MSS) con cinco núcleos RISC-V: uno de monitoreo y cuatro
+de aplicación, donde corre Linux. El MSS se comunica con el tejido a través
+de controladores de interfaz (FIC, \emph{Fabric Interface Controller}), cada
+uno con su bus y su sentido. El diseño usa tres de ellos
+(figura~\ref{fig:arquitectura}):
+
+\begin{itemize}
+  \item \textbf{FIC~3, APB, del MSS al tejido}: acceso a los registros del
+    decodificador. El procesador es el iniciador.
+  \item \textbf{FIC~0, AXI4, del tejido al MSS}: el decodificador lee y
+    escribe la memoria de cuadros en la DDR externa del sistema. El puente de
+    memoria es el iniciador.
+  \item \textbf{FIC~2, AXI4, del tejido al MSS}: el motor de DMA lee el flujo
+    de video que el software dejó en la DDR. El DMA es el iniciador.
+\end{itemize}
+
+Una interrupción, conectada al controlador de interrupciones del MSS (PLIC),
+avisa al software cada vez que hay una imagen decodificada lista.
+
+\begin{figure}[ht]
+  \centering
+  \begin{tikzpicture}[
+      b/.style={blk, minimum width=30mm, minimum height=10mm, font=\sffamily\footnotesize},
+      bh/.style={b, draw=m2teal, fill=m2teal!8},
+      bn/.style={b, draw=m2amber, fill=m2amber!12},
+      busl/.style={lbl, fill=white, inner sep=1pt},
+      node distance=8mm and 10mm]
+    % MSS
+    \node[b, minimum width=40mm, minimum height=26mm, align=center] (mss)
+      {\textbf{MSS}\\4 núcleos U54 + E51\\Linux\\L2, PLIC};
+    \node[b, below=10mm of mss, minimum width=40mm] (ddr) {DDR externa\\staging + cuadros};
+    \draw[arr, <->] (mss) -- (ddr);
+    % tejido
+    \node[bn, right=20mm of mss.north east, anchor=north west] (apb) {Puente APB\\registros};
+    \node[bn, below=of apb] (dma) {DMA del flujo\\\cmd{stream\_dma}};
+    \node[bn, below=of dma] (m2a) {Puente de memoria\\\cmd{mem2axi\_bridge}};
+    \node[bh, right=10mm of dma, minimum height=40mm, minimum width=30mm, align=center] (core)
+      {\textbf{mpeg2video}\\[2pt]núcleo\\mpeg2fpga\\[4pt]\scriptsize VLD, IDCT,\\\scriptsize compensación\\\scriptsize de movimiento};
+    \node[b, above=6mm of core, minimum width=30mm] (ccc) {CCC (PLL)\\\scriptsize 162 / 108 / 27~MHz};
+    \draw[arr] (ccc) -- (core);
+    % buses
+    \draw[arr] (mss.east |- apb) -- node[busl, above] {FIC 3 · APB} (apb);
+    \draw[arr] (dma.west) -- node[busl, above] {FIC 2 · AXI4} (mss.east |- dma);
+    \draw[arr] (m2a.west) -| node[busl, above, pos=0.25] {FIC 0 · AXI4} (ddr.north east);
+    \draw[arr] (apb.east) -- (apb.east -| core.west);
+    \draw[arr] (dma.east) -- node[busl, above] {flujo} (core.west |- dma.east);
+    \draw[arr, <->] (m2a.east) -- node[busl, above] {memoria} (m2a.east -| core.west);
+    \draw[arr, dashed, draw=m2red] ([yshift=-1.5mm]core.north west) -- ++(-5mm,0) |- ([yshift=6mm]apb.north)
+      -| node[busl, above, pos=0.25, text=m2red] {IRQ de imagen} (mss.north);
+    % fondo del tejido
+    \begin{scope}[on background layer]
+      \node[fit=(apb)(m2a)(core)(ccc), draw=m2grey!60, dashed, rounded corners=4pt,
+        inner sep=5mm, label={[lbl]north east:tejido FPGA}] {};
+    \end{scope}
+  \end{tikzpicture}
+  \caption{Arquitectura del sistema. En naranja, los bloques de integración
+    escritos en este proyecto; en verde, el núcleo original.}
+  \label{fig:arquitectura}
+\end{figure}
+
+El recorrido de un video es el siguiente. El software copia el flujo
+elemental MPEG-2 a una región de memoria contigua (\emph{staging}) y programa
+el DMA, que lo lee por FIC~2 y lo entrega al núcleo a la velocidad que este
+lo acepte. El núcleo decodifica y escribe cada imagen en la memoria de
+cuadros a través del puente de memoria y FIC~0. Al completar una imagen, la
+interrupción avisa al software, que lee la imagen de la DDR y la envía por la
+red.
+
+\section{Port del núcleo a PolarFire}
+\label{sec:port}
+
+\subsection{El núcleo de partida}
+
+mpeg2fpga \citep{De_Vleeschauwer_2017} decodifica MPEG-2 Main Profile con una
+tubería de función fija: análisis del flujo y decodificación de longitud
+variable, decodificación de corridas y cuantización inversa, IDCT,
+compensación de movimiento y, en paralelo, la cadena de visualización. Toda
+la comunicación con el exterior pasa por cuatro interfaces: entrada del
+flujo, banco de registros, puerto de memoria externa y salida de video. Esa
+modularidad es lo que hizo viable el port: las cuatro interfaces podían
+adaptarse sin tocar la tubería interna.
+
+\subsection{Memorias y FIFOs}
+
+El núcleo define todas sus memorias de doble puerto y sus FIFOs en un único
+archivo de envoltorios, que elige entre implementaciones con primitivas de
+Xilinx y versiones portables. El port usa siempre las versiones portables:
+la FIFO de un reloj del autor original y, para las FIFOs que cruzan dominios
+de reloj, un envoltorio nuevo (\cmd{xfifo\_dc.v}) sobre el núcleo COREFIFO de
+Microchip.
+
+\subsection{Relojes}
+
+El diseño original recibía tres relojes externos. En el port, el núcleo
+recibe un único reloj de referencia de 50~MHz y los genera internamente
+con un CCC (\emph{Clock Conditioning Circuit}, el PLL de PolarFire),
+configurado con la herramienta de Libero (tabla~\ref{tab:relojes}).
+
+\begin{table}[ht]
+  \centering\small
+  \begin{tabular}{@{}l r l@{}}
+    \toprule
+    \textbf{Reloj} & \textbf{Frecuencia} & \textbf{Dominio} \\
+    \midrule
+    \cmd{mem\_clk} & 162~MHz & interfaz de memoria \\
+    \cmd{clk}      & 108~MHz & decodificación (múltiplo de 27~MHz) \\
+    \cmd{dot\_clk} & 27~MHz  & visualización \\
+    \bottomrule
+  \end{tabular}
+  \caption{Relojes del núcleo, generados por el CCC a partir de 50~MHz.}
+  \label{tab:relojes}
+\end{table}
+
+\subsection{Alcance de las modificaciones al núcleo}
+
+Siguiendo la política de diferencias mínimas
+(sección~\ref{sec:repositorio}), los cambios funcionales al código original
+se limitaron a lo que el port exigía: la selección de memorias y FIFOs
+portables, el CCC, la separación de los dominios de \emph{reset}, un
+atributo de síntesis en la FIFO de un reloj (sección~\ref{sec:prob-fifo}) y
+una derivación de la señal de fin de imagen para generar la interrupción. Al
+final se agregaron dos correcciones de conformidad, de una y dos líneas, a
+errores que el diseño original ya tenía (sección~\ref{sec:conformidad-upstream}). La
+mayor parte de las líneas agregadas al núcleo son instrumentación de solo
+lectura: contadores y registros de depuración que no modifican su
+comportamiento y que fueron decisivos para encontrar los problemas de la
+sección~\ref{sec:problemas}. Toda la funcionalidad nueva vive en módulos
+propios, fuera del núcleo.
+
+\section{Integración con el MSS}
+\label{sec:integracion}
+
+\subsection{Puente APB y mapa de registros}
+
+El banco de registros del núcleo no es un esclavo APB: no tiene las señales
+de protocolo del bus y corre en su propio dominio de reloj. El puente
+\cmd{apb3\_mpeg2fpga\_bridge.v} resuelve ambas cosas. Implementa el protocolo
+APB3 del lado del MSS y cruza al dominio del núcleo con un \emph{handshake}
+de dos fases, sin tocar el reloj interno del núcleo.
+
+El puente también extiende el mapa de registros. A partir de la dirección
+\cmd{0x10} agrega registros propios: habilitación del núcleo, control del
+DMA, identificación de la versión, la interrupción de imagen y los contadores
+de depuración. El mapa completo está en el anexo~\ref{anx:registros}.
+
+\subsection{Puente de memoria}
+
+La interfaz de memoria del núcleo no es AXI. Es una cola única de comandos de
+lectura y escritura, con direcciones de palabra de 64 bits dentro de una
+ventana privada de unos 32~MB, y una segunda cola que devuelve los datos
+leídos en orden. El puente \cmd{mem2axi\_bridge.v} traduce esa interfaz a
+transacciones AXI4 contra la DDR a través de FIC~0, sumando la dirección
+base de la región reservada para el decodificador.
+
+\subsection{DMA del flujo}
+
+La primera versión entregaba el flujo al núcleo de a un byte por escritura
+APB desde el software, lo que resultó lento. El motor
+\cmd{stream\_dma.v} lo reemplazó: el software indica dirección y longitud, y
+el DMA lee la región de \emph{staging} con ráfagas AXI4 de 16 transferencias
+(128 bytes) y alimenta la entrada del núcleo respetando su control de flujo.
+Midió 32,7~MB/s en la placa, muy por encima de lo que consume la
+decodificación.
+
+Para la operación continua, el DMA acepta el flujo por bloques: un bit de
+control evita que agregue el código de fin de secuencia al terminar cada
+bloque, de modo que el núcleo ve un flujo continuo. Los bloques deben
+empezar en direcciones alineadas a 8 bytes, una restricción que se descubrió
+en el hardware y que el driver ahora valida.
+
+\subsection{Interrupción e identificación de versión}
+
+Una derivación de la señal interna de fin de imagen genera un pulso de
+interrupción por cada imagen decodificada, en orden de visualización. Un
+módulo pequeño (\cmd{build\_id.v}) graba en el bitstream la versión y el
+\emph{commit} del RTL del que se sintetizó, que el software lee por registro;
+el script de síntesis lo actualiza automáticamente.
+
+\section{Verificación del RTL}
+\label{sec:verificacion-rtl}
+
+Cada bloque nuevo tiene su banco de prueba en Icarus Verilog, escrito antes
+que el bloque o junto con él: el puente APB contra un banco de registros simulado; el puente
+de memoria contra un modelo de esclavo AXI que reordena y demora las
+respuestas; el DMA contra un modelo de memoria; y la ruta de respuestas de
+memoria con el COREFIFO real. La IDCT original se verificó contra las seis
+condiciones del estándar IEEE~1180-1990, que pasa.
+
+La verificación de mayor nivel simula el núcleo completo decodificando flujos
+reales y compara la memoria de cuadros contra el decodificador de referencia.
+Con el sistema funcionando, la memoria de cuadros leída de la placa resultó
+idéntica byte a byte a la de la simulación para el mismo flujo: el port
+reproduce exactamente el comportamiento del diseño original
+(capítulo~\ref{cap:resultados}).
+
+\section{Problemas de integración}
+\label{sec:problemas}
+
+La integración llevó bastante más que el diseño de los bloques nuevos. La
+tabla~\ref{tab:problemas} resume los problemas que más enseñaron; todos
+pasaron la simulación sin ser detectados. Las bitácoras de cada uno están
+listadas en el anexo~\ref{anx:bitacoras}.
+
+\begin{table}[ht]
+  \centering\small
+  \begin{tabularx}{\linewidth}{@{}>{\raggedright}p{30mm} >{\raggedright}X >{\raggedright\arraybackslash}X@{}}
+    \toprule
+    \textbf{Síntoma} & \textbf{Causa} & \textbf{Lección} \\
+    \midrule
+    La placa no arranca y se reinicia en bucle & Las restricciones de pines
+      no se aplicaban: el script de síntesis las registraba en un orden que la
+      herramienta ignoraba sin error & Verificar en los reportes de la
+      herramienta que una restricción se aplicó, no que se cargó sin error \\
+    Cualquier acceso a los registros cuelga el sistema & La entrada de
+      apagado del PLL quedó sin conectar y la síntesis la fijó a cero: el
+      núcleo nunca tuvo reloj & Revisar puerto por puerto las instancias de
+      macros de hardware \\
+    Los datos escritos llegan en cero & El MSS divide las escrituras de 32
+      bits en transferencias más angostas con habilitación por byte, y el
+      puente ignoraba esas señales & Leer el comportamiento real del bus en
+      la placa, no el supuesto \\
+    Las escrituras van a otra dirección & Libero interpretó un parámetro de
+      38 bits como entero con signo y la síntesis lo extendió con signo &
+      Constantes como \cmd{localparam}; verificar el valor en el reporte de
+      síntesis \\
+    El flujo se corrompe antes de decodificarse & Las dos regiones de
+      memoria usadas eran la misma vista por ventanas distintas, y la caché
+      L2 ocultaba el solapamiento & Contrastar con lo que declara el sistema
+      antes de suponer \\
+    La primera palabra sale corrupta de una FIFO & La síntesis implementó la
+      memoria usando los dos puertos de cada bloque para ganar ancho, y una
+      FIFO necesita leer y escribir a la vez & El criterio de éxito es la
+      netlist, no que el aviso desaparezca \\
+    \bottomrule
+  \end{tabularx}
+  \caption{Problemas de integración más instructivos.}
+  \label{tab:problemas}
+\end{table}
+
+Tres de estos casos merecen un comentario.
+
+\paragraph{El parámetro con signo}
+\label{sec:prob-signo}
+La dirección base de la región de memoria del decodificador se declaró como
+parámetro del módulo: \cmd{0xC8000000}, con el bit~31 en uno. Libero, al
+importar el módulo, registró el parámetro como entero de 32 bits con signo
+(\cmd{-939524096}), y la síntesis lo volvió a extender a 38 bits con signo.
+Los 32 bits bajos eran correctos; los altos, no. El RTL era correcto, la
+simulación era correcta, y los registros de depuración, de 32 bits, mostraban
+la dirección correcta. Costó unas dos semanas encontrarlo, y la solución fue
+cambiar una palabra: \cmd{parameter} por \cmd{localparam}.
+
+\paragraph{La FIFO que perdía bits}
+\label{sec:prob-fifo}
+La FIFO de lectura del flujo devolvía a veces la primera palabra corrupta. La
+instrumentación mostró que los datos entraban bien y los punteros eran
+correctos. La causa estaba en cómo la síntesis implementó la memoria de
+$256 \times 64$ bits: con dos bloques de RAM en lugar de cuatro, usando
+\emph{ambos} puertos de cada bloque para llegar al ancho. Una FIFO lee y
+escribe direcciones distintas en el mismo ciclo, y un puerto no puede hacer
+las dos cosas: los bits del puerto de lectura perdían su escritura. En Xilinx,
+con el mismo RTL, la memoria entra en un único bloque de doble puerto
+simple, y el problema no existe. La solución fue un atributo de síntesis que
+fuerza el uso de las micro-RAM de PolarFire, que tienen puertos de lectura y
+escritura separados. Otro atributo, que parecía la solución obvia, silenciaba
+el aviso de la herramienta sin cambiar la netlist en absoluto.
+
+\paragraph{Instrumentación que miente}
+Durante la investigación de la fase~7, unos registros de depuración
+agregados para observar los \emph{resets} indicaron de forma consistente,
+en dos síntesis sucesivas, que el núcleo estaba retenido en \emph{reset}.
+Sobre esa lectura se construyó una teoría completa. La lectura directa de
+los mismos flip-flops por JTAG con SmartDebug mostró lo contrario: la
+síntesis había optimizado esos registros de depuración. Desde entonces, toda
+instrumentación nueva se contrastó con SmartDebug antes de confiar en ella.
+
+\section{Optimización del rendimiento}
+\label{sec:optimizacion}
+
+Con el sistema decodificando correctamente, la primera medición dio
+7,2 imágenes por segundo en un flujo de $704 \times 480$. La
+instrumentación mostró que el puente de memoria procesaba una transacción
+por vez y esperaba cada respuesta antes de emitir la siguiente.
+
+\paragraph{Transacciones en paralelo}
+El puente se modificó para mantener hasta cuatro lecturas y cuatro
+escrituras pendientes, apoyándose en la garantía de orden de AXI4 para un
+mismo identificador. Cada paso se comparó en la placa contra la versión
+anterior, exigiendo una memoria de cuadros idéntica. El resultado fue
+22--23 imágenes por segundo, unas 3,1 veces más. En el
+camino apareció y se corrigió una violación real del protocolo AXI4 en el
+mecanismo de aborto del puente.
+
+\paragraph{Dónde está el límite ahora}
+Nuevos contadores mostraron que la memoria dejó de ser el cuello de botella:
+el árbitro pasa cerca del 90~\% del tiempo inactivo. Dos experimentos
+negativos acotaron la causa. Subir el reloj de decodificación de 108 a
+162~MHz no cambió la tasa, y relajar un umbral de las FIFOs de memoria
+tampoco. Finalmente, una señal interna que nunca se había instrumentado
+mostró que el 78--81~\% del tiempo en que la decodificación se detiene
+coincide con la entrada de la etapa de reconstrucción por compensación de
+movimiento llena: el límite está dentro del núcleo original.
+
+\paragraph{Decisión}
+Mejorar esa etapa implica modificar la lógica central del núcleo de
+terceros, algo de naturaleza distinta a optimizar un puente propio. Se
+decidió no hacerlo dentro de este proyecto y documentarlo como trabajo
+futuro. Para el formato del clip de demostración, $352 \times 288$, la tasa
+alcanzada supera holgadamente el tiempo real (capítulo~\ref{cap:resultados}).
+
+\section{Recursos utilizados}
+
+La tabla~\ref{tab:recursos} muestra la ocupación del dispositivo MPFS095T
+con el diseño completo, incluidos el núcleo, los bloques de integración y la
+lógica del diseño de referencia de la placa, en el bitstream
+\cmd{0.1.0+918dde0}.
+
+\begin{table}[ht]
+  \centering\small
+  \begin{tabular}{@{}l r r r@{}}
+    \toprule
+    \textbf{Recurso} & \textbf{Usado} & \textbf{Disponible} & \textbf{\%} \\
+    \midrule
+    LUT de 4 entradas & 35\,427 & 93\,516 & 37,9 \\
+    Flip-flops        & 31\,346 & 93\,516 & 33,5 \\
+    Micro-RAM (uSRAM) & 325     & 876     & 37,1 \\
+    RAM grande (LSRAM)& 30      & 308     & 9,7 \\
+    Bloques Math      & 20      & 292     & 6,8 \\
+    E/S de usuario    & 55      & 80      & 68,8 \\
+    \bottomrule
+  \end{tabular}
+  \caption{Ocupación del MPFS095T.}
+  \label{tab:recursos}
+\end{table}
+
+\subsection{Temporización}
+\label{sec:temporizacion}
+
+La verificación de temporización tuvo su propia historia. Al automatizar la
+estimación de potencia se descubrió que el script de construcción registraba,
+para la síntesis y para la verificación de temporización, un único archivo
+de restricciones, el de las excepciones del puente APB. Como la herramienta
+reemplaza el conjunto de archivos en lugar de agregar, ninguno de los dos
+pasos recibía la definición de los relojes: la síntesis los suponía a
+100~MHz y la verificación no tenía nada contra qué comparar, así que su
+resultado \enquote{sin violaciones} no validaba nada. La ubicación y el ruteo
+sí tenían los relojes.
+
+Corregido el script, la verificación con los relojes reales sobre el
+bitstream anterior mostró que dentro de cada dominio de reloj el diseño
+cumplía, pero encontró dos problemas en los cruces entre el bus APB
+(51~MHz) y los relojes del decodificador:
+
+\begin{itemize}
+  \item \textbf{Un reset sin sincronizar.} El reset del bus, que se libera
+    con el reloj del bus, reiniciaba directamente registros del puente y del
+    DMA que funcionan con el reloj de decodificación. Al liberarse, distintos
+    registros podían salir del reset en ciclos distintos ($-10{,}2$~ns de
+    margen de \emph{recovery}). En la práctica era inocuo, porque el reset se
+    libera una sola vez, al arrancar y sin actividad, pero es un defecto de
+    diseño. Se corrigió con un sincronizador de reset de dos etapas: el reset
+    se aplica de inmediato y se libera dos flancos después, en sincronía con
+    el reloj de decodificación.
+  \item \textbf{Cruces asíncronos analizados como síncronos.} Los dos PLL
+    parten del mismo oscilador de 50~MHz, así que la herramienta deduce una
+    relación de fase entre sus salidas y analizaba cada cruce como un camino
+    de un ciclo, incluida la entrada de los propios sincronizadores
+    ($-3{,}5$~ns de \emph{hold}). Todos esos cruces están protegidos por
+    diseño, con sincronizadores de dos etapas o con datos que el protocolo
+    de \emph{handshake} mantiene estables. Una restricción
+    \cmd{set\_clock\_groups -asynchronous} declara esos relojes asíncronos
+    entre sí, y los caminos internos de cada grupo se siguen analizando.
+\end{itemize}
+
+Con ambos cambios, el bitstream \cmd{0.1.0+918dde0} cumple las restricciones
+de temporización en las tres condiciones de operación que analiza la
+herramienta (tensión mínima y temperatura máxima, la más lenta, entre
+ellas), sin violaciones de \emph{setup} ni de \emph{hold}
+(tabla~\ref{tab:temporizacion}).
+
+\begin{table}[ht]
+  \centering\small
+  \begin{tabular}{@{}l l r r r@{}}
+    \toprule
+    \textbf{Reloj} & \textbf{Uso} & \textbf{Frecuencia} & \textbf{Setup (ns)} & \textbf{Hold (ns)} \\
+    \midrule
+    \cmd{mem\_clk} & memoria del decodificador & 162~MHz & 1,216 & 0,018 \\
+    \cmd{clk}      & decodificación            & 108~MHz & 0,950 & 0,020 \\
+    \cmd{dot\_clk} & visualización             & 27~MHz  & 4,480 & 0,012 \\
+    FIC\,0         & AXI, diseño de referencia & 162~MHz & 1,841 & 0,026 \\
+    FIC\,3         & bus APB                   & 51~MHz  & 3,057 & 0,028 \\
+    \bottomrule
+  \end{tabular}
+  \caption{Peor margen por reloj, en el peor caso de las tres condiciones de
+    operación analizadas. Un margen positivo significa que el camino cumple.}
+  \label{tab:temporizacion}
+\end{table}
+
+La lección excede a este proyecto: un análisis de temporización que da
+\enquote{cero violaciones} solo vale si se comprueba que analizó algo. El
+síntoma estaba a la vista en el informe (columnas de margen vacías), pero
+nada obligaba a mirarlo.
+
+La ocupación deja margen suficiente para agregar funcionalidad, por ejemplo
+una segunda instancia del decodificador o la salida de video en una placa que
+la tenga.

@@ -1,0 +1,74 @@
+\chapter{Estimación de potencia}
+\label{anx:potencia}
+
+Estimación de SmartPower (Libero SoC 2025.2), sin vectores, sobre la netlist
+ubicada y ruteada del 8 de septiembre de 2026. Condiciones típicas:
+$T_j = 25$~°C, $V_{DD} = 1{,}000$~V; peor caso: $T_j = 100$~°C,
+$V_{DD} = 1{,}030$~V. Método en la sección~\ref{sec:modelo-potencia}.
+
+\section*{Total}
+
+\begin{center}\small
+\begin{tabular}{@{}l r r@{}}
+  \toprule
+  & \textbf{Típico (mW)} & \textbf{Peor caso (mW)} \\
+  \midrule
+  Estática & 239,6 & 441,6 \\
+  Dinámica & 1\,417,9 & 1\,514,0 \\
+  \textbf{Total} & \textbf{1\,657,5} & \textbf{1\,955,6} \\
+  \bottomrule
+\end{tabular}
+\end{center}
+
+\section*{Por bloque de primer nivel (típico)}
+
+\begin{center}\small
+\begin{tabular}{@{}l r r@{}}
+  \toprule
+  \textbf{Bloque} & \textbf{mW} & \textbf{\%} \\
+  \midrule
+  MSS (procesadores, interfaz DDR4, E/S) & 1\,408,9 & 89,8 \\
+  Periféricos de FIC~3, incluido el decodificador & 90,1 & 5,7 \\
+  E/S y redes del nivel superior & 38,7 & 2,5 \\
+  Periféricos de FIC~0 & 17,4 & 1,1 \\
+  Relojes y \emph{resets} & 14,5 & 0,9 \\
+  \bottomrule
+\end{tabular}
+\end{center}
+
+La suma por instancias (1\,569,6~mW) difiere del total en unos 88~mW de
+potencia estática que la herramienta no asigna a ninguna instancia.
+
+\section*{Periférico decodificador (típico, 68,0~mW)}
+
+\begin{center}\small
+\begin{tabular}{@{}l r@{}}
+  \toprule
+  \textbf{Submódulo} & \textbf{mW} \\
+  \midrule
+  Núcleo mpeg2fpga & 63,6 \\
+  Puente de memoria & 1,6 \\
+  DMA del flujo & 1,5 \\
+  Puente APB & 1,1 \\
+  \bottomrule
+\end{tabular}
+\end{center}
+
+\section*{Dentro del núcleo (típico, 63,6~mW)}
+
+\begin{center}\small
+\begin{tabular}{@{}l r r@{}}
+  \toprule
+  \textbf{Módulo} & \textbf{mW} & \textbf{\%} \\
+  \midrule
+  IDCT (\cmd{idct}) & 16,26 & 25,6 \\
+  PLL propio (\cmd{u\_ccc}) & 15,68 & 24,7 \\
+  Compensación de movimiento (\cmd{motcomp}) & 7,51 & 11,8 \\
+  Memoria de cuadros (\cmd{framestore}) & 4,92 & 7,7 \\
+  Decodificación de longitud variable (\cmd{vld}) & 1,92 & 3,0 \\
+  Banco de registros (\cmd{regfile}) & 1,83 & 2,9 \\
+  Remuestreo para visualización (\cmd{resample}) & 1,74 & 2,7 \\
+  Resto (FIFOs, lectores y escritores de memoria, otros) & 13,74 & 21,6 \\
+  \bottomrule
+\end{tabular}
+\end{center}

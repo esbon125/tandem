@@ -1,0 +1,287 @@
+\chapter{Resultados}
+\label{cap:resultados}
+
+\section{Equivalencia entre hardware y simulación}
+
+El resultado más fuerte del proyecto es también el más simple de enunciar:
+\textbf{el port reproduce el diseño original bit a bit}. Con el flujo
+\cmd{tcela-17} decodificado completo en la placa y en la simulación del
+núcleo, las dos memorias de cuadros resultaron idénticas byte a byte, en los
+tres planos y en los cuatro buffers. La misma igualdad se observó en los
+valores de error contra la referencia de todos los flujos comparados por
+ambos caminos, idénticos hasta el tercer decimal.
+
+Esto delimita responsabilidades (sección~\ref{sec:limites-simulacion}):
+cualquier diferencia que quede contra el decodificador de referencia ya
+estaba en el diseño original, y no fue introducida por el port.
+
+\section{Precisión de la IDCT}
+
+La IDCT del núcleo cumple las seis condiciones del estándar IEEE~1180-1990
+(tabla~\ref{tab:ieee1180}), con el error pico en el máximo permitido de~1 y
+los errores cuadráticos y medios uno o dos órdenes de magnitud por debajo de
+sus límites.
+
+\begin{table}[ht]
+  \centering\small
+  \begin{tabular}{@{}l r r r@{}}
+    \toprule
+    \textbf{Métrica} & \textbf{Peor caso medido} & \textbf{Límite} & \\
+    \midrule
+    Error pico                       & 1        & 1      & cumple \\
+    Error cuadrático por posición    & 0,0052   & 0,06   & cumple \\
+    Error cuadrático global          & 0,0036   & 0,02   & cumple \\
+    Error medio por posición         & 0,0016   & 0,015  & cumple \\
+    Error medio global               & 0,000056 & 0,0015 & cumple \\
+    \bottomrule
+  \end{tabular}
+  \caption{IDCT contra IEEE 1180-1990: peor valor entre las seis
+    condiciones.}
+  \label{tab:ieee1180}
+\end{table}
+
+\section{Conformidad}
+\label{sec:res-conformidad}
+
+\paragraph{Imágenes intra}
+En las imágenes codificadas sin predicción, la salida del hardware difiere
+de la referencia en un MAD de 0,004 a 0,005 con error pico~1, en luma y en
+crominancia, en cuatro flujos distintos. Es la única diferencia que el
+estándar admite entre dos implementaciones conformes de la IDCT. Un flujo
+completo, \cmd{mcp10ccett} ($720 \times 576$, con imágenes I, P y B), es
+bit-exacto contra la referencia en todos sus buffers y planos.
+
+\paragraph{Batería de conformidad}
+La tabla~\ref{tab:conformidad} resume los veredictos sobre los 39 flujos;
+el detalle está en el anexo~\ref{anx:regresion}.
+
+\begin{table}[ht]
+  \centering\small
+  \begin{tabularx}{\linewidth}{@{}l r X@{}}
+    \toprule
+    \textbf{Veredicto} & \textbf{Flujos} & \textbf{Observación} \\
+    \midrule
+    Bit-exacto      & 3  & \cmd{mcp10ccett}, \cmd{tcela-15}, \cmd{tcela-17} \\
+    Cercano         & 34 & MAD $\leq 0{,}04$ y pico $\leq 4$ en el peor buffer \\
+    Deriva          & 0  & \\
+    Sin escritura   & 2  & MPEG-1, que el núcleo no decodifica \\
+    \bottomrule
+  \end{tabularx}
+  \caption{Veredictos de conformidad (39 flujos, hasta 8 imágenes cada uno).}
+  \label{tab:conformidad}
+\end{table}
+
+Los 37 flujos MPEG-2 decodifican bit-exactos o cercanos, y en los cercanos
+la diferencia es la que admite el estándar entre dos IDCT conformes: el
+peor buffer de toda la batería tiene MAD 0,038 (\cmd{att-mismatch}, un
+flujo de $32 \times 32$ hecho justamente para estresar la IDCT), y en 30 de
+los 34 el peor buffer está por debajo de 0,02. Ningún flujo deriva. Para
+llegar ahí hubo que corregir la referencia
+(sección~\ref{sec:conformidad-referencia}), la forma de cortar los flujos y
+dos errores del diseño original (sección~\ref{sec:conformidad-upstream}).
+
+Los dos flujos MPEG-1 (\cmd{mei-16-long}, \cmd{mei-16v2}) no tienen
+\emph{sequence extension}: el núcleo es solo MPEG-2, y el propio diseño
+original los marca como no soportados.
+
+\cmd{tcela-15} figuraba también como \emph{sin escritura}. Es un flujo de
+prueba de relleno: cada imagen trae unos pocos cientos de bytes de datos y
+después unos 60~KB de ceros. Su contenido es gris medio uniforme, que la
+memoria de cuadros guarda como ceros, y la comparación consideraba
+\enquote{nunca escrito} a todo buffer uniforme. Ahora un buffer se considera
+vacío solo si tiene el valor con que el núcleo limpia la memoria al
+arrancar o el que la captura escribe antes de cada prueba. Con ese
+criterio, \cmd{tcela-15} es bit-exacto. Por el servicio de red también
+entrega sus 8 imágenes completas.
+
+\subsection{Un error en la referencia}
+\label{sec:conformidad-referencia}
+
+La primera versión de esta batería daba un resultado muy distinto: un solo
+flujo bit-exacto, 12 cercanos y 23 con deriva, de los cuales once fallaban
+desde la primera imagen con MAD de 12 a 18. Todos ellos cargan una matriz de
+cuantización propia en la cabecera de secuencia, y casi todos cargan
+literalmente la matriz por defecto, lo que debería ser equivalente a no
+cargar ninguna. La conclusión natural fue un error en el camino de carga de
+matrices del núcleo, y así figuró como limitación conocida.
+
+Dos observaciones la desmintieron. La documentación del diseño original
+declara aprobados todos esos flujos. Y una simulación del núcleo con un
+monitor sobre la memoria de la matriz mostró que las 64 escrituras llegaban
+a la dirección correcta con el valor correcto. Al mirar las imágenes en
+lugar de los números, la del hardware era nítida y la de la referencia una
+imagen en bloques. El error estaba en la copia de \cmd{mpeg2decode} que
+acompaña al núcleo: en la cabecera de secuencia, la lectura de las matrices
+había quedado dentro de un \cmd{if} que solo se ejecuta con las trazas
+activadas. Sin trazas, que es como la usa la comparación, la referencia no
+cargaba la matriz ni consumía sus 512~bits.
+
+Corregido ese \cmd{if}, las capturas del hardware, idénticas byte a byte a
+las anteriores, pasaron a 2 bit-exactos, 29 cercanos y 5 con deriva:
+\cmd{gi4} bajó de MAD 17,9 a 0,005 en su imagen intra. La corrección también resolvió la mayor parte de la deriva en
+imágenes predichas, porque varios de esos flujos cargan matrices para
+bloques no intra.
+
+\subsection{Dos errores en el diseño original}
+\label{sec:conformidad-upstream}
+
+Corregida la referencia quedaban cinco flujos con deriva. En dos de ellos
+(\cmd{sony-ct1}, \cmd{hhi-burst-long}) el corte de 8 imágenes terminaba en
+el primer campo de un cuadro; ahora el corte nunca separa los dos campos.
+Los otros tres (\cmd{nokia6-60}, \cmd{tcela-10}, \cmd{tcela-14}) eran
+errores del núcleo: la simulación del RTL original da el mismo volcado, bit
+a bit, que la placa, así que no los introdujo el port, aunque la
+documentación original da esos flujos por aprobados.
+
+Simular hasta las imágenes afectadas lleva horas por volcado. El método que
+funcionó fue otro: modificar una copia de la referencia para que se
+comporte como se sospecha que se comporta el hardware, y ver si los
+volcados de la placa coinciden con ella al nivel de ruido de la IDCT. Para
+desempatar entre el hardware y la referencia se usó además un tercer
+decodificador independiente (ffmpeg).
+
+\begin{itemize}
+  \item \textbf{Redondeo del promedio de predicciones.} Al promediar la
+    predicción hacia adelante y hacia atrás, el núcleo redondeaba según el
+    signo del píxel (que guarda con un desplazamiento de $-128$), en lugar
+    de $(a+b+1)/2$ como pide la norma. Los píxeles oscuros perdían un nivel.
+    En imágenes B el efecto no se acumula (MAD $\approx 0{,}26$), pero la
+    predicción \emph{dual prime} usa ese promedio en imágenes P, que son
+    referencia de las siguientes: en \cmd{nokia6-60} y \cmd{tcela-14} el
+    sesgo crecía imagen a imagen hasta MAD~2. Con la referencia emulando
+    ese redondeo, el hardware coincidía en MAD 0,02.
+  \item \textbf{Orden de las matrices recargadas.} Las matrices de
+    cuantización se transmiten siempre en orden zigzag, pero el núcleo las
+    ubicaba con el orden de recorrido de la imagen anterior. Una segunda
+    cabecera de secuencia que llega después de una imagen con recorrido
+    alternativo, como en \cmd{tcela-10}, dejaba los pesos permutados. La
+    firma estaba en el dominio de la DCT: la ganancia entre hardware y
+    referencia era exactamente 1 en muchos coeficientes y, en los demás, un
+    cociente de dos valores de la matriz (22/19, 16/19, 19/16). El
+    comentario del código original ya decía que debía usarse el orden zigzag.
+\end{itemize}
+
+Los dos arreglos suman tres líneas de RTL. Con ellos, \cmd{nokia6-60} bajó
+de MAD 1,79 a 0,026, \cmd{tcela-14} de 1,62 a 0,025 y \cmd{tcela-10} de
+2,40 a 0,009, y las imágenes B del resto de la batería, de 0,26 a menos de
+0,02.
+
+\section{Determinismo y robustez}
+
+Las diez decodificaciones de la prueba de determinismo, con y sin
+\emph{reset}, dieron imágenes idénticas. En la prueba de robustez, ninguna de
+las tres entradas dañadas dejó al decodificador trabado: el flujo correcto
+siguiente se decodificó bit-exacto en los tres casos, solo con el cambio de
+flujo y sin \emph{reset}. El indicador de error del núcleo se activó con el
+flujo truncado y con los bits invertidos, y no con los bytes aleatorios, que
+no contienen ningún código de inicio que el analizador pueda rechazar. El
+\emph{watchdog} no se activó en ningún caso.
+
+\section{Rendimiento}
+\label{sec:res-rendimiento}
+
+\begin{table}[ht]
+  \centering\small
+  \begin{tabular}{@{}l c r r r@{}}
+    \toprule
+    \textbf{Flujo} & \textbf{Resolución} & \textbf{img/s} & \textbf{desvío} & \textbf{$\times$ tiempo real} \\
+    \midrule
+    tek60          & $704 \times 480$ & 23,6 & 0,5 & 0,79 \\
+    tek-5-long     & $704 \times 480$ & 22,7 & 0,7 & 0,76 \\
+    mei-2-60f      & $704 \times 480$ & 21,2 & 1,0 & 0,71 \\
+    tcela-7        & $720 \times 480$ & 19,9 & 0,9 & 0,66 \\
+    nokia6-60      & $720 \times 576$ & 11,9 & 0,2 & 0,48 \\
+    hhi-burst-long & $720 \times 576$ & 13,1 & 0,5 & 0,52 \\
+    \midrule
+    \emph{Tears of Steel} & $352 \times 288$ & 53,7 & 0,2 & 2,24 \\
+    \bottomrule
+  \end{tabular}
+  \caption{Tasa de decodificación en la placa con el bitstream
+    \cmd{0.1.0+918dde0} (5 corridas por flujo; 3 para el clip).}
+  \label{tab:rendimiento}
+\end{table}
+
+La tabla~\ref{tab:rendimiento} muestra la tasa de decodificación. En
+definición estándar el decodificador alcanza 20 a 23,5 imágenes por segundo en
+$704/720 \times 480$ y 12 a 13 en $720 \times 576$, es decir, entre la
+mitad y cuatro quintos del tiempo real. El límite está en la etapa de
+reconstrucción del núcleo original (sección~\ref{sec:optimizacion}). En el
+formato CIF del clip de demostración, $352 \times 288$, decodifica a 53,7
+imágenes por segundo, 2,2 veces el tiempo real.
+
+De punta a punta, con el cliente en otra computadora de la red local que
+recibe cada imagen a través del servicio y la biblioteca, el clip llega a
+unas 50--51 imágenes por segundo, idéntico byte a byte entre corridas.
+Contra la referencia, el clip completo da un MAD medio de 0,010 (máximo
+0,018 en un cuadro) con error pico de 3 sobre 255; antes de corregir los
+errores de la sección~\ref{sec:conformidad-upstream} daba 0,073.
+
+\section{Consumo de potencia}
+
+La estimación de SmartPower para el diseño completo es de \textbf{1,66~W}
+en condiciones típicas (1,96~W en el peor caso), de los cuales el MSS, con
+sus cinco procesadores y la interfaz de memoria DDR4, explica el 90~\%. El
+\textbf{periférico decodificador completo consume unos 68~mW}, el 4,3~\% del
+total: 63,6~mW el núcleo y apenas 4~mW los tres bloques de integración. Dentro
+del núcleo, la IDCT y el PLL propio son los mayores consumidores, con un
+cuarto cada uno. El desglose está en el anexo~\ref{anx:potencia}.
+
+Dos salvedades. Es una estimación sin vectores, no una medición. Y se hizo
+sobre la netlist previa a la última síntesis, que agregó el DMA por bloques,
+el identificador de versión y la interrupción de imagen: cambios menores,
+que no deberían alterar el orden de magnitud.
+
+\section{Demostración pública}
+
+La figura~\ref{fig:demo-comparacion} muestra una imagen del clip decodificada
+por la FPGA junto a la del decodificador de referencia y su diferencia
+amplificada: la diferencia es invisible sin amplificar.
+
+\begin{figure}[ht]
+  \centering
+  \includegraphics[width=\linewidth]{demo_comparacion_referencia}
+  \caption{Salida de la FPGA (izquierda), decodificador de referencia
+    \cmd{mpeg2decode} (centro) y diferencia absoluta amplificada 32 veces
+    (derecha). Contenido: \emph{Tears of Steel} \citep{Blender_2012_tears}.}
+  \label{fig:demo-comparacion}
+\end{figure}
+
+\begin{table}[ht]
+  \centering\small
+  \begin{tabular}{@{}l r r r@{}}
+    \toprule
+    \textbf{Condición} & \textbf{Placa} & \textbf{Llegada} & \textbf{Buffer inicial} \\
+    \midrule
+    JPEG, red a 2,4~Mbit/s (primera versión) & 2,11$\times$ & 0,60$\times$ & 15~s \\
+    H.264, red a 2,4~Mbit/s                  & 2,09$\times$ & 2,00$\times$ & 1,5~s \\
+    H.264, red a 1~Mbit/s                    & 2,06$\times$ & 1,12$\times$ & 1,5~s \\
+    H.264, por el túnel público              & 2,02--2,05$\times$ & 1,98--2,01$\times$ & 2,3~s \\
+    \bottomrule
+  \end{tabular}
+  \caption{Demostración en vivo: tasa de decodificación en la placa y de
+    llegada al navegador, en múltiplos del tiempo real. Sin cortes durante la
+    reproducción en ningún caso.}
+  \label{tab:demo}
+\end{table}
+
+En la demostración en vivo (tabla~\ref{tab:demo}), la placa decodifica a
+unas dos veces el tiempo real en todas las condiciones, porque ya no la
+frena la red del visitante. La tasa de llegada depende de la red, y la
+página calcula cuánto buffer necesita para reproducir sin cortes. Desde una
+red externa real, el clip llegó a 2,06 veces el tiempo real.
+
+\section{Síntesis}
+
+\begin{itemize}
+  \item El port es fiel: hardware y simulación coinciden bit a bit.
+  \item La IDCT cumple IEEE~1180, y las imágenes intra difieren de la
+    referencia solo en lo que el estándar permite.
+  \item El decodificador es determinista y se recupera de entradas dañadas
+    sin \emph{reset}.
+  \item Decodifica holgadamente en tiempo real en CIF, y a 0,5--0,77 veces el
+    tiempo real en definición estándar.
+  \item El periférico completo consume unos 68~mW estimados.
+  \item Los 37 flujos MPEG-2 de conformidad decodifican bit-exactos o con
+    la diferencia que la norma admite entre dos IDCT (MAD $\leq 0{,}04$);
+    ninguno deriva, después de corregir dos errores del diseño original.
+\end{itemize}

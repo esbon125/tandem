@@ -1,0 +1,64 @@
+\chapter{Resultados de regresión}
+\label{anx:regresion}
+
+Conformidad de los 39 flujos contra \cmd{mpeg2decode}, con el bitstream
+\cmd{918dde0} (22 de octubre de 2026). Cada flujo se cortó a un máximo de 8
+imágenes en frontera de imagen, sin separar los dos campos de un cuadro. MAD
+y pico corresponden al peor buffer, en luma, en niveles de 0 a 255. Los
+veredictos se definen en la sección~\ref{sec:regresion}. Respecto de las
+primeras versiones de esta tabla cambiaron la referencia
+(sección~\ref{sec:conformidad-referencia}) y el núcleo, con dos errores del
+diseño original corregidos (sección~\ref{sec:conformidad-upstream}).
+
+\small
+\begin{longtable}{@{}l r c l r r@{}}
+  \toprule
+  \textbf{Flujo} & \textbf{Imág.} & \textbf{Resolución} & \textbf{Veredicto} & \textbf{MAD (Y)} & \textbf{Pico} \\
+  \midrule
+  \endfirsthead
+  \toprule
+  \textbf{Flujo} & \textbf{Imág.} & \textbf{Resolución} & \textbf{Veredicto} & \textbf{MAD (Y)} & \textbf{Pico} \\
+  \midrule
+  \endhead
+  \cmd{mcp10ccett} & 4 & $720 \times 576$ & bit-exacto & 0,000 & 0 \\
+  \cmd{tek60} & 8 & $704 \times 480$ & cercano & 0,010 & 2 \\
+  \cmd{tek-5.2} & 4 & $704 \times 480$ & cercano & 0,008 & 2 \\
+  \cmd{tek-5-long} & 8 & $704 \times 480$ & cercano & 0,010 & 2 \\
+  \cmd{att-mismatch} & 8 & $32 \times 32$ & cercano & 0,038 & 1 \\
+  \cmd{ti-c1-2} & 4 & $704 \times 480$ & cercano & 0,005 & 2 \\
+  \cmd{toshiba-dpall} & 4 & $720 \times 480$ & cercano & 0,004 & 1 \\
+  \cmd{sony-ct1} & 8 & $352 \times 224$ & cercano & 0,009 & 2 \\
+  \cmd{sony-ct2} & 8 & $704 \times 480$ & cercano & 0,010 & 2 \\
+  \cmd{sony-ct3} & 8 & $720 \times 480$ & cercano & 0,004 & 2 \\
+  \cmd{gi4} & 4 & $704 \times 480$ & cercano & 0,009 & 2 \\
+  \cmd{gi6} & 4 & $720 \times 480$ & cercano & 0,009 & 2 \\
+  \cmd{gi7} & 4 & $720 \times 480$ & cercano & 0,009 & 2 \\
+  \cmd{gi9} & 8 & $720 \times 480$ & cercano & 0,013 & 2 \\
+  \cmd{gi-from-tape} & 8 & $720 \times 480$ & cercano & 0,015 & 2 \\
+  \cmd{hhi-burst-short} & 5 & $720 \times 576$ & cercano & 0,006 & 2 \\
+  \cmd{hhi-burst-long} & 8 & $720 \times 576$ & cercano & 0,007 & 2 \\
+  \cmd{ibm-bw} & 8 & $720 \times 480$ & cercano & 0,002 & 1 \\
+  \cmd{lep-11} & 3 & $720 \times 576$ & cercano & 0,008 & 2 \\
+  \cmd{mei-16-long} & 8 & $352 \times 240$ & sin escritura & --- & --- \\
+  \cmd{mei-16v2} & 4 & $352 \times 240$ & sin escritura & --- & --- \\
+  \cmd{mei-2-4f} & 4 & $704 \times 480$ & cercano & 0,011 & 2 \\
+  \cmd{mei-2-60f} & 8 & $704 \times 480$ & cercano & 0,015 & 2 \\
+  \cmd{nokia6} & 4 & $720 \times 576$ & cercano & 0,014 & 2 \\
+  \cmd{nokia6-60} & 8 & $720 \times 576$ & cercano & 0,026 & 2 \\
+  \cmd{nokia7} & 4 & $720 \times 576$ & cercano & 0,014 & 2 \\
+  \cmd{ntr-skipped} & 8 & $720 \times 576$ & cercano & 0,022 & 2 \\
+  \cmd{tceh-conf2} & 8 & $720 \times 576$ & cercano & 0,016 & 2 \\
+  \cmd{tcela-6} & 4 & $720 \times 480$ & cercano & 0,009 & 2 \\
+  \cmd{tcela-7} & 8 & $720 \times 480$ & cercano & 0,014 & 2 \\
+  \cmd{tcela-8} & 8 & $720 \times 480$ & cercano & 0,017 & 2 \\
+  \cmd{tcela-9} & 8 & $720 \times 480$ & cercano & 0,017 & 2 \\
+  \cmd{tcela-10} & 8 & $720 \times 480$ & cercano & 0,009 & 2 \\
+  \cmd{tcela-14-short} & 4 & $720 \times 480$ & cercano & 0,014 & 2 \\
+  \cmd{tcela-14} & 8 & $720 \times 480$ & cercano & 0,025 & 2 \\
+  \cmd{tcela-15} & 8 & $720 \times 480$ & bit-exacto & 0,000 & 0 \\
+  \cmd{tcela-17} & 2 & $720 \times 480$ & bit-exacto & 0,000 & 0 \\
+  \cmd{teracom-vlc4} & 8 & $720 \times 576$ & cercano & 0,002 & 4 \\
+  \cmd{greyramp} & 8 & $720 \times 576$ & cercano & 0,004 & 1 \\
+  \bottomrule
+\end{longtable}
+\normalsize

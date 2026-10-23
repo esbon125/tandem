@@ -1,0 +1,99 @@
+\chapter{Herramientas utilizadas}
+\label{anx:herramientas}
+
+Listado completo de las herramientas de la figura~\ref{fig:herramientas}.
+\textbf{P}: principal; \textbf{S}: secundaria; \textbf{X}: propietaria.
+
+\small
+\begin{longtable}{@{}l c l p{68mm}@{}}
+  \toprule
+  \textbf{Herramienta} & & \textbf{Licencia} & \textbf{Uso en el proyecto} \\
+  \midrule
+  \endfirsthead
+  \toprule
+  \textbf{Herramienta} & & \textbf{Licencia} & \textbf{Uso en el proyecto} \\
+  \midrule
+  \endhead
+  \multicolumn{4}{@{}l}{\sffamily\bfseries\color{m2teal} Hardware: diseño y simulación} \\
+  Icarus Verilog & P & GPL-2.0 & Simulación del núcleo completo y de los bancos
+    de prueba de cada bloque de RTL nuevo. \\
+  mpeg2decode & P & libre (MSSG) & Decodificador de referencia de software;
+    base de la comparación de cuadros. \\
+  FFmpeg & P & LGPL-2.1+/GPL & Generación y conversión de flujos de prueba;
+    decodificador de referencia y transporte H.264 en la demostración. \\
+  GTKWave & S & GPL-2.0 & Visualización de formas de onda de la simulación. \\
+  Libero SoC & X & Microchip (Silver) & Síntesis (Synplify Pro), ubicación y
+    ruteo, diseño de bloques (SmartDesign) y generación del bitstream. \\
+  SmartDebug & X & Microchip & Lectura de registros internos de la FPGA por
+    JTAG (\emph{Active Probes}) durante la depuración en la placa. \\
+  SmartPower & X & Microchip & Estimación de consumo de potencia. \\
+  FlashPro Express & X & Microchip & Programación del bitstream por JTAG. \\
+  SoftConsole & X & Microchip & Primera aplicación sin sistema operativo en el
+    MSS (fase 1). \\
+  \midrule
+  \multicolumn{4}{@{}l}{\sffamily\bfseries\color{m2teal} Plataforma embebida} \\
+  Linux & P & GPL-2.0 & Sistema operativo del MSS. \\
+  u-dma-buf & P & BSD-2-Clause & Regiones de memoria contigua para el DMA entre
+    el procesador y el núcleo. \\
+  GCC (RISC-V) & P & GPL-3.0 & Compilación cruzada del driver y del conversor
+    nativo. \\
+  HSS & S & MIT & Arranque del MSS (\emph{Hart Software Services} de Microchip). \\
+  OpenSBI & S & BSD-2-Clause & Interfaz entre el firmware de arranque y el
+    kernel en RISC-V. \\
+  U-Boot & S & GPL-2.0 & Cargador de arranque desde la tarjeta SD. \\
+  Yocto (imagen) & S & MIT & Imagen de Linux precompilada de Microchip
+    (\emph{meta-mchp}). \\
+  dtc & S & GPL-2.0 & Compilación de los \emph{overlays} de árbol de
+    dispositivos que describen el periférico. \\
+  systemd & S & LGPL-2.1 & Arranque automático del servicio y de los
+    \emph{overlays}. \\
+  OpenSSL & S & Apache-2.0 & TLS opcional del protocolo de red. \\
+  \midrule
+  \multicolumn{4}{@{}l}{\sffamily\bfseries\color{m2teal} Firmware y software} \\
+  Python & P & PSF & Servicio de la placa, biblioteca cliente, herramientas y
+    demostración. \\
+  KUnit + UML & P & GPL-2.0 & Pruebas unitarias del driver sobre un kernel
+    compilado en modo usuario. \\
+  Renode & S & MIT & Modelo simulado del periférico para probar registros e
+    interrupciones. \\
+  NumPy & S & BSD-3-Clause & Cálculo de métricas de comparación de cuadros. \\
+  Pillow & S & MIT-CMU & Conversión de imágenes en el \emph{relay} de la
+    demostración. \\
+  setuptools / pip & S & MIT & Empaquetado e instalación de la biblioteca
+    cliente. \\
+  \midrule
+  \multicolumn{4}{@{}l}{\sffamily\bfseries\color{m2teal} Transversales} \\
+  Git & P & GPL-2.0 & Control de versiones, ramas y \emph{worktrees}. \\
+  GNU Make & P & GPL-3.0 & Construcción de simulaciones, módulos y documentos. \\
+  OpenSSH & P & BSD & Despliegue y operación remota de la placa. \\
+  GNU Screen & S & GPL-3.0 & Consola serie de la placa. \\
+  Emacs & S & GPL-3.0 & Edición de texto y de documentos LaTeX. \\
+  Bash & S & GPL-3.0 & Scripts de instalación, calificación y automatización. \\
+  GitHub & X & servicio & Alojamiento del repositorio, publicación de
+    versiones y de la página de la demostración. \\
+  Claude Code & X & servicio & Asistente de programación basado en IA:
+    scripts de instrumentación en Python y documentación
+    (sección~\ref{sec:asistente-ia}). \\
+  \midrule
+  \multicolumn{4}{@{}l}{\sffamily\bfseries\color{m2teal} Verificación y liberación} \\
+  framecmp / regress & P & propia & Comparación de cuadros y regresión de
+    conformidad, determinismo, robustez y velocidad. \\
+  Runner de GitHub Actions & S & MIT & Ejecución del proceso de liberación en
+    la computadora conectada a la placa. \\
+  sha256sum & S & GPL-3.0 & Sumas de verificación de los artefactos. \\
+  \midrule
+  \multicolumn{4}{@{}l}{\sffamily\bfseries\color{m2teal} Documentación y demostración} \\
+  Tectonic & P & MIT & Compilación de este informe y de la guía de usuario. \\
+  TikZ & S & LPPL/GPL & Diagramas de este informe. \\
+  Puppeteer & S & Apache-2.0 & Capturas automáticas de la demostración web. \\
+  Google Chrome & X & propietaria & Navegador usado por Puppeteer para las
+    capturas. \\
+  Node.js & S & MIT & Entorno de ejecución de Puppeteer. \\
+  Scribus & S & GPL-2.0 & Diseño de la portada. \\
+  TaskJuggler & S & GPL-2.0 & Planificación del Anteproyecto. \\
+  draw.io & S & Apache-2.0 & Diagramas del Anteproyecto. \\
+  Tailscale (cliente) & S & BSD-3-Clause & Túnel público hacia la
+    demostración en vivo. \\
+  \bottomrule
+\end{longtable}
+\normalsize

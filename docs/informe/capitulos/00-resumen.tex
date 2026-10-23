@@ -1,0 +1,60 @@
+\chapter*{Resumen}
+\addcontentsline{toc}{chapter}{Resumen}
+
+Este trabajo desarrolla un decodificador de video MPEG-2 (ISO/IEC 13818-2)
+sobre un SoC FPGA PolarFire de Microchip, controlado desde Linux, y lo lleva
+a la forma de un producto de propiedad intelectual distribuible. Muestra, de
+forma pedagógica y con herramientas mayoritariamente libres, el recorrido
+completo: el desarrollo técnico, pero también las licencias, la producción,
+la distribución y los entregables.
+
+Se partió de mpeg2fpga, un núcleo decodificador abierto escrito en Verilog
+para FPGA de Xilinx. El núcleo se adaptó a PolarFire con memorias portables y
+un generador de reloj propio, y se integró con el subsistema de procesadores
+RISC-V mediante un puente de registros APB, un puente de memoria AXI4, un
+motor de DMA y una interrupción por imagen. Sobre Linux se desarrollaron un
+driver de kernel con pruebas unitarias, un servicio que expone el
+decodificador por la red con un protocolo versionado y una biblioteca cliente
+en Python. Cada versión del producto se publica solo después de calificarla en
+el hardware real.
+
+La memoria de cuadros del hardware resultó idéntica byte a byte a la de la
+simulación del diseño original. La IDCT cumple el estándar IEEE~1180, y los
+37 flujos MPEG-2 de conformidad difieren de un decodificador de referencia
+solo en lo que la norma admite, después de corregir dos errores del diseño
+original. El sistema decodifica entre 20 y 23 imágenes por segundo en
+definición estándar y 53,7 en formato CIF, más del doble del tiempo real,
+con un consumo estimado de 68~mW para el decodificador. Una demostración
+pública permite decodificar en la FPGA, desde cualquier navegador, un video
+subido por el visitante.
+
+\paragraph{Palabras clave}
+MPEG-2, FPGA, PolarFire SoC, RISC-V, Linux, driver, propiedad intelectual,
+hardware libre.
+
+\vspace{1em}
+\begin{otherlanguage}{english}
+\section*{Abstract}
+
+This work develops an MPEG-2 video decoder (ISO/IEC 13818-2) on a Microchip
+PolarFire SoC FPGA, controlled from Linux, and turns it into a distributable
+intellectual-property product. It shows, as a teaching case and mostly with
+free tools, the complete path: the technical development, and also
+licensing, production, distribution and deliverables. Starting from
+mpeg2fpga, an open Verilog decoder core written for Xilinx FPGAs, the core
+was ported to PolarFire and integrated with the RISC-V processor subsystem
+through APB and AXI4 bridges, a DMA engine and a per-picture interrupt. A
+unit-tested Linux kernel driver, a network service with a versioned protocol
+and a Python client library complete the system, and every release is
+qualified on the real hardware before publication. The hardware frame store
+is byte-identical to the original design's simulation; the IDCT meets IEEE
+1180; after fixing two bugs of the original design, all 37 MPEG-2
+conformance streams match a reference decoder within what the standard
+allows; the decoder runs at 20--23 frames per second in standard definition
+and 53.7 in CIF, over twice real time, with an estimated 68~mW for the
+decoder.
+
+\paragraph{Keywords}
+MPEG-2, FPGA, PolarFire SoC, RISC-V, Linux, device driver, intellectual
+property, open hardware.
+\end{otherlanguage}

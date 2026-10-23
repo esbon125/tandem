@@ -1,0 +1,108 @@
+\chapter{Conclusiones}
+\label{cap:conclusiones}
+
+\section{Cumplimiento de los objetivos}
+
+La tabla~\ref{tab:cumplimiento} evalúa cada objetivo específico resultante
+(tabla~\ref{tab:objetivos-trazabilidad}) contra lo logrado.
+
+\begin{table}[ht]
+  \centering\small
+  \begin{tabularx}{\linewidth}{@{}l >{\raggedright}X l >{\raggedright\arraybackslash}X@{}}
+    \toprule
+    & \textbf{Objetivo} & \textbf{Estado} & \textbf{Evidencia} \\
+    \midrule
+    1 & Evolución de la compresión MPEG & cumplido & Capítulo~\ref{cap:marco} \\
+    2 & Arquitecturas VLSI de MPEG-2 & cumplido & Secciones~\ref{sec:arquitecturas-vlsi} y~\ref{sec:mpeg2fpga} \\
+    3 & La norma y sus consecuencias para un producto & cumplido & Sección~\ref{sec:norma}; patentes, sección~\ref{sec:patentes} \\
+    4 & Port del núcleo e integración con el MSS & cumplido & Equivalencia bit a bit con la simulación \\
+    5 & Linux como plataforma del firmware & cumplido & Sección~\ref{sec:linux} \\
+    6 & Diseño del firmware & cumplido & Driver, servicio y protocolo v1 \\
+    7 & Implementación y verificación del firmware & cumplido & KUnit; prueba de punta a punta en cada versión \\
+    8 & Optimización de rendimiento y robustez & parcial & 3,1 veces más rápido; robusto; tiempo real en CIF, no en definición estándar \\
+    9 & Licencias, producción, distribución y entregables & cumplido, con pendientes & Capítulo~\ref{cap:producto} \\
+    \bottomrule
+  \end{tabularx}
+  \caption{Cumplimiento de los objetivos específicos.}
+  \label{tab:cumplimiento}
+\end{table}
+
+\paragraph{Objetivo general}
+Se cumplió. El decodificador funciona en el SoC FPGA, se controla desde
+Linux, decodifica los 37 flujos MPEG-2 de conformidad dentro de la
+tolerancia de la norma (con dos errores del diseño original corregidos) y se
+distribuye como
+un producto versionado, documentado y calificado en el hardware, con todo su
+código bajo licencias libres.
+
+\paragraph{Lo que quedó parcial}
+La optimización llevó la tasa de 7,2 a 22--23 imágenes por segundo en
+definición estándar, y se localizó con precisión el límite restante: la
+etapa de reconstrucción del núcleo original. Superarlo exige modificar la
+lógica central de un diseño de terceros, y se decidió no hacerlo dentro de
+este proyecto. El objetivo de producto se cumplió con la versión 1.0.0,
+calificada en el hardware y con sus paquetes firmados; lo que queda del
+lado del producto depende de una placa propia (actualizar el bitstream en
+campo) más que del software.
+
+\section{Lecciones aprendidas}
+
+\begin{enumerate}
+  \item \textbf{Verificar en la capa más barata, pero confirmar en la real.}
+    La simulación encontró rápido los errores de lógica; ninguno de los
+    errores de integración fue visible en ella. Un banco de prueba en verde
+    solo prueba que el código coincide con la propia hipótesis.
+  \item \textbf{Que la herramienta no dé error no significa que hizo lo
+    pedido.} Restricciones de pines que no se aplicaban, un parámetro
+    reinterpretado con signo, un atributo que silenciaba un aviso sin cambiar
+    nada, una verificación de temporización sin relojes: todos terminaron
+    \enquote{sin errores}. El criterio de éxito es el resultado verificado,
+    en la netlist o en la placa.
+  \item \textbf{La instrumentación también puede mentir.} Registros de
+    depuración optimizados por la síntesis sostuvieron una teoría falsa
+    durante dos síntesis. La lectura directa por JTAG la desmintió.
+  \item \textbf{La referencia también puede estar mal.} Once flujos de
+    conformidad parecían decodificarse mal por un error del núcleo. La
+    documentación del diseño original decía lo contrario, y mirar las
+    imágenes en lugar del MAD mostró que la imagen rota era la de la
+    referencia. A la inversa, esa misma documentación daba por aprobados
+    tres flujos que el diseño original decodificaba mal: ni la referencia
+    ni la documentación de un tercero reemplazan la medición, y cuando se
+    contradicen, un tercer decodificador independiente desempata.
+  \item \textbf{Medir antes de optimizar.} Los contadores mostraron que la
+    memoria no era el límite cuando parecía serlo, y dos experimentos
+    negativos ahorraron una optimización inútil.
+  \item \textbf{Las licencias son parte del diseño.} Revisarlas mostró
+    código propio publicado sin licencia y un núcleo cuyos archivos no
+    traían la cláusula de permiso. Resolverlo al final cuesta más que
+    decidirlo al principio.
+  \item \textbf{Acotar a tiempo.} Reemplazar el sistema operativo propio por
+    Linux permitió terminar un producto completo en lugar de dos prototipos
+    a medio hacer.
+\end{enumerate}
+
+\section{Trabajo futuro}
+
+\begin{itemize}
+  \item \textbf{Tiempo real en definición estándar}: optimizar la etapa de
+    reconstrucción por compensación de movimiento del núcleo.
+  \item \textbf{Producto}: un procedimiento para rotar o revocar la clave de
+    firma, y una política de soporte de versiones anteriores.
+  \item \textbf{Placa propia}: con memoria flash para actualizar el bitstream
+    en campo, salida de video para aprovechar la cadena de visualización ya
+    presente en el núcleo y monitores de consumo para medir la potencia.
+  \item \textbf{Nuevos usos}: decodificación en vivo de flujos de baja
+    resolución, como los de cámaras de vigilancia, que el sistema ya procesa
+    a más del doble del tiempo real; y una biblioteca cliente en C.
+\end{itemize}
+
+\section{Conclusión final}
+
+El proyecto partió de un núcleo abierto pensado para otra plataforma y
+terminó en un producto: un decodificador MPEG-2 que corre en un SoC FPGA,
+se usa por la red desde cualquier computadora, se libera con versiones
+calificadas en el hardware y se distribuye con su código, su documentación y
+sus licencias. En el camino quedó documentado, con sus errores incluidos,
+todo lo que separa un prototipo que funciona de un producto que otro puede
+usar. Ese recorrido, más que el decodificador en sí, es el resultado que este
+trabajo quiere dejar.

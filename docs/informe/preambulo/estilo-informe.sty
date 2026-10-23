@@ -1,0 +1,114 @@
+% estilo-informe.sty -- aspecto del Informe Final.
+% Compila con Tectonic (XeTeX): las fuentes se cargan por nombre de archivo.
+% Paleta, tipografías y cajas iguales a las de la guía de usuario
+% (firmware_development: user-guide/mpeg2fpga-style.sty): un cambio va en ambos.
+\NeedsTeXFormat{LaTeX2e}
+\ProvidesPackage{estilo-informe}[2026/10/14 Informe final mpeg2fpga]
+
+% ---- tipografía e idioma ---------------------------------------------------------
+\RequirePackage{fontspec}
+\setmainfont{texgyrepagella}[Extension=.otf, UprightFont=*-regular,
+  BoldFont=*-bold, ItalicFont=*-italic, BoldItalicFont=*-bolditalic]
+\setsansfont{texgyreheros}[Extension=.otf, UprightFont=*-regular,
+  BoldFont=*-bold, ItalicFont=*-italic, BoldItalicFont=*-bolditalic]
+\setmonofont{lmmono10}[Extension=.otf, UprightFont=*-regular, Scale=1.02]
+\RequirePackage[english, spanish, es-noshorthands, es-tabla]{babel}
+\RequirePackage{microtype}
+\addto\captionsspanish{\renewcommand{\appendixname}{Anexo}}
+\RequirePackage{csquotes}
+
+% ---- página ----------------------------------------------------------------------
+\RequirePackage[a4paper, top=28mm, bottom=28mm, left=30mm, right=25mm,
+  headheight=15pt, headsep=10mm]{geometry}
+\RequirePackage{xcolor}
+\definecolor{m2navy}{HTML}{14213D}
+\definecolor{m2blue}{HTML}{1D4E89}
+\definecolor{m2teal}{HTML}{0F7173}
+\definecolor{m2amber}{HTML}{E09F3E}
+\definecolor{m2red}{HTML}{9E2A2B}
+\definecolor{m2grey}{HTML}{5C6B73}
+\definecolor{m2paper}{HTML}{F4F6F8}
+
+\RequirePackage{graphicx, booktabs, tabularx, array, multirow, enumitem,
+  lastpage, needspace, pdfpages, longtable, subcaption}
+\graphicspath{{figuras/}{figuras/demo_web/}}
+\setlist{itemsep=2pt, topsep=4pt}
+\setlength{\parskip}{5pt}
+\setlength{\parindent}{0pt}
+\setlength{\emergencystretch}{2em}
+\renewcommand{\arraystretch}{1.15}
+
+% ---- títulos -----------------------------------------------------------------------
+\RequirePackage{titlesec}
+\titleformat{\chapter}[display]
+  {\sffamily\color{m2navy}\raggedright}
+  {\large\scshape\color{m2teal}\chaptertitlename~\thechapter}
+  {2pt}
+  {\bfseries\Huge}
+  [\vspace{4pt}{\color{m2amber}\titlerule[1.4pt]}]
+\titleformat{name=\chapter, numberless}[display]
+  {\sffamily\color{m2navy}\raggedright}{}{0pt}{\bfseries\Huge}
+  [\vspace{4pt}{\color{m2amber}\titlerule[1.4pt]}]
+\titlespacing*{\chapter}{0pt}{-8mm}{10mm}
+\titleformat{\section}{\sffamily\Large\bfseries\color{m2blue}}{\thesection}{0.8em}{}
+\titleformat{\subsection}{\sffamily\large\bfseries\color{m2navy}}{\thesubsection}{0.7em}{}
+\titleformat{\paragraph}[runin]{\sffamily\bfseries\color{m2teal}}{}{0pt}{}[.]
+
+% ---- encabezado y pie ----------------------------------------------------------------
+\RequirePackage{fancyhdr}
+\pagestyle{fancy}
+\fancyhf{}
+\renewcommand{\chaptermark}[1]{\markboth{#1}{}}
+\fancyhead[L]{\sffamily\small\color{m2blue}\textbf{Informe Final}}
+\fancyhead[R]{\sffamily\small\color{m2grey}\leftmark}
+\fancyfoot[C]{\sffamily\small\color{m2grey}\thepage}
+\renewcommand{\headrule}{{\color{m2amber}\hrule height 0.6pt}}
+\renewcommand{\headrulewidth}{0.6pt}
+\fancypagestyle{plain}{\fancyhf{}%
+  \fancyfoot[C]{\sffamily\small\color{m2grey}\thepage}%
+  \renewcommand{\headrulewidth}{0pt}}
+
+% ---- cajas -------------------------------------------------------------------------------
+\RequirePackage[most]{tcolorbox}
+\newtcolorbox{nota}[1][Nota]{enhanced, breakable, colback=m2teal!6, colframe=m2teal,
+  boxrule=0pt, leftrule=3pt, arc=1pt, fonttitle=\sffamily\bfseries\small,
+  coltitle=m2teal, colbacktitle=m2teal!6, title=#1, attach title to upper={\ }}
+\newtcolorbox{advertencia}[1][Atención]{enhanced, breakable, colback=m2amber!10,
+  colframe=m2amber, boxrule=0pt, leftrule=3pt, arc=1pt,
+  fonttitle=\sffamily\bfseries\small, coltitle=m2red, colbacktitle=m2amber!10,
+  title=#1, attach title to upper={\ }}
+
+% ---- código --------------------------------------------------------------------------------
+\RequirePackage{listings}
+\lstdefinestyle{m2}{basicstyle=\ttfamily\small, columns=fullflexible,
+  keepspaces=true, breaklines=true, backgroundcolor=\color{m2paper},
+  frame=l, framerule=2pt, rulecolor=\color{m2blue}, xleftmargin=6pt,
+  framexleftmargin=6pt, aboveskip=6pt, belowskip=6pt,
+  keywordstyle=\color{m2blue}\bfseries, commentstyle=\color{m2grey}\itshape,
+  stringstyle=\color{m2teal}, showstringspaces=false, upquote=true,
+  literate={á}{{\'a}}1 {é}{{\'e}}1 {í}{{\'i}}1 {ó}{{\'o}}1 {ú}{{\'u}}1 {ñ}{{\~n}}1}
+\lstset{style=m2}
+\newcommand{\cmd}[1]{\texttt{\color{m2navy}#1}}
+
+% ---- diagramas -----------------------------------------------------------------------------
+\RequirePackage{tikz}
+\usetikzlibrary{positioning, arrows.meta, shapes.geometric, fit, backgrounds,
+  calc, decorations.pathreplacing}
+\tikzset{
+  blk/.style={draw=m2blue, fill=white, rounded corners=3pt, line width=0.8pt,
+    minimum height=9mm, minimum width=26mm, align=center, font=\sffamily\small},
+  hw/.style={blk, draw=m2teal, fill=m2teal!8},
+  arr/.style={-{Stealth[length=2.6mm]}, line width=0.9pt, color=m2navy},
+  lbl/.style={font=\sffamily\scriptsize, color=m2grey},
+}
+
+% ---- bibliografía (APA, Reglamento sección 3) y enlaces ----------------------------------
+\RequirePackage[natbibapa]{apacite}
+\RequirePackage{url}
+\RequirePackage[colorlinks, linkcolor=m2blue, citecolor=m2teal,
+  urlcolor=m2blue]{hyperref}
+\RequirePackage{bookmark}
+
+% Marca de borrador: texto pendiente de redactar, visible en rojo.
+\newcommand{\pendiente}[1]{{\color{m2red}\sffamily\small[\,PENDIENTE: #1\,]}}
+\endinput

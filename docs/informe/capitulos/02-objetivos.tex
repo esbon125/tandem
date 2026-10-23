@@ -1,0 +1,206 @@
+\chapter{Objetivos y alcance}
+\label{cap:objetivos}
+
+Este capítulo presenta primero los objetivos tal como fueron aprobados en el
+Anteproyecto \citep{Bustamante_2025_anteproyecto}, después los cambios de
+alcance que se acordaron durante la ejecución y, por último, los objetivos y el
+alcance con los que efectivamente se trabajó, de modo que cada cambio pueda
+rastrearse hasta el objetivo original al que afecta.
+
+\section{Objetivos aprobados en el Anteproyecto}
+
+\subsection{Objetivo general}
+
+\begin{quote}
+\itshape
+Implementar el firmware de nivel industrial de un Decoder de Video MPEG-2
+conforme a la norma ISO-IEC 23002-1 prototipado en FPGA, cumplimentando las
+etapas de investigación, diseño, implementación y optimización.
+\end{quote}
+
+\begin{nota}[Corrección de la norma citada]
+La norma que define el video MPEG-2 es la ISO/IEC 13818-2
+\citep{ISO_13818_2}. La ISO/IEC 23002-1, citada por error en el
+Anteproyecto, especifica los requisitos de precisión de la transformada
+inversa del coseno (IDCT) de $8\times8$ y reemplaza al estándar
+IEEE~1180-1990. Esa norma no es ajena al trabajo: la IDCT del núcleo se
+verificó contra las seis condiciones de IEEE~1180
+(capítulo~\ref{cap:hardware}). En el resto de este informe se usa la
+referencia correcta.
+\end{nota}
+
+\subsection{Objetivos específicos}
+\label{sec:obj-especificos-aprobados}
+
+\begin{enumerate}[label=OE\arabic*., leftmargin=3.2em]
+  \item Investigar la evolución de los algoritmos de compresión de video,
+    particularmente los del grupo MPEG.
+  \item Investigar arquitecturas VLSI de dichos algoritmos, particularmente
+    de MPEG-2.
+  \item Investigar y comprender la norma ISO/IEC, sus bases y consecuencias
+    en el desarrollo de un producto.
+  \item Diseñar el firmware con sus tareas de control y configuración del
+    dispositivo.
+  \item Diseñar el sistema operativo que soportará las tareas propias del
+    firmware.
+  \item Implementar el sistema operativo diseñado en el SoC estipulado.
+  \item Implementar el firmware diseñado con sus respectivas tareas.
+  \item Optimizar el sistema realizado en términos de eficiencia de tareas y
+    robustez.
+\end{enumerate}
+
+\section{Redefinición del alcance}
+\label{sec:redefinicion-alcance}
+
+El Reglamento prevé que durante la fase de Proyecto Definitivo se ejecuten,
+además de las acciones planificadas, \enquote{aquéllas que la experiencia
+adquirida indique como oportunas y necesarias para la conclusión del
+proyecto} \citep[punto 2.3]{UTN_FRLR_2023_reglamento}. Los cambios que se
+describen a continuación responden a ese criterio. Dos de ellos reducen el
+alcance original y dos lo amplían, porque la ejecución mostró trabajo
+necesario que el Anteproyecto no había previsto.
+
+\subsection{Sistema operativo: Linux en lugar de un RTOS propio}
+\label{sec:redef-so}
+
+\paragraph{Qué preveía el Anteproyecto}
+Los objetivos OE5 y OE6, con sus etapas de diseño e implementación, planteaban
+diseñar e implementar un sistema operativo de tiempo real propio para el
+subsistema de cuatro núcleos RISC-V de aplicación del PolarFire SoC. La
+justificación era que, \enquote{por tratarse de un sistema en hardware}, el
+sistema operativo debía ser de tiempo real.
+
+\paragraph{Qué se acordó}
+A comienzos de 2026, en febrero, se acordó verbalmente con el docente tutor,
+\tutor, reemplazar el desarrollo del sistema operativo propio por el uso de
+Linux sobre el subsistema de microprocesadores (MSS). El motivo fue acotar el
+alcance del proyecto para que el plazo de finalización resultara realista.
+En ese momento el trabajo había mostrado que llevar el núcleo decodificador a
+PolarFire e integrarlo con el procesador demandaba bastante más esfuerzo del
+previsto (sección~\ref{sec:redef-port}), y un sistema operativo diseñado
+desde cero sumaba, por sí solo, un proyecto de envergadura comparable.
+
+\paragraph{Por qué la decisión es técnicamente sólida}
+La premisa del Anteproyecto, que el sistema necesitaba un sistema operativo de
+tiempo real, no se sostuvo una vez definida la arquitectura. Toda la
+decodificación ocurre en la lógica de la FPGA, con sus propios relojes, y el
+flujo de video entra al núcleo por un motor de DMA implementado en hardware.
+El procesador configura registros, entrega bloques de datos a ese DMA, atiende
+una interrupción por imagen decodificada y transporta los resultados a la red.
+Ninguna de esas tareas tiene un plazo duro del orden de microsegundos: los
+buffers absorben la variación de latencia del sistema operativo. Con esa
+división del trabajo, lo que el procesador sí necesita es lo que Linux ya
+ofrece maduro y probado: controladores de tarjeta SD y Ethernet, pila TCP/IP,
+TLS, un intérprete de Python, un marco de pruebas unitarias para el kernel
+(KUnit) y \emph{overlays} de árbol de dispositivos para describir el hardware
+propio. Escribir todo eso para un RTOS nuevo habría consumido el tiempo del
+proyecto sin agregar valor al decodificador.
+
+\paragraph{A dónde se destinó el esfuerzo}
+El trabajo previsto para el sistema operativo se volcó en el software que
+efectivamente controla el decodificador: un controlador (\emph{driver}) de
+kernel para Linux, desarrollado con pruebas unitarias; un servicio en la
+placa que expone un protocolo de red versionado; una biblioteca cliente; y el
+proceso de liberación del producto. Todo esto se describe en los
+capítulos~\ref{cap:firmware} y~\ref{cap:producto}.
+
+\subsection{Salida de video}
+\label{sec:redef-video}
+
+El núcleo original incluye una cadena de visualización completa en RTL:
+remuestreo de croma, conversión YUV$\to$RGB, superposición de texto en
+pantalla y generación de sincronismos. La placa usada, la PolarFire SoC
+Discovery Kit, no tiene conector de video. Por eso la cadena se mantiene
+instanciada en el diseño pero sus salidas no llegan a ningún pin, y no se
+verificó en hardware. Las imágenes decodificadas se leen de la memoria por
+software y se entregan por red; la conversión de color se hace del lado del
+cliente. Una placa de producto con salida HDMI o DVI podría aprovechar esa
+cadena sin cambios en el núcleo.
+
+\subsection{Ampliación: port del núcleo a PolarFire}
+\label{sec:redef-port}
+
+El Anteproyecto se centraba en el firmware y daba por disponible el
+decodificador \enquote{prototipado en FPGA}. En la práctica, el núcleo de
+partida, mpeg2fpga \citep{De_Vleeschauwer_2017}, estaba escrito para FPGA de
+Xilinx: usaba primitivas de memoria y FIFO propias de ese fabricante,
+suponía tres relojes externos y un controlador de memoria que PolarFire no
+tiene. Adaptarlo e integrarlo con el procesador (puentes a los buses AXI y
+APB, DMA, interrupciones) pasó a ser una parte central del proyecto, junto
+con la depuración en hardware real de los problemas que la simulación no
+mostraba (capítulo~\ref{cap:hardware}).
+
+\subsection{Ampliación: la dimensión de producto}
+\label{sec:redef-producto}
+
+El objetivo general hablaba de un firmware \enquote{de nivel industrial}. Se
+interpretó que eso exige más que código funcionando: un contrato de
+interfaz estable, versiones identificables, un proceso de liberación que
+califique cada versión en el hardware, documentación para el usuario y un
+análisis de las licencias y patentes que condicionan la distribución. Este
+enfoque coincide con lo que el Reglamento pide de todo Trabajo Final, que
+abarque \enquote{los aspectos técnicos, económico-financieros, legales y de
+mercado relativos al producto final del desarrollo} \citep[punto
+1.2]{UTN_FRLR_2023_reglamento}. A esto se dedica el
+capítulo~\ref{cap:producto}.
+
+\section{Objetivos resultantes}
+
+\subsection{Objetivo general}
+
+Desarrollar un decodificador de video MPEG-2 conforme a la norma ISO/IEC
+13818-2 sobre un SoC FPGA PolarFire, controlado desde Linux, y llevarlo a la
+forma de un producto de propiedad intelectual distribuible, con su firmware,
+documentación, licenciamiento y proceso de liberación, recorriendo las etapas
+de investigación, diseño, implementación, verificación y optimización con
+herramientas mayoritariamente libres.
+
+\subsection{Objetivos específicos}
+
+La tabla~\ref{tab:objetivos-trazabilidad} relaciona cada objetivo específico
+resultante con el del Anteproyecto del que proviene. El grado de
+cumplimiento de cada uno se evalúa en el capítulo de conclusiones.
+
+\begin{table}[ht]
+  \centering\small
+  \begin{tabularx}{\linewidth}{@{}l X l@{}}
+    \toprule
+    & \textbf{Objetivo específico resultante} & \textbf{Origen} \\
+    \midrule
+    1 & Investigar la evolución de la compresión de video del grupo MPEG. & OE1 \\
+    2 & Investigar arquitecturas VLSI de decodificación MPEG-2. & OE2 \\
+    3 & Comprender la norma ISO/IEC 13818-2 y sus consecuencias para un producto. & OE3 \\
+    4 & Adaptar el núcleo mpeg2fpga a PolarFire e integrarlo con el MSS. & nuevo \\
+    5 & Seleccionar, poner en marcha y documentar Linux como plataforma del firmware. & OE5, OE6 \\
+    6 & Diseñar el firmware: mapa de registros, driver, servicio y protocolo de red. & OE4 \\
+    7 & Implementar y verificar el firmware diseñado. & OE7 \\
+    8 & Optimizar rendimiento y robustez, con mediciones reproducibles. & OE8 \\
+    9 & Definir licencias, producción, distribución y entregables del producto. & nuevo \\
+    \bottomrule
+  \end{tabularx}
+  \caption{Objetivos específicos resultantes y su origen en el Anteproyecto.}
+  \label{tab:objetivos-trazabilidad}
+\end{table}
+
+\section{Alcance final}
+
+\paragraph{Dentro del alcance}
+Decodificación de flujos elementales de video MPEG-2 (Main Profile, el perfil
+que soporta el núcleo original) en el tejido de la FPGA; control completo
+desde Linux mediante un driver propio; acceso remoto por red mediante un
+protocolo versionado y una biblioteca cliente en Python; verificación por
+simulación y en hardware contra un decodificador de referencia; liberación de
+versiones calificadas en la placa; documentación de usuario.
+
+\paragraph{Fuera del alcance}
+Sistema operativo propio (sección~\ref{sec:redef-so}); salida de video
+física (sección~\ref{sec:redef-video}); demultiplexación de flujos de
+transporte o de programa, que se resuelve del lado del cliente; audio;
+fabricación de una placa propia, cuyos requisitos sí se señalan en el
+capítulo~\ref{cap:producto}.
+
+\paragraph{Limitaciones conocidas}
+El núcleo decodifica solo MPEG-2: los dos flujos MPEG-1 de la batería de
+conformidad no producen imágenes, como ya documentaba el diseño original. Los
+37 flujos MPEG-2 decodifican bit-exactos o dentro de la tolerancia de la IDCT
+(capítulo~\ref{cap:resultados}).
