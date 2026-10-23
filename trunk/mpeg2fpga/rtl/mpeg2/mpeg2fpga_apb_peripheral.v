@@ -1,3 +1,14 @@
+// SPDX-FileCopyrightText: 2026 Esteban Bustamante
+// SPDX-License-Identifier: CERN-OHL-S-2.0
+//
+// This source describes Open Hardware and is licensed under the CERN-OHL-S v2.
+// You may redistribute and modify this source and make products using it
+// under the terms of the CERN-OHL-S v2 (https://ohwr.org/cern_ohl_s_v2.txt).
+// This source is distributed WITHOUT ANY EXPRESS OR IMPLIED WARRANTY,
+// INCLUDING OF MERCHANTABILITY, SATISFACTORY QUALITY AND FITNESS FOR A
+// PARTICULAR PURPOSE. Please see the CERN-OHL-S v2 for applicable conditions.
+// Source location: https://github.com/esbon125/tandem
+//
 /*
  * mpeg2fpga_apb_peripheral.v
  *
@@ -463,9 +474,22 @@ module mpeg2fpga_apb_peripheral (
   wire [31:0] arbiter_flags_combined =
       {8'b0, dma_axi_rvalid, dma_axi_arvalid, dma_state_dbg, arbiter_flags_internal[18:0]};
 
+  /* 2026-10-16: rst_n is PRESETN, released on PCLK, but it also resets
+   * core_clk-domain flops directly (u_bridge's core side, u_stream_dma).
+   * Verify Timing with the real clocks flagged those recovery/removal paths
+   * (-10 ns into u_bridge/rdata_hold): the release could land in different
+   * core_clk cycles for different flops. Asserted asynchronously, released
+   * two core_clk edges later, synchronously. mpeg2video's own `rst` was
+   * already synchronized inside reset.v; this only covers what bypasses it. */
+  reg [1:0] core_rst_sync;
+  always @(posedge clk_internal or negedge rst_n)
+    if (!rst_n) core_rst_sync <= 2'b00;
+    else        core_rst_sync <= {core_rst_sync[0], 1'b1};
+  wire core_rst_n = core_rst_sync[1];
+
   /* 2026-09-03: software-controlled core reset gate, see header comment. */
   wire core_enable_internal;
-  wire gated_rst_n = rst_n && core_enable_internal;
+  wire gated_rst_n = core_rst_n && core_enable_internal;
 
   apb3_mpeg2fpga_bridge u_bridge (
       .PCLK(PCLK), .PRESETn(PRESETn),
@@ -473,7 +497,7 @@ module mpeg2fpga_apb_peripheral (
       .PADDR(PADDR), .PWDATA(PWDATA), .PRDATA(PRDATA), .PREADY(PREADY),
       .PSTRB(PSTRB),
 
-      .core_clk(clk_internal), .core_rst_n(rst_n),
+      .core_clk(clk_internal), .core_rst_n(core_rst_n),
       .reg_addr(reg_addr), .reg_wr_en(reg_wr_en), .reg_dta_in(reg_dta_in),
       .reg_rd_en(reg_rd_en), .reg_dta_out(reg_dta_out),
 

@@ -234,14 +234,23 @@ if { [file exists $project_dir/$project_name.prjx] } {
 # correct. Both organize_tool_files calls below are outside the
 # fresh-project if/else above so they also take effect on an
 # already-existing project when only SYNTHESIZE/VERIFY_TIMING is re-run.
+# The derived clock constraints go in both sets too, as the reference design
+# does: organize_tool_files replaces the set, so registering only the bridge
+# sdc left SYNTHESIZE and VERIFYTIMING with no create_clock at all (found
+# 2026-10-08 through SmartPower: Synplify inferred every clock at its 100 MHz
+# default, and Verify Timing reported paths with no slack to check).
+# PLACEROUTE was never affected: derive_constraints_sdc adds the derived file
+# to its set.
 organize_tool_files \
     -tool {SYNTHESIZE} \
+    -file "${project_dir}/constraint/MPFS_DISCOVERY_KIT_derived_constraints.sdc" \
     -file "${project_dir}/constraint/apb3_mpeg2fpga_bridge_cdc.sdc" \
     -module {MPFS_DISCOVERY_KIT::work} \
     -input_type {constraint}
 
 organize_tool_files \
     -tool {VERIFYTIMING} \
+    -file "${project_dir}/constraint/MPFS_DISCOVERY_KIT_derived_constraints.sdc" \
     -file "${project_dir}/constraint/apb3_mpeg2fpga_bridge_cdc.sdc" \
     -module {MPFS_DISCOVERY_KIT::work} \
     -input_type {constraint}

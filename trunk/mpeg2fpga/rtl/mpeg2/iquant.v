@@ -82,7 +82,7 @@ module intra_quant_matrix(clk, rst, rd_addr, rd_clk_en, dta_out, wr_addr, dta_in
       case (state)
         STATE_INIT:  iquant_wr_addr <= 6'b0;
 	STATE_CLEAR: iquant_wr_addr <= iquant_wr_addr + 6'b1;
-	STATE_RUN:   iquant_wr_addr <= scan_reverse(alternate_scan, wr_addr);
+	STATE_RUN:   iquant_wr_addr <= scan_reverse(1'b0, wr_addr);  // matrices are always sent in scan 0 order (par. 6.3.11), whatever alternate_scan the previous picture left
 	default      iquant_wr_addr <= 6'b0;
       endcase
 
@@ -225,7 +225,7 @@ module intra_quant_matrix(clk, rst, rd_addr, rd_clk_en, dta_out, wr_addr, dta_in
     else if (wr_clk_en && wr_en) $display("%m\tset to uploaded table");
 
   always @(posedge clk)
-    if (wr_clk_en && wr_en) #0 $display("%m\twrite %h to %h (was %h)", dta_in, scan_reverse(alternate_scan, wr_addr), wr_addr);
+    if (wr_clk_en && wr_en) #0 $display("%m\twrite %h to %h (was %h)", dta_in, scan_reverse(1'b0, wr_addr), wr_addr);
 
 `endif 
 
@@ -291,7 +291,7 @@ module non_intra_quant_matrix(clk, rst, rd_addr, rd_clk_en, dta_out, wr_addr, dt
       case (state)
         STATE_INIT:  non_iquant_wr_addr <= 6'b0;
 	STATE_CLEAR: non_iquant_wr_addr <= non_iquant_wr_addr + 6'b1;
-	STATE_RUN:   non_iquant_wr_addr <= scan_reverse(alternate_scan, wr_addr);
+	STATE_RUN:   non_iquant_wr_addr <= scan_reverse(1'b0, wr_addr);  // always scan 0, see intra_quant_matrix
 	default      non_iquant_wr_addr <= 6'b0;
       endcase
 
@@ -351,7 +351,7 @@ module non_intra_quant_matrix(clk, rst, rd_addr, rd_clk_en, dta_out, wr_addr, dt
     else if (wr_clk_en && wr_en && (wr_addr == 6'h3f)) $display("%m\tset to uploaded table");
 
   always @(posedge clk)
-    if (wr_clk_en && wr_en) #0 $display("%m\twrite %h to %h (was %h)", dta_in, scan_reverse(alternate_scan, wr_addr), wr_addr);
+    if (wr_clk_en && wr_en) #0 $display("%m\twrite %h to %h (was %h)", dta_in, scan_reverse(1'b0, wr_addr), wr_addr);
 
 `endif 
 
