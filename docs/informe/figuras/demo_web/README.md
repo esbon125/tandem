@@ -12,7 +12,7 @@ Para regenerarlas (la demo en vivo tiene que estar en línea):
 
 ```sh
 NODE_PATH=<dir con puppeteer-core>/node_modules node capture_screenshots.js OUTDIR \
-    --resolve localhost-0.tail5099f3.ts.net=$(dig +short @8.8.8.8 localhost-0.tail5099f3.ts.net | head -1) \
+    --resolve mpeg2fpga.tail5099f3.ts.net=$(dig +short @8.8.8.8 mpeg2fpga.tail5099f3.ts.net | head -1) \
     --upload <un video cualquiera>
 ```
 
