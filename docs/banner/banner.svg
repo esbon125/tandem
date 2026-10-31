@@ -1,0 +1,211 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape" xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd" width="900mm" height="1900mm" viewBox="0 0 900 1900" version="1.1">
+<title>Banner - Decodificador MPEG-2 en SoC FPGA con Linux</title>
+<sodipodi:namedview id="namedview" inkscape:document-units="mm" pagecolor="#ffffff" bordercolor="#666666" showgrid="false"/>
+<defs>
+<linearGradient id="m2navy" inkscape:swatch="solid" inkscape:label="m2navy"><stop offset="0" style="stop-color:#14213D;stop-opacity:1"/></linearGradient>
+<linearGradient id="m2blue" inkscape:swatch="solid" inkscape:label="m2blue"><stop offset="0" style="stop-color:#1D4E89;stop-opacity:1"/></linearGradient>
+<linearGradient id="m2teal" inkscape:swatch="solid" inkscape:label="m2teal"><stop offset="0" style="stop-color:#0F7173;stop-opacity:1"/></linearGradient>
+<linearGradient id="m2amber" inkscape:swatch="solid" inkscape:label="m2amber"><stop offset="0" style="stop-color:#E09F3E;stop-opacity:1"/></linearGradient>
+<linearGradient id="m2red" inkscape:swatch="solid" inkscape:label="m2red"><stop offset="0" style="stop-color:#9E2A2B;stop-opacity:1"/></linearGradient>
+<linearGradient id="m2grey" inkscape:swatch="solid" inkscape:label="m2grey"><stop offset="0" style="stop-color:#5C6B73;stop-opacity:1"/></linearGradient>
+<linearGradient id="m2paper" inkscape:swatch="solid" inkscape:label="m2paper"><stop offset="0" style="stop-color:#F4F6F8;stop-opacity:1"/></linearGradient>
+<marker id="flecha" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5" markerHeight="5" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#5C6B73"/></marker>
+<marker id="flecha-ini" viewBox="0 0 10 10" refX="1" refY="5" markerWidth="5" markerHeight="5" orient="auto"><path d="M10,0 L0,5 L10,10 z" fill="#5C6B73"/></marker>
+</defs>
+<g inkscape:groupmode="layer" inkscape:label="Fondo" sodipodi:insensitive="true">
+<rect x="0" y="0" width="900" height="1900" fill="#F4F6F8"/>
+<rect x="0" y="0" width="900" height="500" fill="#14213D"/>
+<rect x="0" y="500" width="900" height="8" fill="#E09F3E"/>
+<rect x="0" y="1770" width="900" height="130" fill="#14213D"/>
+</g>
+<g inkscape:groupmode="layer" inkscape:label="Contenido">
+<g id="encabezado">
+<g id="logo-utn" transform="translate(50,50) scale(0.16443)"><path d="m246.6 0h102v190.8c80.8-22.4 140.4-96.7 140.4-184.4h106.3c0 146.5-106.8 268.9-246.6 293.2v4.4h233.9v104.2h-214.4c130 31.8 227 149.5 227 289.1h-106.2c0-87.7-59.6-162-140.3-184.4v186.5h-102v-186.5c-80.7 22.4-140.3 96.7-140.3 184.4h-106.4c0-139.6 97-257.3 227-289.1h-214.2v-104.2h233.9v-4.4c-139.9-24.3-246.7-146.7-246.7-293.2h106.3c0 87.7 59.6 162 140.3 184.4z" fill="#FFFFFF" fill-rule="evenodd"/></g>
+<text x="175.9" y="80" font-family="Montserrat" font-size="24" font-weight="700" fill="#FFFFFF" text-anchor="start" xml:space="preserve">
+<tspan x="175.9" dy="0">Universidad Tecnológica Nacional</tspan>
+<tspan x="175.9" dy="32.4">Facultad Regional La Rioja</tspan>
+</text>
+<text x="175.9" y="155" font-family="Montserrat" font-size="19" font-weight="500" fill="#E09F3E" text-anchor="start" xml:space="preserve">
+<tspan x="175.9" dy="0">Ingeniería Electrónica · Proyecto Final</tspan>
+</text>
+<text id="titulo" x="50" y="268" font-family="Montserrat" font-size="58" font-weight="800" fill="#FFFFFF" text-anchor="start" xml:space="preserve">
+<tspan x="50" dy="0">Decodificador de video</tspan>
+<tspan x="50" dy="64.96"><tspan fill="#E09F3E" font-weight="800">MPEG-2</tspan><tspan fill="#FFFFFF" font-weight="800"> en SoC FPGA</tspan></tspan>
+<tspan x="50" dy="64.96">con Linux</tspan>
+</text>
+<text id="subtitulo" x="50" y="432" font-family="Montserrat" font-size="23" font-weight="500" fill="#9FD3D4" text-anchor="start" xml:space="preserve">
+<tspan x="50" dy="0">Desarrollo integral de un producto de propiedad intelectual</tspan>
+</text>
+<text id="autores" x="50" y="474" font-family="Montserrat" font-size="19" font-weight="400" fill="#14213D" text-anchor="start" xml:space="preserve">
+<tspan x="50" dy="0"><tspan fill="#FFFFFF" font-weight="700">Esteban Adriel Bustamante</tspan><tspan fill="#C9D1DC" font-weight="400">   ·   Tutor: Ing. Ricardo Maldonado</tspan></tspan>
+</text>
+</g>
+<text id="bajada" x="50" y="566" font-family="Montserrat" font-size="19" font-weight="500" fill="#14213D" text-anchor="start" xml:space="preserve">
+<tspan x="50" dy="0">Un decodificador de video MPEG-2</tspan>
+<tspan x="50" dy="27.55">(ISO/IEC 13818-2) hecho en hardware</tspan>
+<tspan x="50" dy="27.55">sobre un SoC FPGA PolarFire,</tspan>
+<tspan x="50" dy="27.55">manejado desde Linux y llevado a</tspan>
+<tspan x="50" dy="27.55">producto: RTL, driver, protocolo de</tspan>
+<tspan x="50" dy="27.55">red, documentación y versiones</tspan>
+<tspan x="50" dy="27.55">firmadas.</tspan>
+</text>
+<clipPath id="recorte-foto"><rect x="505" y="548" width="345" height="460" rx="10"/></clipPath>
+<image id="foto-setup" x="505" y="548" width="345" height="460" preserveAspectRatio="xMidYMid slice" clip-path="url(#recorte-foto)" xlink:href="placa.jpg"/>
+<text id="epigrafe-foto" x="505" y="1030" font-family="Montserrat" font-size="14" font-weight="500" fill="#5C6B73" text-anchor="start" xml:space="preserve">
+<tspan x="505" dy="0">La Discovery Kit en su caja, con la</tspan>
+<tspan x="505" dy="18.9">demostración web corriendo de fondo</tspan>
+</text>
+<g id="qr-demo">
+<rect x="50" y="758" width="425" height="250" rx="10" fill="#FFFFFF"/>
+<path d="M50,808v-40a10,10 0 0 1 10,-10h405a10,10 0 0 1 10,10v40z" fill="#0F7173"/>
+<text x="70" y="792" font-family="Montserrat" font-size="23" font-weight="800" fill="#FFFFFF" text-anchor="start" xml:space="preserve">
+<tspan x="70" dy="0">Probalo en vivo</tspan>
+</text>
+<path id="qr" d="M68.000,820.000h42.483v6.069h-42.483zM116.552,820.000h6.069v6.069h-6.069zM134.759,820.000h12.138v6.069h-12.138zM159.034,820.000h12.138v6.069h-12.138zM177.241,820.000h18.207v6.069h-18.207zM201.517,820.000h42.483v6.069h-42.483zM68.000,826.069h6.069v6.069h-6.069zM104.414,826.069h6.069v6.069h-6.069zM116.552,826.069h18.207v6.069h-18.207zM152.966,826.069h12.138v6.069h-12.138zM201.517,826.069h6.069v6.069h-6.069zM237.931,826.069h6.069v6.069h-6.069zM68.000,832.138h6.069v6.069h-6.069zM80.138,832.138h18.207v6.069h-18.207zM104.414,832.138h6.069v6.069h-6.069zM128.690,832.138h12.138v6.069h-12.138zM146.897,832.138h18.207v6.069h-18.207zM183.310,832.138h12.138v6.069h-12.138zM201.517,832.138h6.069v6.069h-6.069zM213.655,832.138h18.207v6.069h-18.207zM237.931,832.138h6.069v6.069h-6.069zM68.000,838.207h6.069v6.069h-6.069zM80.138,838.207h18.207v6.069h-18.207zM104.414,838.207h6.069v6.069h-6.069zM116.552,838.207h30.345v6.069h-30.345zM171.172,838.207h12.138v6.069h-12.138zM189.379,838.207h6.069v6.069h-6.069zM201.517,838.207h6.069v6.069h-6.069zM213.655,838.207h18.207v6.069h-18.207zM237.931,838.207h6.069v6.069h-6.069zM68.000,844.276h6.069v6.069h-6.069zM80.138,844.276h18.207v6.069h-18.207zM104.414,844.276h6.069v6.069h-6.069zM122.621,844.276h12.138v6.069h-12.138zM140.828,844.276h12.138v6.069h-12.138zM183.310,844.276h6.069v6.069h-6.069zM201.517,844.276h6.069v6.069h-6.069zM213.655,844.276h18.207v6.069h-18.207zM237.931,844.276h6.069v6.069h-6.069zM68.000,850.345h6.069v6.069h-6.069zM104.414,850.345h6.069v6.069h-6.069zM122.621,850.345h6.069v6.069h-6.069zM152.966,850.345h6.069v6.069h-6.069zM165.103,850.345h24.276v6.069h-24.276zM201.517,850.345h6.069v6.069h-6.069zM237.931,850.345h6.069v6.069h-6.069zM68.000,856.414h42.483v6.069h-42.483zM116.552,856.414h6.069v6.069h-6.069zM128.690,856.414h6.069v6.069h-6.069zM140.828,856.414h6.069v6.069h-6.069zM152.966,856.414h6.069v6.069h-6.069zM165.103,856.414h6.069v6.069h-6.069zM177.241,856.414h6.069v6.069h-6.069zM189.379,856.414h6.069v6.069h-6.069zM201.517,856.414h42.483v6.069h-42.483zM116.552,862.483h6.069v6.069h-6.069zM128.690,862.483h6.069v6.069h-6.069zM146.897,862.483h12.138v6.069h-12.138zM171.172,862.483h6.069v6.069h-6.069zM189.379,862.483h6.069v6.069h-6.069zM68.000,868.552h6.069v6.069h-6.069zM80.138,868.552h12.138v6.069h-12.138zM98.345,868.552h18.207v6.069h-18.207zM122.621,868.552h6.069v6.069h-6.069zM134.759,868.552h24.276v6.069h-24.276zM165.103,868.552h18.207v6.069h-18.207zM201.517,868.552h6.069v6.069h-6.069zM219.724,868.552h6.069v6.069h-6.069zM231.862,868.552h12.138v6.069h-12.138zM92.276,874.621h12.138v6.069h-12.138zM110.483,874.621h12.138v6.069h-12.138zM128.690,874.621h6.069v6.069h-6.069zM140.828,874.621h6.069v6.069h-6.069zM159.034,874.621h6.069v6.069h-6.069zM171.172,874.621h48.552v6.069h-48.552zM237.931,874.621h6.069v6.069h-6.069zM68.000,880.690h12.138v6.069h-12.138zM98.345,880.690h48.552v6.069h-48.552zM152.966,880.690h6.069v6.069h-6.069zM165.103,880.690h12.138v6.069h-12.138zM189.379,880.690h18.207v6.069h-18.207zM213.655,880.690h6.069v6.069h-6.069zM225.793,880.690h12.138v6.069h-12.138zM80.138,886.759h12.138v6.069h-12.138zM116.552,886.759h6.069v6.069h-6.069zM128.690,886.759h36.414v6.069h-36.414zM177.241,886.759h18.207v6.069h-18.207zM207.586,886.759h12.138v6.069h-12.138zM237.931,886.759h6.069v6.069h-6.069zM68.000,892.828h12.138v6.069h-12.138zM104.414,892.828h36.414v6.069h-36.414zM171.172,892.828h6.069v6.069h-6.069zM189.379,892.828h12.138v6.069h-12.138zM219.724,892.828h12.138v6.069h-12.138zM68.000,898.897h6.069v6.069h-6.069zM80.138,898.897h6.069v6.069h-6.069zM122.621,898.897h6.069v6.069h-6.069zM134.759,898.897h18.207v6.069h-18.207zM159.034,898.897h6.069v6.069h-6.069zM183.310,898.897h6.069v6.069h-6.069zM195.448,898.897h12.138v6.069h-12.138zM225.793,898.897h18.207v6.069h-18.207zM74.069,904.966h6.069v6.069h-6.069zM92.276,904.966h24.276v6.069h-24.276zM152.966,904.966h6.069v6.069h-6.069zM171.172,904.966h24.276v6.069h-24.276zM201.517,904.966h6.069v6.069h-6.069zM213.655,904.966h6.069v6.069h-6.069zM225.793,904.966h18.207v6.069h-18.207zM68.000,911.034h6.069v6.069h-6.069zM86.207,911.034h6.069v6.069h-6.069zM98.345,911.034h6.069v6.069h-6.069zM110.483,911.034h6.069v6.069h-6.069zM122.621,911.034h6.069v6.069h-6.069zM146.897,911.034h6.069v6.069h-6.069zM159.034,911.034h12.138v6.069h-12.138zM213.655,911.034h6.069v6.069h-6.069zM231.862,911.034h6.069v6.069h-6.069zM74.069,917.103h12.138v6.069h-12.138zM104.414,917.103h12.138v6.069h-12.138zM122.621,917.103h24.276v6.069h-24.276zM159.034,917.103h6.069v6.069h-6.069zM183.310,917.103h12.138v6.069h-12.138zM207.586,917.103h18.207v6.069h-18.207zM231.862,917.103h6.069v6.069h-6.069zM92.276,923.172h12.138v6.069h-12.138zM110.483,923.172h6.069v6.069h-6.069zM140.828,923.172h12.138v6.069h-12.138zM159.034,923.172h6.069v6.069h-6.069zM171.172,923.172h6.069v6.069h-6.069zM189.379,923.172h12.138v6.069h-12.138zM207.586,923.172h6.069v6.069h-6.069zM219.724,923.172h18.207v6.069h-18.207zM68.000,929.241h6.069v6.069h-6.069zM104.414,929.241h12.138v6.069h-12.138zM122.621,929.241h18.207v6.069h-18.207zM159.034,929.241h18.207v6.069h-18.207zM189.379,929.241h12.138v6.069h-12.138zM207.586,929.241h6.069v6.069h-6.069zM225.793,929.241h6.069v6.069h-6.069zM86.207,935.310h12.138v6.069h-12.138zM110.483,935.310h6.069v6.069h-6.069zM128.690,935.310h6.069v6.069h-6.069zM140.828,935.310h6.069v6.069h-6.069zM165.103,935.310h24.276v6.069h-24.276zM201.517,935.310h12.138v6.069h-12.138zM225.793,935.310h6.069v6.069h-6.069zM74.069,941.379h6.069v6.069h-6.069zM86.207,941.379h12.138v6.069h-12.138zM104.414,941.379h12.138v6.069h-12.138zM128.690,941.379h6.069v6.069h-6.069zM140.828,941.379h12.138v6.069h-12.138zM165.103,941.379h66.759v6.069h-66.759zM116.552,947.448h12.138v6.069h-12.138zM134.759,947.448h6.069v6.069h-6.069zM146.897,947.448h12.138v6.069h-12.138zM165.103,947.448h6.069v6.069h-6.069zM189.379,947.448h6.069v6.069h-6.069zM213.655,947.448h30.345v6.069h-30.345zM68.000,953.517h42.483v6.069h-42.483zM116.552,953.517h6.069v6.069h-6.069zM140.828,953.517h12.138v6.069h-12.138zM171.172,953.517h24.276v6.069h-24.276zM201.517,953.517h6.069v6.069h-6.069zM213.655,953.517h12.138v6.069h-12.138zM231.862,953.517h6.069v6.069h-6.069zM68.000,959.586h6.069v6.069h-6.069zM104.414,959.586h6.069v6.069h-6.069zM116.552,959.586h12.138v6.069h-12.138zM140.828,959.586h6.069v6.069h-6.069zM189.379,959.586h6.069v6.069h-6.069zM213.655,959.586h12.138v6.069h-12.138zM68.000,965.655h6.069v6.069h-6.069zM80.138,965.655h18.207v6.069h-18.207zM104.414,965.655h6.069v6.069h-6.069zM122.621,965.655h18.207v6.069h-18.207zM152.966,965.655h12.138v6.069h-12.138zM171.172,965.655h6.069v6.069h-6.069zM189.379,965.655h30.345v6.069h-30.345zM225.793,965.655h12.138v6.069h-12.138zM68.000,971.724h6.069v6.069h-6.069zM80.138,971.724h18.207v6.069h-18.207zM104.414,971.724h6.069v6.069h-6.069zM116.552,971.724h6.069v6.069h-6.069zM134.759,971.724h12.138v6.069h-12.138zM152.966,971.724h24.276v6.069h-24.276zM213.655,971.724h12.138v6.069h-12.138zM237.931,971.724h6.069v6.069h-6.069zM68.000,977.793h6.069v6.069h-6.069zM80.138,977.793h18.207v6.069h-18.207zM104.414,977.793h6.069v6.069h-6.069zM116.552,977.793h12.138v6.069h-12.138zM140.828,977.793h6.069v6.069h-6.069zM152.966,977.793h6.069v6.069h-6.069zM165.103,977.793h6.069v6.069h-6.069zM189.379,977.793h12.138v6.069h-12.138zM207.586,977.793h6.069v6.069h-6.069zM225.793,977.793h6.069v6.069h-6.069zM237.931,977.793h6.069v6.069h-6.069zM68.000,983.862h6.069v6.069h-6.069zM104.414,983.862h6.069v6.069h-6.069zM128.690,983.862h12.138v6.069h-12.138zM152.966,983.862h6.069v6.069h-6.069zM165.103,983.862h6.069v6.069h-6.069zM189.379,983.862h6.069v6.069h-6.069zM207.586,983.862h18.207v6.069h-18.207zM231.862,983.862h6.069v6.069h-6.069zM68.000,989.931h42.483v6.069h-42.483zM116.552,989.931h12.138v6.069h-12.138zM140.828,989.931h6.069v6.069h-6.069zM152.966,989.931h12.138v6.069h-12.138zM177.241,989.931h6.069v6.069h-6.069zM189.379,989.931h12.138v6.069h-12.138zM231.862,989.931h6.069v6.069h-6.069z" fill="#14213D"/>
+<text x="264" y="860" font-family="Montserrat" font-size="17" font-weight="600" fill="#14213D" text-anchor="start" xml:space="preserve">
+<tspan x="264" dy="0">Escaneá, subí</tspan>
+<tspan x="264" dy="23.8">un video y</tspan>
+<tspan x="264" dy="23.8">decodificalo</tspan>
+<tspan x="264" dy="23.8">en la FPGA</tspan>
+<tspan x="264" dy="23.8">desde el celular</tspan>
+</text>
+</g>
+<text x="50" y="1100" font-family="Montserrat" font-size="30" font-weight="800" fill="#14213D" text-anchor="start" xml:space="preserve">
+<tspan x="50" dy="0">Cómo funciona</tspan>
+</text>
+<rect x="50" y="1109" width="70" height="4" fill="#E09F3E"/>
+<g id="diagrama">
+<rect x="200" y="1125" width="500" height="62" rx="6" fill="#FFFFFF" stroke="#1D4E89" stroke-width="2"/>
+<text x="450.0" y="1153" font-family="Montserrat" font-size="20" font-weight="700" fill="#1D4E89" text-anchor="middle" xml:space="preserve">
+<tspan x="450.0" dy="0">Navegador · biblioteca Python</tspan>
+</text>
+<text x="450.0" y="1175" font-family="Montserrat" font-size="14.5" font-weight="400" fill="#5C6B73" text-anchor="middle" xml:space="preserve">
+<tspan x="450.0" dy="0">envía el video y recibe las imágenes</tspan>
+</text>
+<line x1="390.0" y1="1191" x2="390.0" y2="1225" stroke="#5C6B73" stroke-width="2.4" marker-end="url(#flecha)"/>
+<line x1="510.0" y1="1225" x2="510.0" y2="1191" stroke="#5C6B73" stroke-width="2.4" marker-end="url(#flecha)"/>
+<text x="375.0" y="1214" font-family="Montserrat" font-size="15" font-weight="600" fill="#5C6B73" text-anchor="end" xml:space="preserve">
+<tspan x="375.0" dy="0">flujo MPEG-2</tspan>
+</text>
+<text x="525.0" y="1214" font-family="Montserrat" font-size="15" font-weight="600" fill="#5C6B73" text-anchor="start" xml:space="preserve">
+<tspan x="525.0" dy="0">imágenes</tspan>
+</text>
+<text x="450.0" y="1214" font-family="Montserrat" font-size="14" font-weight="400" fill="#5C6B73" text-anchor="middle" xml:space="preserve">
+<tspan x="450.0" dy="0">red</tspan>
+</text>
+<rect x="50" y="1229" width="800" height="200" rx="10" fill="#E4E9EF" stroke="#14213D" stroke-width="2"/>
+<text x="68" y="1257" font-family="Montserrat" font-size="18" font-weight="800" fill="#14213D" text-anchor="start" xml:space="preserve">
+<tspan x="68" dy="0">PolarFire SoC</tspan>
+</text>
+<rect x="68" y="1269" width="345" height="143" rx="6" fill="#FFFFFF" stroke="#1D4E89" stroke-width="2"/>
+<rect x="68" y="1269" width="345" height="40" rx="6" fill="#1D4E89"/>
+<text x="240.5" y="1296" font-family="Montserrat" font-size="19" font-weight="700" fill="#FFFFFF" text-anchor="middle" xml:space="preserve">
+<tspan x="240.5" dy="0">5 núcleos RISC-V</tspan>
+</text>
+<text x="86" y="1339" font-family="Montserrat" font-size="16" font-weight="500" fill="#14213D" text-anchor="start" xml:space="preserve">
+<tspan x="86" dy="0">Linux</tspan>
+<tspan x="86" dy="23.2">driver de kernel con pruebas</tspan>
+<tspan x="86" dy="23.2">servicio de red, protocolo v1</tspan>
+</text>
+<rect x="487" y="1269" width="345" height="143" rx="6" fill="#FFFFFF" stroke="#0F7173" stroke-width="2"/>
+<rect x="487" y="1269" width="345" height="40" rx="6" fill="#0F7173"/>
+<text x="659.5" y="1296" font-family="Montserrat" font-size="19" font-weight="700" fill="#FFFFFF" text-anchor="middle" xml:space="preserve">
+<tspan x="659.5" dy="0">Lógica FPGA</tspan>
+</text>
+<text x="505" y="1339" font-family="Montserrat" font-size="16" font-weight="500" fill="#14213D" text-anchor="start" xml:space="preserve">
+<tspan x="505" dy="0">núcleo decodificador MPEG-2</tspan>
+<tspan x="505" dy="23.2">VLD → IDCT → compensación</tspan>
+<tspan x="505" dy="23.2">puentes APB y AXI4, DMA</tspan>
+</text>
+<line x1="417" y1="1364" x2="483" y2="1364" stroke="#5C6B73" stroke-width="2.4" marker-start="url(#flecha-ini)" marker-end="url(#flecha)"/>
+<text x="450.0" y="1354" font-family="Montserrat" font-size="13" font-weight="600" fill="#5C6B73" text-anchor="middle" xml:space="preserve">
+<tspan x="450.0" dy="0">regs</tspan>
+</text>
+<text x="450.0" y="1386" font-family="Montserrat" font-size="13" font-weight="600" fill="#5C6B73" text-anchor="middle" xml:space="preserve">
+<tspan x="450.0" dy="0">IRQ</tspan>
+</text>
+<rect x="200" y="1453" width="500" height="60" rx="6" fill="#FFFFFF" stroke="#5C6B73" stroke-width="2"/>
+<text x="450.0" y="1479" font-family="Montserrat" font-size="19" font-weight="700" fill="#14213D" text-anchor="middle" xml:space="preserve">
+<tspan x="450.0" dy="0">Memoria DDR4</tspan>
+</text>
+<text x="450.0" y="1501" font-family="Montserrat" font-size="14.5" font-weight="400" fill="#5C6B73" text-anchor="middle" xml:space="preserve">
+<tspan x="450.0" dy="0">buffer de video y memoria de cuadros</tspan>
+</text>
+<line x1="240.5" y1="1416" x2="240.5" y2="1449" stroke="#5C6B73" stroke-width="2.4" marker-start="url(#flecha-ini)" marker-end="url(#flecha)"/>
+<line x1="659.5" y1="1416" x2="659.5" y2="1449" stroke="#5C6B73" stroke-width="2.4" marker-start="url(#flecha-ini)" marker-end="url(#flecha)"/>
+</g>
+<text x="50" y="1557" font-family="Montserrat" font-size="30" font-weight="800" fill="#14213D" text-anchor="start" xml:space="preserve">
+<tspan x="50" dy="0">Resultados</tspan>
+</text>
+<rect x="50" y="1566" width="70" height="4" fill="#E09F3E"/>
+<g id="cifras">
+<rect x="50.0" y="1580" width="256.0" height="86" rx="8" fill="#FFFFFF"/>
+<rect x="50.00" y="1580" width="6" height="86" fill="#E09F3E"/>
+<text x="72.0" y="1620" font-family="Montserrat" font-size="32" font-weight="800" fill="#14213D" text-anchor="start" xml:space="preserve">
+<tspan x="72.0" dy="0">bit a bit</tspan>
+</text>
+<text x="72.0" y="1642" font-family="Montserrat" font-size="13.5" font-weight="500" fill="#5C6B73" text-anchor="start" xml:space="preserve">
+<tspan x="72.0" dy="0">hardware idéntico a la</tspan>
+<tspan x="72.0" dy="17.55">simulación del diseño original</tspan>
+</text>
+<rect x="322.0" y="1580" width="256.0" height="86" rx="8" fill="#FFFFFF"/>
+<rect x="322.00" y="1580" width="6" height="86" fill="#0F7173"/>
+<text x="344.0" y="1620" font-family="Montserrat" font-size="32" font-weight="800" fill="#14213D" text-anchor="start" xml:space="preserve">
+<tspan x="344.0" dy="0">37 / 37</tspan>
+</text>
+<text x="344.0" y="1642" font-family="Montserrat" font-size="13.5" font-weight="500" fill="#5C6B73" text-anchor="start" xml:space="preserve">
+<tspan x="344.0" dy="0">flujos de conformidad</tspan>
+<tspan x="344.0" dy="17.55">dentro de la norma</tspan>
+</text>
+<rect x="594.0" y="1580" width="256.0" height="86" rx="8" fill="#FFFFFF"/>
+<rect x="594.00" y="1580" width="6" height="86" fill="#E09F3E"/>
+<text x="616.0" y="1620" font-family="Montserrat" font-size="32" font-weight="800" fill="#14213D" text-anchor="start" xml:space="preserve">
+<tspan x="616.0" dy="0">2,2×</tspan>
+</text>
+<text x="616.0" y="1642" font-family="Montserrat" font-size="13.5" font-weight="500" fill="#5C6B73" text-anchor="start" xml:space="preserve">
+<tspan x="616.0" dy="0">tiempo real en CIF</tspan>
+<tspan x="616.0" dy="17.55">53,7 imágenes por segundo</tspan>
+</text>
+<rect x="50.0" y="1676" width="256.0" height="86" rx="8" fill="#FFFFFF"/>
+<rect x="50.00" y="1676" width="6" height="86" fill="#0F7173"/>
+<text x="72.0" y="1716" font-family="Montserrat" font-size="32" font-weight="800" fill="#14213D" text-anchor="start" xml:space="preserve">
+<tspan x="72.0" dy="0">IEEE 1180</tspan>
+</text>
+<text x="72.0" y="1738" font-family="Montserrat" font-size="13.5" font-weight="500" fill="#5C6B73" text-anchor="start" xml:space="preserve">
+<tspan x="72.0" dy="0">la IDCT cumple las</tspan>
+<tspan x="72.0" dy="17.55">seis condiciones del estándar</tspan>
+</text>
+<rect x="322.0" y="1676" width="256.0" height="86" rx="8" fill="#FFFFFF"/>
+<rect x="322.00" y="1676" width="6" height="86" fill="#E09F3E"/>
+<text x="344.0" y="1716" font-family="Montserrat" font-size="32" font-weight="800" fill="#14213D" text-anchor="start" xml:space="preserve">
+<tspan x="344.0" dy="0">68 mW</tspan>
+</text>
+<text x="344.0" y="1738" font-family="Montserrat" font-size="13.5" font-weight="500" fill="#5C6B73" text-anchor="start" xml:space="preserve">
+<tspan x="344.0" dy="0">consumo estimado</tspan>
+<tspan x="344.0" dy="17.55">del decodificador</tspan>
+</text>
+<rect x="594.0" y="1676" width="256.0" height="86" rx="8" fill="#FFFFFF"/>
+<rect x="594.00" y="1676" width="6" height="86" fill="#0F7173"/>
+<text x="616.0" y="1716" font-family="Montserrat" font-size="32" font-weight="800" fill="#14213D" text-anchor="start" xml:space="preserve">
+<tspan x="616.0" dy="0">USD 133</tspan>
+</text>
+<text x="616.0" y="1738" font-family="Montserrat" font-size="13.5" font-weight="500" fill="#5C6B73" text-anchor="start" xml:space="preserve">
+<tspan x="616.0" dy="0">costo total</tspan>
+<tspan x="616.0" dy="17.55">del hardware</tspan>
+</text>
+</g>
+</g>
+<g inkscape:groupmode="layer" inkscape:label="Pie">
+<text x="50" y="1820" font-family="Montserrat" font-size="16" font-weight="400" fill="#14213D" text-anchor="start" xml:space="preserve">
+<tspan x="50" dy="0"><tspan fill="#E09F3E" font-weight="700">Licencias abiertas: </tspan><tspan fill="#FFFFFF" font-weight="500">CERN-OHL-S (hardware) · MIT (software)</tspan></tspan>
+<tspan x="50" dy="24.0"><tspan fill="#E09F3E" font-weight="700">Entregables: </tspan><tspan fill="#FFFFFF" font-weight="500">versiones firmadas · manual de usuario · manual de referencia</tspan></tspan>
+</text>
+<text x="50" y="1876" font-family="Montserrat" font-size="13.5" font-weight="400" fill="#9FB0C3" text-anchor="start" xml:space="preserve">
+<tspan x="50" dy="0">Herramientas: Icarus Verilog · Linux · Python · FFmpeg · KUnit · Renode · Git · Libero SoC</tspan>
+</text>
+</g>
+<g inkscape:groupmode="layer" inkscape:label="Guias (no imprimir)" style="display:none" sodipodi:insensitive="true">
+<rect x="50" y="50" width="800" height="1800" fill="none" stroke="#FF00FF" stroke-width="1" stroke-dasharray="8 6"/>
+</g>
+</svg>
