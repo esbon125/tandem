@@ -9,7 +9,8 @@ Lista viva: se actualiza cada vez que se cierra o aparece algo. Las marcas
 - [x] Agradecimientos
 - [x] Mes de entrega: automático, siempre el mes en curso al compilar (`\fechaentrega` en `informe.tex`)
 - [x] Tapa de Scribus (`portada/tapa-scribus.pdf`, para imprenta; el informe usa solo el panel de la tapa, seguido de la portada interior del Anexo 5)
-- [ ] Texto oficial de la licencia del RIA (Ordenanza 1514), con firma (`portada/licencia-ria.tex`)
+- [x] Foto del montaje (`figuras/montaje.jpg`, fig. 9.1; también en el banner `docs/banner/`). Es la versión comprimida de 960×1280: reemplazar por el original del celular si se consigue
+- [x] Licencia del RIA: se presenta aparte en el formulario oficial; la página se quitó del informe
 
 ## Técnicos, antes de entregar
 
@@ -31,7 +32,7 @@ Lista viva: se actualiza cada vez que se cierra o aparece algo. Las marcas
       — caps. 0, 2, 5, 10, 11 y anexo C
 - [x] Manual de Referencia (Doxygen; reemplaza a la nota de aplicación) — firmware_development 6c7a6e3, sale en cada release — caps. 1, 7 y 11
 - [x] Release final: v1.0.0 citada en el cap. 7, tabla de entregables al día
-- [ ] Correr la release v1.0.0 (Actions → Release) y confirmar que se publicó
+- [x] Release publicada: v1.0.0 y luego v1.0.1 (tags en origin), la citada en los caps. 7 y 11
 - [x] Archivo de licencia en la raíz (`LICENSE` MIT, `LICENSES.md`,
       `THIRD_PARTY_NOTICES.md`; firmware_development 3a57e51) — cap. 7
 

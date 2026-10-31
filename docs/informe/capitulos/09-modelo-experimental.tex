@@ -47,7 +47,24 @@ desarrollo. Se conecta a una computadora de escritorio con Linux por:
 \end{itemize}
 
 La placa arranca Linux desde una tarjeta microSD. La computadora ejecuta
-Libero SoC, las herramientas de verificación y el proceso de liberación.
+Libero SoC, las herramientas de verificación y el proceso de liberación. La
+figura~\ref{fig:montaje} muestra el montaje.
+
+\begin{figure}[ht]
+  \centering
+  % Foto en figuras/montaje.jpg (vertical, de ahí el tope de altura);
+  % mientras no exista se muestra un recuadro con la marca de pendiente.
+  \IfFileExists{figuras/montaje.jpg}{%
+    \includegraphics[width=\linewidth,height=0.5\textheight,keepaspectratio]{montaje.jpg}%
+  }{%
+    \fbox{\parbox[c][0.4\linewidth][c]{0.95\linewidth}{\centering
+      \pendiente{foto del montaje en figuras/montaje.jpg}}}%
+  }
+  \caption{Montaje de trabajo: la PolarFire SoC Discovery Kit en su caja
+    estanca, con las conexiones Ethernet y USB; al fondo, la demostración
+    web reproduciendo un video decodificado por la placa.}
+  \label{fig:montaje}
+\end{figure}
 
 \paragraph{Flujos de prueba}
 Se usaron 39 flujos de conformidad (37 MPEG-2 y 2 MPEG-1) de distintos fabricantes y
