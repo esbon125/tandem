@@ -1,0 +1,65 @@
+<!doctype html>
+<!-- Placa para redes (1080 x 1350, 4:5). Exportar con:
+     google-chrome --headless=new --window-size=1080,1350 --hide-scrollbars \
+       --screenshot=03_placa_redes.png tarjeta.html -->
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<style>
+  :root { --navy:#14213D; --teal:#0F7173; --amber:#E09F3E; --paper:#F4F6F8; --soft:#9FD3D4; }
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { width:1080px; height:1350px; background:var(--navy); color:#fff;
+         font-family:Montserrat, sans-serif; position:relative; overflow:hidden; }
+  .top { position:absolute; left:70px; top:64px; display:flex; align-items:center; gap:26px; }
+  .top svg { width:86px; height:auto; fill:#fff; }
+  .top .u { font-weight:700; font-size:30px; line-height:1.25; }
+  .top .c { font-weight:500; font-size:23px; color:var(--amber); margin-top:8px; }
+  .foto { position:absolute; right:70px; top:250px; width:430px; height:573px;
+          border-radius:18px; overflow:hidden; box-shadow:0 10px 40px rgba(0,0,0,.45); }
+  .foto img { width:100%; height:100%; object-fit:cover; display:block; }
+  .tit { position:absolute; left:70px; top:262px; width:470px; }
+  .tit h1 { font-weight:800; font-size:62px; line-height:1.08; letter-spacing:-.5px; }
+  .tit h1 em { font-style:normal; color:var(--amber); }
+  .tit p { margin-top:30px; font-weight:500; font-size:27px; line-height:1.35; color:var(--soft); }
+  .rule { position:absolute; left:70px; top:880px; width:940px; height:6px; background:var(--amber); }
+  .pie { position:absolute; left:70px; top:925px; width:940px; }
+  .pie .k { font-size:22px; font-weight:600; color:var(--amber); text-transform:uppercase; letter-spacing:2px; }
+  .pie .n { font-size:42px; font-weight:800; margin-top:10px; }
+  .pie .t { font-size:28px; font-weight:400; color:#C9D1DC; margin-top:10px; }
+  .pie .f { display:inline-block; margin-top:34px; background:var(--amber); color:var(--navy);
+            font-size:30px; font-weight:800; padding:14px 26px; border-radius:10px; }
+  .chips { position:absolute; left:70px; bottom:70px; display:flex; gap:14px; flex-wrap:wrap; width:940px; }
+  .chips span { border:2px solid var(--teal); color:#fff; background:rgba(15,113,115,.35);
+                border-radius:40px; padding:10px 22px; font-size:22px; font-weight:600; }
+</style>
+</head>
+<body>
+  <div class="top">
+    <svg viewBox="0 0 595.3 699.4" xmlns="http://www.w3.org/2000/svg"><path fill-rule="evenodd" d="m246.6 0h102v190.8c80.8-22.4 140.4-96.7 140.4-184.4h106.3c0 146.5-106.8 268.9-246.6 293.2v4.4h233.9v104.2h-214.4c130 31.8 227 149.5 227 289.1h-106.2c0-87.7-59.6-162-140.3-184.4v186.5h-102v-186.5c-80.7 22.4-140.3 96.7-140.3 184.4h-106.4c0-139.6 97-257.3 227-289.1h-214.2v-104.2h233.9v-4.4c-139.9-24.3-246.7-146.7-246.7-293.2h106.3c0 87.7 59.6 162 140.3 184.4z"/></svg>
+    <div>
+      <div class="u">Universidad Tecnológica Nacional<br>Facultad Regional La Rioja</div>
+      <div class="c">Ingeniería Electrónica · Proyecto Final</div>
+    </div>
+  </div>
+
+  <div class="tit">
+    <h1>Decodificador de video <em>MPEG-2</em> en SoC FPGA con Linux</h1>
+    <p>Desarrollo integral de un producto de propiedad intelectual</p>
+  </div>
+
+  <div class="foto"><img src="01_montaje.jpg" alt="Placa PolarFire SoC Discovery Kit con la demostración web de fondo"></div>
+
+  <div class="rule"></div>
+  <div class="pie">
+    <div class="k">Presentación de Proyecto Final</div>
+    <div class="n">Bustamante, Esteban Adriel</div>
+    <div class="t">Docente tutor: Ing. Ricardo Maldonado</div>
+    <!-- Cuando haya fecha, descomentar y volver a exportar:
+    <div class="f">Jueves 20 de noviembre · 18:00 h · Aula X</div> -->
+  </div>
+
+  <div class="chips">
+    <span>FPGA</span><span>RISC-V</span><span>Linux</span><span>Video digital</span><span>Hardware libre</span>
+  </div>
+</body>
+</html>
