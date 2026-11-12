@@ -8,18 +8,12 @@ build/informe.pdf: informe.tex bibliografia.bib $(wildcard capitulos/*.tex anexo
 	@mkdir -p build
 	TEXINPUTS=preambulo: $(TECTONIC) -X compile --outdir build -Z search-path=preambulo $<
 
-# Para la imprenta: `make imprenta`.
-#   informe-interior.pdf -- el informe sin la tapa recortada (desde la portada interior)
-#   informe-imprenta.pdf -- tapa extendida de Scribus (contratapa + lomo + tapa) + interior
-imprenta: build/informe-imprenta.pdf build/informe-interior.pdf
+# Para la imprenta: `make imprenta` -> build/informe-imprenta.pdf
+#   tapa extendida de Scribus (contratapa + lomo + tapa) seguida del informe
+#   completo, que ya empieza por la carátula del Anexo 5.
+imprenta: build/informe-imprenta.pdf
 
-build/informe-interior.pdf: build/informe.pdf
-	rm -rf build/paginas && mkdir -p build/paginas
-	pdfseparate -f 2 $< build/paginas/p-%03d.pdf
-	pdfunite build/paginas/p-*.pdf $@
-	rm -rf build/paginas
-
-build/informe-imprenta.pdf: portada/tapa-scribus.pdf build/informe-interior.pdf
+build/informe-imprenta.pdf: portada/tapa-scribus.pdf build/informe.pdf
 	pdfunite $^ $@
 
 $(TECTONIC):

@@ -1,8 +1,10 @@
 % Informe Final -- Proyecto Final de Ingeniería Electrónica, UTN FRLR.
 % Estructura según el Reglamento de Proyecto Final (sección 3).
-% Compilar con `make` (Tectonic).
+% Compilar con `make` (Tectonic) o con XeLaTeX + BibTeX de TeX Live
+% (xelatex informe; bibtex informe; xelatex informe; xelatex informe), que es lo
+% que hace AUCTeX con C-c C-c (motor xetex: ver .dir-locals.el).
 \documentclass[a4paper,11pt,oneside]{report}
-\usepackage{estilo-informe}
+\usepackage{preambulo/estilo-informe}
 
 \newcommand{\titulotrabajo}{Decodificador de video MPEG-2 en SoC FPGA con Linux}
 \newcommand{\subtitulotrabajo}{Desarrollo integral de un producto de propiedad intelectual}
@@ -39,7 +41,7 @@
 \clearpage\input{capitulos/10-resultados}
 \clearpage\input{capitulos/11-conclusiones}
 
-\bibliographystyle{apacite}
+\bibliographystyle{numerico-es}
 \bibliography{bibliografia}
 
 \appendix

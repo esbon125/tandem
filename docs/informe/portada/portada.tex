@@ -1,27 +1,83 @@
-% Tapa diseñada en Scribus (tapa-scribus.pdf: contratapa, lomo y tapa en una
-% sola hoja para la encuadernación). Acá se usa solo la tapa: el panel
-% derecho, desde x = 596,5 pt, recortado 8 pt por lado para que mida lo mismo
-% que una A4 (595 pt) sin deformarse.
-\includepdf[pages=1, viewport=604.5 0 1199.5 841.89, clip]{portada/tapa-scribus.pdf}
+% Carátula y primera página del Informe Final según el modelo del Anexo 5 del
+% Reglamento de Proyecto Final, en una sola hoja (la primera del informe).
+%  - Mitad superior: la carátula del modelo (logo, universidad, facultad,
+%    carrera, trabajo, autor) con el formato del informe.
+%  - Mitad inferior: la "primera página" del modelo (cátedra, docentes, tutor,
+%    fecha de examen y el recuadro del tribunal) tal cual el modelo, en negro.
+% La tapa de Scribus (tapa-scribus.pdf) queda solo para la encuadernación.
 
-% Portada interior, con el contenido mínimo del modelo del Anexo 5 del
-% Reglamento (cátedra, docentes, tutor, fecha de examen) que la tapa no lleva.
+% Logo de la UTN, vectorial (mismas proporciones que el de la tapa de Scribus).
+\newcommand{\logoutn}[1]{%
+  \begin{tikzpicture}[x=#1/1095, y=#1/1095]
+    \fill[m2navy] (35,1099) arc[start angle=180, end angle=360, radius=508]
+      -- (866,1099) arc[start angle=0, end angle=-180, radius=323] -- cycle;
+    \fill[m2navy] (35,35) arc[start angle=180, end angle=0, radius=508]
+      -- (866,35) arc[start angle=0, end angle=180, radius=323] -- cycle;
+    \fill[m2navy] (455,0) rectangle (632,1104);
+    \fill[m2navy] (55,464) rectangle (1030,634);
+  \end{tikzpicture}}
+
+\newgeometry{top=15mm, bottom=15mm, left=25mm, right=25mm}
 \begin{titlepage}
-  \centering\sffamily
-  {\color{m2grey} La Rioja, \fechaentrega\par}
-  \vspace{2cm}
-  {\Large Universidad Tecnológica Nacional --- Facultad Regional La Rioja\par}
-  {\large Carrera de Ingeniería Electrónica --- Cátedra de Proyecto Final\par}
-  \vspace{1cm}
-  Prof.\ Ing.~Pedro Chahín Rearte \quad JTP Ing.~Oscar Almonacid\par
-  \vspace{3cm}
-  {\color{m2grey}Trabajo Final de Grado}\par
-  {\Huge\bfseries\color{m2navy}\titulotrabajo\par}
-  \vspace{4mm}{\Large\color{m2teal}\subtitulotrabajo\par}
-  {\color{m2amber}\rule{0.6\textwidth}{1.4pt}\par}
-  \vspace{2cm}
-  {\large Autor: \autor\par}
-  {\large Docente Tutor: \tutor\par}
+  \sffamily\setlength{\parskip}{1pt}
+  % ---- carátula -------------------------------------------------------------------------
+  \begin{center}
+    \logoutn{16mm}\par\vspace{3mm}
+    {\Large\bfseries\color{m2navy} Universidad Tecnológica Nacional\par}
+    {\large\color{m2navy} Facultad Regional La Rioja\par}
+    \vspace{2mm}
+    {\large\bfseries\color{m2teal} Carrera de Ingeniería Electrónica\par}
+    \vspace{1mm}
+    {\color{m2amber}\rule{\textwidth}{1.4pt}\par}
+  \end{center}
+  {\small\itshape\color{m2grey} Trabajo Final de Grado:\par}
+  \begin{center}
+    {\LARGE\bfseries\color{m2navy}\parbox{0.7\textwidth}{\centering\titulotrabajo}\par}
+    \vspace{2mm}{\large\color{m2teal}\subtitulotrabajo\par}
+    \vspace{2mm}
+    {\color{m2amber}\rule{\textwidth}{1.4pt}\par}
+  \end{center}
+  {\small\itshape\color{m2grey} Autor:\par}
+  \begin{center}
+    {\large\color{m2navy}\autor\par}
+  \end{center}
+
   \vfill
-  Fecha de examen: \rule{3cm}{0.4pt}
+  % ---- primera página: docentes y firmas, tal cual el modelo -------------------------------
+  \color{black}\normalsize
+  \hfill La Rioja, \fechaentrega\par
+  \vspace{1mm}
+  {\bfseries Cátedra de Proyecto Final\par}
+  \vspace{2mm}
+  Prof.\ Ing.\ Pedro Chahín Rearte\par
+  JTP.\ Ing.\ Oscar Almonacid\par
+  \vspace{3mm}
+  \begin{tabular}{@{}p{45mm}@{}p{\dimexpr\textwidth-45mm\relax}@{}}
+    Trabajo Final de Grado: & \titulotrabajo \\[2mm]
+    Autor:                  & \autor \\[2mm]
+  \end{tabular}\par
+  Docente Tutor: \tutor\par
+  \vspace{2mm}
+  Fecha de Examen: \underline{\hspace{7mm}}-\underline{\hspace{7mm}}-\underline{\hspace{14mm}}\par
+  \vspace{2mm}
+  \begin{center}
+    \setlength{\tabcolsep}{6pt}\renewcommand{\arraystretch}{1}%
+    \newcommand{\fila}[1]{\multicolumn{3}{|p{\dimexpr0.87\textwidth+4\tabcolsep+2\arrayrulewidth\relax}|}{#1}}%
+    \begin{tabular}{|p{0.29\textwidth}|p{0.29\textwidth}|p{0.29\textwidth}|}
+      \hline
+      \fila{\rule{0pt}{6mm}%
+        \hspace{6mm}(Leyenda ``Aprobado'') \dotfill\hspace*{6mm}} \\[2mm]
+      \fila{\hspace{6mm}EL EXAMEN DE DEFENSA DEL PRESENTE TRABAJO
+        FINAL DE GRADO} \\[2mm]
+      \fila{\hspace{6mm}HA MERECIDO LA CALIFICACIÓN DE
+        \makebox[45mm]{\dotfill} PUNTOS} \\[2mm]
+      \fila{\hspace{6mm}CONCEPTO: \dotfill\hspace*{6mm}} \\[2mm]
+      \hline
+      \fila{\rule{0pt}{4.5mm}Tribunal Examinador:} \\
+      \hline
+      \rule{0pt}{4.5mm}\small Presidente & \small Vocal 1° & \small Vocal 2° \\[20mm]
+      \hline
+    \end{tabular}
+  \end{center}
 \end{titlepage}
+\restoregeometry

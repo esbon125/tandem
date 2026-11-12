@@ -8,7 +8,9 @@ Lista viva: se actualiza cada vez que se cierra o aparece algo. Las marcas
 
 - [x] Agradecimientos
 - [x] Mes de entrega: automático, siempre el mes en curso al compilar (`\fechaentrega` en `informe.tex`)
-- [x] Tapa de Scribus (`portada/tapa-scribus.pdf`, para imprenta; el informe usa solo el panel de la tapa, seguido de la portada interior del Anexo 5)
+- [x] Tapa de Scribus (`portada/tapa-scribus.pdf`, solo para imprenta: `make imprenta` la antepone al informe; ya no va dentro del informe)
+- [x] Carátula del Anexo 5 como primera página (`portada/portada.tex`): carátula con el formato del informe y, abajo, cátedra, docentes, fecha de examen y recuadro del tribunal tal cual el modelo
+- [x] Bibliografía numérica (natbib + `numerico-es.bst`, plainnat con los textos en castellano)
 - [x] Foto del montaje (`figuras/montaje.jpg`, fig. 9.1; también en el banner `docs/banner/`). Es la versión comprimida de 960×1280: reemplazar por el original del celular si se consigue
 - [x] Licencia del RIA: se presenta aparte en el formulario oficial; la página se quitó del informe
 

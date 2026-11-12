@@ -3,7 +3,7 @@
 % Paleta, tipografías y cajas iguales a las de la guía de usuario
 % (firmware_development: user-guide/mpeg2fpga-style.sty): un cambio va en ambos.
 \NeedsTeXFormat{LaTeX2e}
-\ProvidesPackage{estilo-informe}[2026/10/14 Informe final mpeg2fpga]
+\ProvidesPackage{preambulo/estilo-informe}[2026/10/14 Informe final mpeg2fpga]
 
 % ---- tipografía e idioma ---------------------------------------------------------
 \RequirePackage{fontspec}
@@ -102,8 +102,10 @@
   lbl/.style={font=\sffamily\scriptsize, color=m2grey},
 }
 
-% ---- bibliografía (APA, Reglamento sección 3) y enlaces ----------------------------------
-\RequirePackage[natbibapa]{apacite}
+% ---- bibliografía (numérica, numerico-es.bst) y enlaces ---------------------------------
+\RequirePackage[numbers, sort&compress]{natbib}
+% Con citas numéricas no hacen falta las letras de desempate de año (2024a, 2024b).
+\AtBeginDocument{\renewcommand{\natexlab}[1]{}}
 \RequirePackage{url}
 \RequirePackage[colorlinks, linkcolor=m2blue, citecolor=m2teal,
   urlcolor=m2blue]{hyperref}

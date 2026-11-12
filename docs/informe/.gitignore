@@ -1,2 +1,16 @@
 build/
 .tools/
+# compilación con TeX Live / AUCTeX en el directorio del informe
+/informe.pdf
+*.aux
+*.bbl
+*.blg
+*.log
+*.out
+*.toc
+*.lof
+*.lot
+*.synctex.gz
+*.prv
+_region_.*
+auto/
