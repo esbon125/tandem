@@ -335,12 +335,12 @@ for i, (a, b) in enumerate(concl):
       f'stroke-linecap="round" stroke-linejoin="round"/>')
     text(M + 26, yy, [a, b], 14, INK, 500, lh=1.35)
 
-# Llamada a la accion: foto de la placa + QR
+# Llamada a la accion: foto de la placa + QR al repositorio
 qx = M + cwl + 30
 qw = W - M - qx
 qy = CY - 30
 qh = FOOT_Y - 22 - qy
-e('<g id="probalo">')
+e('<g id="explora">')
 box(qx, qy, qw, qh, NAVY, r=12)
 pw = 170
 e(f'<clipPath id="recorte-foto"><rect x="{qx}" y="{qy}" width="{pw}" height="{qh}" rx="12"/></clipPath>')
@@ -349,11 +349,11 @@ e(f'<image id="foto-setup" x="{qx}" y="{qy}" width="{pw}" height="{qh}" preserve
 e(f'<rect x="{qx + pw - 12}" y="{qy}" width="12" height="{qh}" fill="{NAVY}"/>')
 kx = qx + pw + 6
 kw = qx + qw - kx
-text(round(kx + kw / 2, 2), qy + 36, ["¡PROBALO EN VIVO!"], 17.5, AMBER, 800, anchor="middle")
+text(round(kx + kw / 2, 2), qy + 36, ["EXPLORÁ EL PROYECTO EN:"], 12.5, AMBER, 800, anchor="middle")
 qsz = 110
 ox, oy = round(kx + (kw - qsz) / 2, 2), qy + 56
 box(ox - 7, oy - 7, qsz + 14, qsz + 14, WHITE, r=7)
-qr = segno.make("https://esbon125.github.io/tandem/", error="m")
+qr = segno.make("https://github.com/esbon125/tandem", error="m")
 mat = list(qr.matrix)
 n = len(mat)
 mod = qsz / n
@@ -369,8 +369,8 @@ for r, row in enumerate(mat):
         else:
             c += 1
 e(f'<path id="qr" d="{"".join(d)}" fill="{NAVY}"/>')
-text(round(kx + kw / 2, 2), oy + qsz + 27, ["Subí un video y miralo", "decodificado acá"],
-     12, WHITE, 600, anchor="middle", lh=1.32)
+text(round(kx + kw / 2, 2), oy + qsz + 27, ["github.com/", "esbon125/tandem"],
+     13, WHITE, 700, anchor="middle", lh=1.32)
 e('</g>')
 e('</g>')  # capa Contenido
 
